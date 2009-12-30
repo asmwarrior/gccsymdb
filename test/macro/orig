@@ -1,0 +1,387 @@
+BEGIN TRANSACTION;
+CREATE TABLE ProjectOverview (
+	dbVersion text,
+	gccVersion text,
+	projectRootPath text,
+	-- gcc internal debug flag.
+	debug boolean
+);
+INSERT INTO "ProjectOverview" VALUES('1.0','4.3','/home/zyf/patch','true');
+CREATE TABLE chFile (
+	id integer primary key autoincrement,
+	fullName text, -- absolute path.
+	mtime bigint,
+	sysHeader boolean
+);
+INSERT INTO "chFile" VALUES(1,'/home/zyf/patch/test/macro/a.c',1262144294,'false');
+DELETE FROM sqlite_sequence;
+INSERT INTO "sqlite_sequence" VALUES('iToken',122);
+INSERT INTO "sqlite_sequence" VALUES('chFile',1);
+INSERT INTO "sqlite_sequence" VALUES('iFile',1);
+INSERT INTO "sqlite_sequence" VALUES('FileDependence',1);
+INSERT INTO "sqlite_sequence" VALUES('chToken',95);
+INSERT INTO "sqlite_sequence" VALUES('MacroDescription',6);
+INSERT INTO "sqlite_sequence" VALUES('MacroToken',26);
+CREATE TABLE iFile (
+	id integer primary key autoincrement,
+	mainFileID integer, -- chFile::id.
+	hasError integer, -- 0: no error; 1: c preprocess stage error; 2: c/c++ error.
+	iTokenStartID bigint,
+	iTokenEndID bigint,
+	syntaxTreeStartID bigint,
+	syntaxTreeEndID bigint
+);
+INSERT INTO "iFile" VALUES(1,1,0,2,123,0,0);
+CREATE TABLE FileDependence (
+	id integer primary key autoincrement,
+	iFileID integer,
+	hID integer
+);
+INSERT INTO "FileDependence" VALUES(1,1,1);
+CREATE TABLE chToken (
+	id integer primary key autoincrement,
+	flag integer, -- see symdb document
+	length integer,
+	chFileID integer,
+	fileOffset integer
+);
+INSERT INTO "chToken" VALUES(1,33554469,1,1,0);
+INSERT INTO "chToken" VALUES(2,33554485,6,1,1);
+INSERT INTO "chToken" VALUES(3,33554485,1,1,8);
+INSERT INTO "chToken" VALUES(4,33554469,1,1,10);
+INSERT INTO "chToken" VALUES(5,33554485,6,1,11);
+INSERT INTO "chToken" VALUES(6,33554485,1,1,18);
+INSERT INTO "chToken" VALUES(7,33554452,1,1,23);
+INSERT INTO "chToken" VALUES(8,33554485,1,1,24);
+INSERT INTO "chToken" VALUES(9,33554470,2,1,25);
+INSERT INTO "chToken" VALUES(10,33554485,1,1,27);
+INSERT INTO "chToken" VALUES(11,33554453,1,1,28);
+INSERT INTO "chToken" VALUES(12,33554469,1,1,30);
+INSERT INTO "chToken" VALUES(13,33554485,6,1,31);
+INSERT INTO "chToken" VALUES(14,33554485,1,1,38);
+INSERT INTO "chToken" VALUES(15,33554452,1,1,39);
+INSERT INTO "chToken" VALUES(16,33554485,1,1,40);
+INSERT INTO "chToken" VALUES(17,33554453,1,1,41);
+INSERT INTO "chToken" VALUES(18,33554452,1,1,46);
+INSERT INTO "chToken" VALUES(19,33554485,1,1,47);
+INSERT INTO "chToken" VALUES(20,33554438,1,1,49);
+INSERT INTO "chToken" VALUES(21,33554485,1,1,51);
+INSERT INTO "chToken" VALUES(22,33554453,1,1,52);
+INSERT INTO "chToken" VALUES(23,50339893,4,1,55);
+INSERT INTO "chToken" VALUES(24,50331701,1,1,60);
+INSERT INTO "chToken" VALUES(25,50331668,1,1,61);
+INSERT INTO "chToken" VALUES(26,50338869,3,1,62);
+INSERT INTO "chToken" VALUES(27,50331701,1,1,66);
+INSERT INTO "chToken" VALUES(28,50331669,1,1,67);
+INSERT INTO "chToken" VALUES(29,50331689,1,1,69);
+INSERT INTO "chToken" VALUES(30,50331690,1,1,71);
+INSERT INTO "chToken" VALUES(31,33554500,72,1,74);
+INSERT INTO "chToken" VALUES(32,33554469,1,1,147);
+INSERT INTO "chToken" VALUES(33,33554485,6,1,148);
+INSERT INTO "chToken" VALUES(34,33554485,1,1,155);
+INSERT INTO "chToken" VALUES(35,33554452,1,1,156);
+INSERT INTO "chToken" VALUES(36,33554485,1,1,157);
+INSERT INTO "chToken" VALUES(37,33554451,1,1,158);
+INSERT INTO "chToken" VALUES(38,33554485,1,1,160);
+INSERT INTO "chToken" VALUES(39,33554453,1,1,161);
+INSERT INTO "chToken" VALUES(40,33554452,1,1,169);
+INSERT INTO "chToken" VALUES(41,33554485,1,1,170);
+INSERT INTO "chToken" VALUES(42,33554436,1,1,172);
+INSERT INTO "chToken" VALUES(43,33554485,1,1,174);
+INSERT INTO "chToken" VALUES(44,33554452,1,1,175);
+INSERT INTO "chToken" VALUES(45,33554485,1,1,176);
+INSERT INTO "chToken" VALUES(46,33554453,1,1,177);
+INSERT INTO "chToken" VALUES(47,33554436,1,1,183);
+INSERT INTO "chToken" VALUES(48,33554485,1,1,190);
+INSERT INTO "chToken" VALUES(49,33554453,1,1,191);
+INSERT INTO "chToken" VALUES(50,33554500,47,1,194);
+INSERT INTO "chToken" VALUES(51,50338869,3,1,242);
+INSERT INTO "chToken" VALUES(52,50331701,4,1,246);
+INSERT INTO "chToken" VALUES(53,50331668,1,1,250);
+INSERT INTO "chToken" VALUES(54,50339893,4,1,251);
+INSERT INTO "chToken" VALUES(55,50331669,1,1,255);
+INSERT INTO "chToken" VALUES(56,50331689,1,1,260);
+INSERT INTO "chToken" VALUES(57,50338869,3,1,263);
+INSERT INTO "chToken" VALUES(58,50331701,1,1,267);
+INSERT INTO "chToken" VALUES(59,50331667,1,1,268);
+INSERT INTO "chToken" VALUES(60,50331701,1,1,270);
+INSERT INTO "chToken" VALUES(61,50331667,1,1,271);
+INSERT INTO "chToken" VALUES(62,50331701,1,1,273);
+INSERT INTO "chToken" VALUES(63,50331667,1,1,274);
+INSERT INTO "chToken" VALUES(64,50331701,2,1,276);
+INSERT INTO "chToken" VALUES(65,50331691,1,1,278);
+INSERT INTO "chToken" VALUES(66,50331701,1,1,281);
+INSERT INTO "chToken" VALUES(67,50331648,1,1,283);
+INSERT INTO "chToken" VALUES(68,16777269,1,1,285);
+INSERT INTO "chToken" VALUES(69,16777236,1,1,286);
+INSERT INTO "chToken" VALUES(70,16777269,1,1,287);
+INSERT INTO "chToken" VALUES(71,16777235,1,1,288);
+INSERT INTO "chToken" VALUES(72,16777269,1,1,290);
+INSERT INTO "chToken" VALUES(73,16777237,1,1,291);
+INSERT INTO "chToken" VALUES(74,50331691,1,1,292);
+INSERT INTO "chToken" VALUES(75,33554500,119,1,296);
+INSERT INTO "chToken" VALUES(76,50338869,3,1,419);
+INSERT INTO "chToken" VALUES(77,50331701,1,1,423);
+INSERT INTO "chToken" VALUES(78,50331648,1,1,425);
+INSERT INTO "chToken" VALUES(79,16777269,1,1,427);
+INSERT INTO "chToken" VALUES(80,16777269,1,1,429);
+INSERT INTO "chToken" VALUES(81,50331691,1,1,430);
+INSERT INTO "chToken" VALUES(82,50331701,1,1,433);
+INSERT INTO "chToken" VALUES(83,16777269,1,1,435);
+INSERT INTO "chToken" VALUES(84,50331648,1,1,437);
+INSERT INTO "chToken" VALUES(85,16777269,1,1,439);
+INSERT INTO "chToken" VALUES(86,16777236,1,1,440);
+INSERT INTO "chToken" VALUES(87,16777269,1,1,441);
+INSERT INTO "chToken" VALUES(88,16777235,1,1,442);
+INSERT INTO "chToken" VALUES(89,16777269,1,1,444);
+INSERT INTO "chToken" VALUES(90,16777237,1,1,445);
+INSERT INTO "chToken" VALUES(91,50331691,1,1,446);
+INSERT INTO "chToken" VALUES(92,50343477,6,1,450);
+INSERT INTO "chToken" VALUES(93,16777269,8,1,457);
+INSERT INTO "chToken" VALUES(94,50331691,1,1,465);
+INSERT INTO "chToken" VALUES(95,50331690,1,1,467);
+CREATE TABLE MacroDescription (
+	id integer primary key autoincrement,
+	leaderchTokenID bigint,
+	expandedCount integer,
+	macroCount integer,
+	macroStartID bigint
+);
+INSERT INTO "MacroDescription" VALUES(1,68,6,11,1);
+INSERT INTO "MacroDescription" VALUES(2,79,1,0,12);
+INSERT INTO "MacroDescription" VALUES(3,80,1,3,12);
+INSERT INTO "MacroDescription" VALUES(4,83,1,0,15);
+INSERT INTO "MacroDescription" VALUES(5,85,6,11,15);
+INSERT INTO "MacroDescription" VALUES(6,93,1,1,26);
+CREATE TABLE MacroToken (
+	id integer primary key autoincrement,
+	flag, -- see symdb document
+	value text
+);
+INSERT INTO "MacroToken" VALUES(1,67108884,'(');
+INSERT INTO "MacroToken" VALUES(2,67108917,'j');
+INSERT INTO "MacroToken" VALUES(3,67108868,'+');
+INSERT INTO "MacroToken" VALUES(4,67108884,'(');
+INSERT INTO "MacroToken" VALUES(5,67108917,'i');
+INSERT INTO "MacroToken" VALUES(6,67108870,'*');
+INSERT INTO "MacroToken" VALUES(7,67108917,'i');
+INSERT INTO "MacroToken" VALUES(8,67108885,')');
+INSERT INTO "MacroToken" VALUES(9,67108868,'+');
+INSERT INTO "MacroToken" VALUES(10,67108917,'j');
+INSERT INTO "MacroToken" VALUES(11,67108885,')');
+INSERT INTO "MacroToken" VALUES(12,67108884,'(');
+INSERT INTO "MacroToken" VALUES(13,67108917,'ii');
+INSERT INTO "MacroToken" VALUES(14,67108885,')');
+INSERT INTO "MacroToken" VALUES(15,67108884,'(');
+INSERT INTO "MacroToken" VALUES(16,67108917,'j');
+INSERT INTO "MacroToken" VALUES(17,67108868,'+');
+INSERT INTO "MacroToken" VALUES(18,67108884,'(');
+INSERT INTO "MacroToken" VALUES(19,67108917,'i');
+INSERT INTO "MacroToken" VALUES(20,67108870,'*');
+INSERT INTO "MacroToken" VALUES(21,67108917,'i');
+INSERT INTO "MacroToken" VALUES(22,67108885,')');
+INSERT INTO "MacroToken" VALUES(23,67108868,'+');
+INSERT INTO "MacroToken" VALUES(24,67108917,'j');
+INSERT INTO "MacroToken" VALUES(25,67108885,')');
+INSERT INTO "MacroToken" VALUES(26,67108919,'26');
+CREATE TABLE iToken (
+	id integer primary key autoincrement,
+	flag integer, -- see symdb document
+	length integer,
+	value text,
+	relattedTokenID bigint -- chToken::id or MacroToken::id.
+);
+INSERT INTO "iToken" VALUES(1,NULL,NULL,NULL,NULL);
+INSERT INTO "iToken" VALUES(2,33554469,1,'#',1);
+INSERT INTO "iToken" VALUES(3,33554485,6,'define',2);
+INSERT INTO "iToken" VALUES(4,33554485,1,'u',3);
+INSERT INTO "iToken" VALUES(5,33554469,1,'#',4);
+INSERT INTO "iToken" VALUES(6,33554485,6,'define',5);
+INSERT INTO "iToken" VALUES(7,33554485,1,'z',6);
+INSERT INTO "iToken" VALUES(8,33554452,1,'(',7);
+INSERT INTO "iToken" VALUES(9,33554485,1,'i',8);
+INSERT INTO "iToken" VALUES(10,33554470,2,'##',9);
+INSERT INTO "iToken" VALUES(11,33554485,1,'i',10);
+INSERT INTO "iToken" VALUES(12,33554453,1,')',11);
+INSERT INTO "iToken" VALUES(13,33554469,1,'#',12);
+INSERT INTO "iToken" VALUES(14,33554485,6,'define',13);
+INSERT INTO "iToken" VALUES(15,33554485,1,'y',14);
+INSERT INTO "iToken" VALUES(16,33554452,1,'(',15);
+INSERT INTO "iToken" VALUES(17,33554485,1,'a',16);
+INSERT INTO "iToken" VALUES(18,33554453,1,')',17);
+INSERT INTO "iToken" VALUES(19,33554452,1,'(',18);
+INSERT INTO "iToken" VALUES(20,33554485,1,'a',19);
+INSERT INTO "iToken" VALUES(21,33554438,1,'*',20);
+INSERT INTO "iToken" VALUES(22,33554485,1,'a',21);
+INSERT INTO "iToken" VALUES(23,33554453,1,')',22);
+INSERT INTO "iToken" VALUES(24,50339893,4,'void',23);
+INSERT INTO "iToken" VALUES(25,50331701,1,'x',24);
+INSERT INTO "iToken" VALUES(26,50331668,1,'(',25);
+INSERT INTO "iToken" VALUES(27,50338869,3,'int',26);
+INSERT INTO "iToken" VALUES(28,50331701,1,'i',27);
+INSERT INTO "iToken" VALUES(29,50331669,1,')',28);
+INSERT INTO "iToken" VALUES(30,50331689,1,'{',29);
+INSERT INTO "iToken" VALUES(31,50331690,1,'}',30);
+INSERT INTO "iToken" VALUES(32,33554500,72,'// backslash test, some spaces following the first and third backslashs.',31);
+INSERT INTO "iToken" VALUES(33,33554469,1,'#',32);
+INSERT INTO "iToken" VALUES(34,33554485,6,'define',33);
+INSERT INTO "iToken" VALUES(35,33554485,1,'x',34);
+INSERT INTO "iToken" VALUES(36,33554452,1,'(',35);
+INSERT INTO "iToken" VALUES(37,33554485,1,'a',36);
+INSERT INTO "iToken" VALUES(38,33554451,1,',',37);
+INSERT INTO "iToken" VALUES(39,33554485,1,'b',38);
+INSERT INTO "iToken" VALUES(40,33554453,1,')',39);
+INSERT INTO "iToken" VALUES(41,33554452,1,'(',40);
+INSERT INTO "iToken" VALUES(42,33554485,1,'b',41);
+INSERT INTO "iToken" VALUES(43,33554436,1,'+',42);
+INSERT INTO "iToken" VALUES(44,33554485,1,'y',43);
+INSERT INTO "iToken" VALUES(45,33554452,1,'(',44);
+INSERT INTO "iToken" VALUES(46,33554485,1,'a',45);
+INSERT INTO "iToken" VALUES(47,33554453,1,')',46);
+INSERT INTO "iToken" VALUES(48,33554436,1,'+',47);
+INSERT INTO "iToken" VALUES(49,33554485,1,'b',48);
+INSERT INTO "iToken" VALUES(50,33554453,1,')',49);
+INSERT INTO "iToken" VALUES(51,33554500,47,'// some spaces following this and next lines.  ',50);
+INSERT INTO "iToken" VALUES(52,50338869,3,'int',51);
+INSERT INTO "iToken" VALUES(53,50331701,4,'main',52);
+INSERT INTO "iToken" VALUES(54,50331668,1,'(',53);
+INSERT INTO "iToken" VALUES(55,50339893,4,'void',54);
+INSERT INTO "iToken" VALUES(56,50331669,1,')',55);
+INSERT INTO "iToken" VALUES(57,50331689,1,'{',56);
+INSERT INTO "iToken" VALUES(58,50338869,3,'int',57);
+INSERT INTO "iToken" VALUES(59,50331701,1,'c',58);
+INSERT INTO "iToken" VALUES(60,50331667,1,',',59);
+INSERT INTO "iToken" VALUES(61,50331701,1,'i',60);
+INSERT INTO "iToken" VALUES(62,50331667,1,',',61);
+INSERT INTO "iToken" VALUES(63,50331701,1,'j',62);
+INSERT INTO "iToken" VALUES(64,50331667,1,',',63);
+INSERT INTO "iToken" VALUES(65,50331701,2,'ii',64);
+INSERT INTO "iToken" VALUES(66,50331691,1,';',65);
+INSERT INTO "iToken" VALUES(67,50331701,1,'c',66);
+INSERT INTO "iToken" VALUES(68,50331648,1,'=',67);
+INSERT INTO "iToken" VALUES(69,16777269,1,'x',68);
+INSERT INTO "iToken" VALUES(70,16777236,1,'(',69);
+INSERT INTO "iToken" VALUES(71,16777269,1,'i',70);
+INSERT INTO "iToken" VALUES(72,16777235,1,',',71);
+INSERT INTO "iToken" VALUES(73,16777269,1,'j',72);
+INSERT INTO "iToken" VALUES(74,16777237,1,')',73);
+INSERT INTO "iToken" VALUES(75,67108884,1,'(',1);
+INSERT INTO "iToken" VALUES(76,67108917,1,'j',2);
+INSERT INTO "iToken" VALUES(77,67108868,1,'+',3);
+INSERT INTO "iToken" VALUES(78,67108884,1,'(',4);
+INSERT INTO "iToken" VALUES(79,67108917,1,'i',5);
+INSERT INTO "iToken" VALUES(80,67108870,1,'*',6);
+INSERT INTO "iToken" VALUES(81,67108917,1,'i',7);
+INSERT INTO "iToken" VALUES(82,67108885,1,')',8);
+INSERT INTO "iToken" VALUES(83,67108868,1,'+',9);
+INSERT INTO "iToken" VALUES(84,67108917,1,'j',10);
+INSERT INTO "iToken" VALUES(85,67108885,1,')',11);
+INSERT INTO "iToken" VALUES(86,50331691,1,';',74);
+INSERT INTO "iToken" VALUES(87,33554500,119,'/* note: macro has a high priority than variable and function in cpp stage. 
+	 * there''re some spaces left the line. */',75);
+INSERT INTO "iToken" VALUES(88,50338869,3,'int',76);
+INSERT INTO "iToken" VALUES(89,50331701,1,'x',77);
+INSERT INTO "iToken" VALUES(90,50331648,1,'=',78);
+INSERT INTO "iToken" VALUES(91,16777269,1,'u',79);
+INSERT INTO "iToken" VALUES(92,16777269,1,'z',80);
+INSERT INTO "iToken" VALUES(93,67108884,1,'(',12);
+INSERT INTO "iToken" VALUES(94,67108917,2,'ii',13);
+INSERT INTO "iToken" VALUES(95,67108885,1,')',14);
+INSERT INTO "iToken" VALUES(96,50331691,1,';',81);
+INSERT INTO "iToken" VALUES(97,50331701,1,'x',82);
+INSERT INTO "iToken" VALUES(98,16777269,1,'u',83);
+INSERT INTO "iToken" VALUES(99,50331648,1,'=',84);
+INSERT INTO "iToken" VALUES(100,16777269,1,'x',85);
+INSERT INTO "iToken" VALUES(101,16777236,1,'(',86);
+INSERT INTO "iToken" VALUES(102,16777269,1,'i',87);
+INSERT INTO "iToken" VALUES(103,16777235,1,',',88);
+INSERT INTO "iToken" VALUES(104,16777269,1,'j',89);
+INSERT INTO "iToken" VALUES(105,16777237,1,')',90);
+INSERT INTO "iToken" VALUES(106,67108884,1,'(',15);
+INSERT INTO "iToken" VALUES(107,67108917,1,'j',16);
+INSERT INTO "iToken" VALUES(108,67108868,1,'+',17);
+INSERT INTO "iToken" VALUES(109,67108884,1,'(',18);
+INSERT INTO "iToken" VALUES(110,67108917,1,'i',19);
+INSERT INTO "iToken" VALUES(111,67108870,1,'*',20);
+INSERT INTO "iToken" VALUES(112,67108917,1,'i',21);
+INSERT INTO "iToken" VALUES(113,67108885,1,')',22);
+INSERT INTO "iToken" VALUES(114,67108868,1,'+',23);
+INSERT INTO "iToken" VALUES(115,67108917,1,'j',24);
+INSERT INTO "iToken" VALUES(116,67108885,1,')',25);
+INSERT INTO "iToken" VALUES(117,50331691,1,';',91);
+INSERT INTO "iToken" VALUES(118,50343477,6,'return',92);
+INSERT INTO "iToken" VALUES(119,16777269,8,'__LINE__',93);
+INSERT INTO "iToken" VALUES(120,67108919,2,'26',26);
+INSERT INTO "iToken" VALUES(121,50331691,1,';',94);
+INSERT INTO "iToken" VALUES(122,50331690,1,'}',95);
+CREATE TABLE SyntaxTree (
+	id integer primary key autoincrement,
+	code integer,
+	-- To compound-statement tree, store start/end treeID.
+	-- To VAR_DECL, FUNCTION_DECL etc. value = SemanticTree::id.
+	value blob,
+	parentTreeID integer -- store relative treeID of compound-statement head.
+);
+CREATE TABLE CompountStatment (
+	id integer primary key autoincrement,
+	code integer,
+	value integer,
+	value2 integer,
+	parentTreeID integer
+);
+CREATE TABLE SemanticTree (
+	id integer primary key autoincrement,
+	syntaxTreeID integer,
+	scopeCPPTokenID integer,
+	declCPPTokenID integer,
+	tokenID integer -- chToken::id or MacroToken::id.
+);
+CREATE TABLE TemporaryTree (
+	id integer primary key autoincrement,
+	memAddr integer,
+	code integer,
+	value blob,
+	parentTreeID integer
+);
+CREATE VIEW CompileUnit as
+select
+	b.fullName as cFile, b.mtime as cTime, c.fullName as hFile, c.mtime as hTime
+from
+	iFile as a, chFile as b, chFile as c, FileDependence as d
+where
+	a.mainFileID = b.id and a.id = d.iFileID and c.id = d.hID;
+CREATE INDEX FileName on chFile (fullName);
+CREATE VIEW FileToken as
+select * from
+(
+select
+	f.id as fileID, fileOffset, t.id as tokenID, flag, length
+from
+	chFile f, chToken as t
+where
+	f.id = t.chFileID
+order by
+	fileID, fileOffset
+) as x
+left outer join
+(
+select
+	a.id as tokenID, b.id as macroDescriptionID
+from
+	chToken as a, MacroDescription as b
+where
+	a.id = b.leaderchTokenID
+) as y
+on
+	x.tokenID = y.tokenID;
+CREATE INDEX indexTokenFromFile on chToken (chFileID, fileOffset asc);
+CREATE INDEX indexMacroWeld on MacroDescription (leaderchTokenID);
+CREATE TRIGGER deleteTokenFromFile delete on chToken
+begin
+	delete from MacroDescription where leaderchTokenID = old.id;
+end;
+CREATE TRIGGER deleteTokenFromFile2 delete on MacroDescription
+begin
+	delete from MacroToken where id >= old.macroStartID and id < old.macroStartID + old.macroCount;
+end;
+COMMIT;

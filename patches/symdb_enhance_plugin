@@ -1,0 +1,186 @@
+Index: gcc/gcc/plugin.def
+===================================================================
+--- gcc.orig/gcc/plugin.def
++++ gcc/gcc/plugin.def
+@@ -89,6 +89,12 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
+ /* Called when a pass is first instantiated.  */
+ DEFEVENT (PLUGIN_NEW_PASS)
+ 
++/* Called when a cpp token is extracted.  */
++DEFEVENT (PLUGIN_CPP_TOKEN)
++
++/* Called when a c token is extracted.  */
++DEFEVENT (PLUGIN_C_TOKEN)
++
+ /* After the hard-coded events above, plugins can dynamically allocate events
+    at run time.
+    PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
+Index: gcc/gcc/c-lex.c
+===================================================================
+--- gcc.orig/gcc/c-lex.c
++++ gcc/gcc/c-lex.c
+@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  
+ #include "splay-tree.h"
+ #include "debug.h"
+ #include "target.h"
++#include "plugin.h"
+ 
+ /* We may keep statistics about how long which files took to compile.  */
+ static int header_time, body_time;
+@@ -304,6 +305,7 @@ c_lex_with_flags (tree *value, location_
+   timevar_push (TV_CPP);
+  retry:
+   tok = cpp_get_token_with_location (parse_in, loc);
++  invoke_plugin_callbacks (PLUGIN_CPP_TOKEN, &tok);
+   type = tok->type;
+ 
+  retry_after_at:
+Index: gcc/gcc/c-parser.c
+===================================================================
+--- gcc.orig/gcc/c-parser.c
++++ gcc/gcc/c-parser.c
+@@ -123,45 +123,6 @@ c_parse_init (void)
+    C++).  It would then be possible to share more of the C and C++
+    lexer code, if desired.  */
+ 
+-/* The following local token type is used.  */
+-
+-/* A keyword.  */
+-#define CPP_KEYWORD ((enum cpp_ttype) (N_TTYPES + 1))
+-
+-/* More information about the type of a CPP_NAME token.  */
+-typedef enum c_id_kind {
+-  /* An ordinary identifier.  */
+-  C_ID_ID,
+-  /* An identifier declared as a typedef name.  */
+-  C_ID_TYPENAME,
+-  /* An identifier declared as an Objective-C class name.  */
+-  C_ID_CLASSNAME,
+-  /* An address space identifier.  */
+-  C_ID_ADDRSPACE,
+-  /* Not an identifier.  */
+-  C_ID_NONE
+-} c_id_kind;
+-
+-/* A single C token after string literal concatenation and conversion
+-   of preprocessing tokens to tokens.  */
+-typedef struct GTY (()) c_token {
+-  /* The kind of token.  */
+-  ENUM_BITFIELD (cpp_ttype) type : 8;
+-  /* If this token is a CPP_NAME, this value indicates whether also
+-     declared as some kind of type.  Otherwise, it is C_ID_NONE.  */
+-  ENUM_BITFIELD (c_id_kind) id_kind : 8;
+-  /* If this token is a keyword, this value indicates which keyword.
+-     Otherwise, this value is RID_MAX.  */
+-  ENUM_BITFIELD (rid) keyword : 8;
+-  /* If this token is a CPP_PRAGMA, this indicates the pragma that
+-     was seen.  Otherwise it is PRAGMA_NONE.  */
+-  ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
+-  /* The value associated with this token, if any.  */
+-  tree value;
+-  /* The location at which this token was found.  */
+-  location_t location;
+-} c_token;
+-
+ /* A parser structure recording information about the state and
+    context of parsing.  Includes lexer information with up to two
+    tokens of look-ahead; more are not needed for C.  */
+@@ -310,6 +271,7 @@ c_lex_one_token (c_parser *parser, c_tok
+       break;
+     }
+   timevar_pop (TV_LEX);
++  invoke_plugin_callbacks (PLUGIN_C_TOKEN, token);
+ }
+ 
+ /* Return a pointer to the next token from PARSER, reading it in if
+Index: gcc/gcc/plugin.c
+===================================================================
+--- gcc.orig/gcc/plugin.c
++++ gcc/gcc/plugin.c
+@@ -418,6 +418,8 @@ register_callback (const char *plugin_na
+       case PLUGIN_EARLY_GIMPLE_PASSES_START:
+       case PLUGIN_EARLY_GIMPLE_PASSES_END:
+       case PLUGIN_NEW_PASS:
++      case PLUGIN_CPP_TOKEN:
++      case PLUGIN_C_TOKEN:
+         {
+           struct callback_info *new_callback;
+           if (!callback)
+@@ -499,6 +501,8 @@ invoke_plugin_callbacks (int event, void
+       case PLUGIN_EARLY_GIMPLE_PASSES_START:
+       case PLUGIN_EARLY_GIMPLE_PASSES_END:
+       case PLUGIN_NEW_PASS:
++      case PLUGIN_CPP_TOKEN:
++      case PLUGIN_C_TOKEN:
+         {
+           /* Iterate over every callback registered with this event and
+              call it.  */
+Index: gcc/gcc/doc/plugins.texi
+===================================================================
+--- gcc.orig/gcc/doc/plugins.texi
++++ gcc/gcc/doc/plugins.texi
+@@ -176,6 +176,8 @@ enum plugin_event
+   PLUGIN_EARLY_GIMPLE_PASSES_END,
+   /* Called when a pass is first instantiated.  */
+   PLUGIN_NEW_PASS,
++  PLUGIN_CPP_TOKEN,                /* Called when GCC gets a cpp token. */
++  PLUGIN_C_TOKEN,                  /* Called when GCC gets a c token. */
+ 
+   PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
+                                    array.  */
+Index: gcc/gcc/c-common.h
+===================================================================
+--- gcc.orig/gcc/c-common.h
++++ gcc/gcc/c-common.h
+@@ -25,6 +25,7 @@ along with GCC; see the file COPYING3.  
+ #include "splay-tree.h"
+ #include "cpplib.h"
+ #include "ggc.h"
++#include "c-pragma.h"
+ 
+ /* Usage of TREE_LANG_FLAG_?:
+    0: TREE_NEGATED_INT (in INTEGER_CST).
+@@ -1183,4 +1184,43 @@ extern void record_types_used_by_current
+ #define GCC_DIAG_STYLE __gcc_cdiag__
+ #endif
+ 
++/* The following local token type is used.  */
++
++/* A keyword.  */
++#define CPP_KEYWORD ((enum cpp_ttype) (N_TTYPES + 1))
++
++/* More information about the type of a CPP_NAME token.  */
++typedef enum c_id_kind {
++  /* An ordinary identifier.  */
++  C_ID_ID,
++  /* An identifier declared as a typedef name.  */
++  C_ID_TYPENAME,
++  /* An identifier declared as an Objective-C class name.  */
++  C_ID_CLASSNAME,
++  /* An address space identifier.  */
++  C_ID_ADDRSPACE,
++  /* Not an identifier.  */
++  C_ID_NONE
++} c_id_kind;
++
++/* A single C token after string literal concatenation and conversion
++   of preprocessing tokens to tokens.  */
++typedef struct GTY (()) c_token {
++  /* The kind of token.  */
++  ENUM_BITFIELD (cpp_ttype) type : 8;
++  /* If this token is a CPP_NAME, this value indicates whether also
++     declared as some kind of type.  Otherwise, it is C_ID_NONE.  */
++  ENUM_BITFIELD (c_id_kind) id_kind : 8;
++  /* If this token is a keyword, this value indicates which keyword.
++     Otherwise, this value is RID_MAX.  */
++  ENUM_BITFIELD (rid) keyword : 8;
++  /* If this token is a CPP_PRAGMA, this indicates the pragma that
++     was seen.  Otherwise it is PRAGMA_NONE.  */
++  ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
++  /* The value associated with this token, if any.  */
++  tree value;
++  /* The location at which this token was found.  */
++  location_t location;
++} c_token;
++
+ #endif /* ! GCC_C_COMMON_H */

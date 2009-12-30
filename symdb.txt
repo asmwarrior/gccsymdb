@@ -1,0 +1,346 @@
+// vim: foldmarker=<([{,}])> foldmethod=marker
+                         Gcc symbol database (symdb)
+                             zyf.zeroos@gmail.com
+							  November 24, 2009
+
+// Purpose <([{
+The file is used to record the idea I got -- collecting gcc internal data (cpp
+token, tree node etc.) and outputting them into database for further usage.
+Have you knowed cscope? but I think it's more appropriate that symbols should
+be collected by gcc itself. Later sections can be cataloged into two genres
+
+For user (here user is IDE-like develop tools, not final user)
+1) Need to know what symdb can do, goto section <Feature List>.
+2) Goto section <User Manual> for how to using symdb.
+3) <Canconical Code Style>.
+For gcc internal developer
+1) Section <New Token Type in CPP Stage> defines some new token types used in
+my symdb.
+2) Sections <Gcc Cancel Macro Expansion> and <Macro-polymorph> describe
+special cases in symdb.
+3) Section <Patch Overview> makes focus on which files and how are changed in
+the patch.
+4) Current patch is still uncompleted, see <Known issue with the patch>.
+5) Goto <Apply the Patch> for applying the patch.
+
+Before we go, let's clear up some terminology or abbreviation used in my symdb
+1) cpp abbreviates from c preprocess (follows gcc intern convention); however,
+cxx represents c++.
+2) In gcc/c-ppoutput.c, gcc defines compilation unit as compiling a file, new
+noun `compilation session' means compiling all files of a project.
+3) system macro: macro defined in system header file.
+// }])>
+
+For User
+// Feature List <([{
+Until now, symdb has accompolished the features by collecting cpp token
+1) view how a macro is expanded in your IDE. (MAIN FEATURE).
+2) tag all code if they are skipped by ifdef conditional macro.
+Later features can also be gotten by other softwares
+1) syntax highlighted.
+2) header file dependence.
+3) match tags `([{< /*' and `)]}> */' without being interfered by comment.
+
+Unfortunately, later features aren't implemented in current patch, I need
+negotiate something with developers before continue -- outputting c/c++ syntax
+tree node, see <Known issue with the patch>.
+1) output project statistics such as how many variables/branches are added
+during a patch/version, it's better than how many lines are ...
+2) context tips, order by local definition, class, namespace.
+3) code refactor.
+4) jump to the definition of an identifier, which functions are calling the
+function etc.
+5) lexeme query (where a struct are used -- global/local definition), virtual
+interface query etc.
+In fact, apparently, it's more accurately to achieve 1-4 by symdb contrast to
+cscope and with gcc syntax tree, you can develop all ideas you can.
+// }])>
+
+// User Manual <([{
+To toggle symdb support, follow the steps below (sqlite 3.6.10)
+1) open init.sql, goto <initialization sample>, change if necessary.
+1) Using `sqlite3 -init init.sql gccsym.db' to initialize gcc symbol database.
+2) You can control the behaviour of symdb by ProjectOverview table further.
+3) Append new flag `-fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db
+' to gcc options, then compile.
+4) To use database, it's recommended to query data from view defined in
+database firstly.
+// }])>
+
+// Macro-polymorph <([{
+In the section, I will show some buggy examples about macro which make a cpp
+token sometimes like a COMMON_TOKEN, sometimes like a EXPANDED_TOKEN
+(polymorph?).
+
+In fact, programmer should totally avoid the examples because they not only
+make code confused but also cost me a lots of time to compare macro results --
+an expensive operation.
+
+// undef <([{
+    ----------- a.h -----------
+    x = y;
+
+    ----------- a.c -----------
+    int x, y, z;
+    void foo(void)
+    {
+        #include "a.h"
+        #define y 22
+        #include "a.h"
+        #undef y
+        #define y y + z
+        #include "a.h"
+        #undef y
+    }
+
+Question: when you open a.h only, what results are linked to `y' token,
+sometime it's a COMMON_TOKEN too.
+// }])>
+
+// ifdef <([{
+    ----------- a.h -----------
+    #ifdef FOO
+    #define x 32;
+    #else
+    #define x 12;
+    #endif
+
+    ----------- a.c -----------
+    #define FOO
+    #include "a.h"
+
+    ----------- b.c -----------
+    #include "a.h"
+
+Question: when you open a.h only, which macro should be selected? In fact,
+during a compilation session, ONLY a ifdef branch should be available!
+// }])>
+// }])>
+
+// Canconical Code Style <([{
+Read section <Macro-polymorph> before go, the section records some style which
+can make symdb more straightforwordly and simply
+1) Make only a branch available in `#ifdef' clause.
+2) Not use `#define'/`#undef' clauses to control the behaviour of a header.
+3) When a c tree has been established, not using `#include', see later code
+sample.
+4) Not use `#undef' to redefine macro.
+1 and 2 keep chToken -- MacroDescription -- MacroToken one-to-one mapping.
+3 and 4 makes chFile including c trees, not reversely, and all identifier
+nodes of c tree has a unique cpp token mapping.
+
+// Include File in C Tree <([{
+Consider the case
+
+    namespace x
+    {
+    #include "a.h"
+    ...
+    }
+
+In the sample, gcc has set up some intern c syntax data when encounter `a.h'
+clause, you will miss gcc pch feature (see more from its manual). And it also
+makes symdb complexer -- a tree can be consist of multiple files, so how about
+if one of the files is updated? and a token can also be linked to multiple
+trees. Alternatively, you should use `#include' clause in file scope.
+// }])>
+// }])>
+
+For Developer
+// New symdb Token Type <([{
+In this section, I'll define some new token type which is available everywhere
+in my symdb, but before we go, we need go further into gcc internal on how gcc
+compiles a file, consider the case
+
+    ----------- a.c -----------
+    #define FOO \
+        = 2;
+    // a line comment only.
+    ...
+    int x FOO;
+
+Now do `gcc -save-temps --verbose a.c', you will get all intermediate files
+and gcc call hierarchy -- main, preprocess, compiling, assemble and linkage
+stage. Comparing a.c and a.i, we find some tokens are erased, some are
+substituted, so my new token types are
+1) EXPANDED_TOKEN -- is macro-expanded or substituted (`FOO' of the last
+line).
+2) ERASED_TOKEN -- erased during cpp stage (The first 3 lines).
+3) COMMON_TOKEN -- exist in both .c and .i.
+4) MACRO_TOKEN -- macro result (sample is simply `=' and `2').
+
+And
+*) Original .c/.h include the first 3 types -- also called chToken.
+*) .i includes the last 2 types -- called iToken.
+*) To function-like macro, such as, `x', `(', `a', `)', all four tokens are
+EXPANDED_TOKEN, and the first is also called leader EXPANDED_TOKEN.
+
+To support final user to view the result of macro expansion with/without
+system macro
+SYSHDR_FLAG -- linked to EXPANDED_TOKEN, MACRO_TOKEN or both.
+When user uses system-macro directly, he will get
+1) SYSHDR_FLAG | EXPANDED_TOKEN.
+2) SYSHDR_FLAG | MACRO_TOKEN.
+When he uses user-macro which includs system macro
+1) EXPANDED_TOKEN.
+2) MACRO_TOKEN (comes from user-macro expansion).
+3) SYSHDR_FLAG | EXPANDED_TOKEN | MACRO_TOKEN.
+4) SYSHDR_FLAG | MACRO_TOKEN.
+5) MACRO_TOKEN.
+You should know how to show macro result without system macro expansion.
+
+By the way, preprocess stage also combines all soft carriage line -- tailing
+with `\' into a line, so the first 2 lines are combined, and `\' itself isn't
+cpp token.
+// }])>
+
+// GCC Cancel Macro Expansion <([{
+Consider the case
+
+    #define x(a, b) a + b
+    ...
+    int x = 3;
+
+in fact, gcc doesn't complain the last line. After prefetch two tokens `x' and
+`=', gcc realizes that `x' shouldn't be treated as macro, so it cancels macro
+expansion and return `x' and `=' as COMMON_TOKEN not EXPANDED_TOKEN. However
+it makes my code flow become more complex, I place a bool `cancel' in
+symdb.c:struct mo to solve it.
+// }])>
+
+// Patch Overview <([{
+// symdb_enhance_libcpp <([{
+Several new callbacks are appended into libpp/include/cpplib.h:cpp_callbacks:
+void (*macro_start_expand) (...);
+void (*macro_end_arg) (..., bool cancel);
+void (*macro_intern_expand) (...);
+void (*macro_end_expand) (...);
+are used to collect EXPANDED_TOKEN and MACRO_TOKEN.
+Note:
+1) macro_end_arg is callbacked when a function-like macro ends to collect
+its arguments.
+2) See section <GCC Cancel Macro Expansion> for more about parameter cancel of
+macro_end_arg.
+3) macro_intern_expand is used to fetch temporary tokens during macro
+expansion, I use it to sign the system macro tokens when a user-macro includes
+system-macro.
+4) macro_{start, end}_expand can be called several times if the macro includes
+more macroes in its define clause.
+
+void (*comment) (...);
+void (*start_directive) (...);
+void (*end_directive) (...);
+void (*directive_token) (...);
+are used to collect ERASED_TOKEN. Meanwhile, directive_token is much powerful
+than cpp_get_token since cpp_get_token doesn't output ERASED_TOKEN.
+
+Most code in libcpp directory is surrounding how to implement the callbacks.
+
+A new field -- file_offset is added into cpplib.h:cpp_token, the field is used
+to sign every chToken exclusively, it's just like libcpp::line_map, but
+simpler, and to collect the value more accurately in the case
+--| ^#define X \    $
+--| ^	a + b$
+Pay attention that there're some spaces left after `\' token, so I change
+libcpp/{internal.h, lex.c} to deal with the case.
+// }])>
+
+// symdb_enhance_plugin <([{
+Two events are added into current plugin architecture
+PLUGIN_CPP_TOKEN
+PLUGIN_C_TOKEN
+// }])>
+
+// symdb.c for plugin symdb.so <([{
+The plugin supports an argument only, -fplugin-arg-symdb-dbfile=./gccsym.db.
+More control options are placed into table ProjectOverview of database.
+
+cpp_token is collected by where they are called
+1) COMMON_TOKEN is collected in symdb_cpp_token.
+2) comment of ERASED_TOKEN is collected in cb_comment.
+3) `#' and directive tokens of ERASED_TOKEN is collected by
+cpp_callbacks::{start, end}_directive.
+4) EXPANDED_TOKEN/MACRO_TOKEN tokens are collected and flushed together by CPP
+>> mo. However, token collection is complex, EXPANDED_TOKEN (including macro
+parameters) are collected by cb_directive_token, MACRO_TOKEN from
+symdb_cpp_token, when MACRO_TOKEN includes system macro, I also output the
+EXPANDED_TOKEN of the system macro in cb_intern_expand.
+
+Due to current plugin architecture, I delay all CPP_NAME token insertion in
+CPP >> c_tok to collect their keyword type.
+
+From patch inner aspect, cpp_token is imported from
+1) class mo::mo_append_token.
+2) class cpp::output_chtoken.
+// }])>
+// }])>
+
+// DB Format (init.sql) <([{
+Opening init.sql, tables have been organized well by vim fold feature. I also
+create some views for accessing data more conveniently.
+1) It's possible in chToken table that there're at most two rows with the same
+chFileID and fileOffset, their flags are EXPANDED_TOKEN and COMMON_TOKEN
+respectively, see section <Macro-polymorph> for why.
+2) The flag fields of chToken/MacroToken and iToken are divided into
+  a) the lowest 8 bits are cpp type. libcpp/include/cpplib.h:enum cpp_ttype.
+  b) the middle 8 bits are c/c++ reserved keyword type. gcc/c-common.h:enum
+  rid.
+  c) the highest 8 bits, see section <New symdb Token Type>.
+3) Generally, iToken table includes COMMON_TOKEN and MACRO_TOKEN only,
+however, if debug support is turned on, all four token types and token content
+also are stored into the table.
+
+About macro polymorph
+There're at most two records whose flags are COMMON_TOKEN/EXPANDED_TOKEN
+linking to a token which shows macro polymorph, and multiple records in table
+`MacroDescription'.
+// }])>
+
+// Misc. <([{
+Due to lack of `serial' data type, I use sqlite inner table `sqlite_sequence'
+in symdb.c.
+
+By default, gcc initializes cpp_callbacks::file_change, to listen the
+callback in my patch, I replace the value in symdb_token_init and call the
+original value in cb_file_change.
+// }])>
+
+// Apply the Patch <([{
+To apply the patch:
+1) Use sqlite 3.6.10.
+2) Create a directory or symbolic link -- `~/patch', and untar my attachment
+into it.
+3) Apply symdb_enhance_libcpp and symdb_enhance_plugin patches in patches/
+before continue.
+4) Compile gcc stage1 only.
+5) Open Makefile, substitute make-variables in it, then `make' to compile
+symdb plugin.
+6) Open init.sql, substitute section <initialization sample> with appropriate
+value, then `make db'.
+7) To run testcases in test/, substitute `function test_it' of `test/run.sh',
+`cd test && ./run.sh'.
+// }])>
+
+// Known issue with the patch  <([{
+To implement the c/c++ syntax tree feature of <Feature List>, I need help from
+gcc developers, consider the case
+    int g;
+	void foo(void)
+    {
+		g = 1;
+        ...
+    }
+when gcc starts to parse c tree, it sets up a VAR_DECL tree for `g', later
+when gcc encounters `g' again, it links MODIFY_EXPR tree directly to former
+VAR_DECL tree, however it will lost the position information of the second
+`g'. To make my patch continue, an intermediary tree must be inserted
+Before) MODIFY_EXPR -- VAR_DECL.
+After) MODIFY_EXPR -- PaddingTree (cppTokenID or something-like) -- VAR_DECL.
+Further description about this, every CPP_NAME token can be converted into two
+c token types -- c-keyword/user-identifier. An intermediary tree must be
+placed before every user-identifier (including label) tree (*_DECL), and its
+content should be initialized by my patch, see gcc/c-parser.c:c_lex_one_token.
+I will add a field -- treeID for all *_DECL tree, and add a new PLUGIN_C_TREE
+event to c_parser_translation_unit to capture every new ctree and output it in
+symdb.c.
+// }])>
