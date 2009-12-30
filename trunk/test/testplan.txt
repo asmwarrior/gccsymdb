@@ -1,0 +1,40 @@
+// vim: foldmarker=<([{,}])> foldmethod=marker
+// macro <([{
+basic tests for macro.
+test purpose
+	1) Note, there're some spaces following `\', you will see gcc warn too,
+	it's used to test whether cpp_token::file_offset is collected correctly.
+	2) macro cancel.
+	3) all four symdb_token types.
+	4) built-in macro.
+// }])>
+
+// sysmacro <([{
+test purpose
+	1) user macro includes system macro.
+	2) using `(i + i)' as parameter to call macro.
+	3) in b.h, macro x includes macro w, both of them are system macro,
+	however SYSHDR_FLAG flag should be applied once.
+	4) system macro cancel.
+// }])>
+
+// include <([{
+cpp token shows polymorph behaiviour.
+test purpose
+	1) The first token are expanded twice by different macro clauses, its
+	expanded_counts are different.
+// }])>
+
+// advmacro <([{
+`info cpp >> macro section' for more.
+test purpose
+	1) prescan macro parameter.
+	2) macro stringification and macro concatenation.
+	3) variadic macro.
+// }])>
+
+Note: above testcases only can be assured to pass cpp stage, not compile stage.
+
+// tree/tree.c <([{
+The case is used to output c tree, not implemented.
+// }])>
