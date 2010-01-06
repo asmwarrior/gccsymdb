@@ -1411,7 +1411,7 @@ symdb_tini (void *gcc_data, void *user_data)
 static void
 symdb_cpp_token (void *gcc_data, void *user_data)
 {
-  cpp_token_p token = *((cpp_token_p *) gcc_data);
+  cpp_token_p token = (cpp_token_p) gcc_data;
   if (token->type == CPP_EOF || token->type == CPP_PADDING)
     return;
   if (cpp.i_type == COMMON_TOKEN)

@@ -18,7 +18,7 @@ format:
 
 clean:
 	rm -f *.ii *.i *.s *.o a.out *.h.gch *.so
-	(cd test && ./auto.sh clean)
+	(cd test && ./run.sh clean)
 	:> log.gdb
 	rm -f *.db *.db-journal
 	(cd ${GCC_ROOT} && quilt refresh)

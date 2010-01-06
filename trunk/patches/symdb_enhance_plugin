@@ -27,11 +27,17 @@ Index: gcc/gcc/c-lex.c
  
  /* We may keep statistics about how long which files took to compile.  */
  static int header_time, body_time;
-@@ -304,6 +305,7 @@ c_lex_with_flags (tree *value, location_
+@@ -300,10 +301,13 @@ c_lex_with_flags (tree *value, location_
+   const cpp_token *tok;
+   enum cpp_ttype type;
+   unsigned char add_flags = 0;
++  void *plugin_tok;
+ 
    timevar_push (TV_CPP);
   retry:
    tok = cpp_get_token_with_location (parse_in, loc);
-+  invoke_plugin_callbacks (PLUGIN_CPP_TOKEN, &tok);
++  plugin_tok = &tok;
++  invoke_plugin_callbacks (PLUGIN_CPP_TOKEN, *(cpp_token **) plugin_tok);
    type = tok->type;
  
   retry_after_at:
