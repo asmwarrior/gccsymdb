@@ -788,7 +788,7 @@ mo_append_token (cpp_token_p token, int trace)
       p = VEC_safe_push (db_token, heap, mo.macro_tokens, NULL);
       break;
     default:
-      gcc_assert (false);
+      gcc_unreachable ();
     }
   p->value = dyn_string_new (32);
   p->cpp_type = trace | token->type;
