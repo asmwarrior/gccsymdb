@@ -34,7 +34,8 @@ noun `compilation session' means compiling all files of a project.
 For User
 // Feature List <([{
 Until now, symdb has accompolished the features by collecting cpp token
-1) view how a macro is expanded in your IDE. (MAIN FEATURE).
+1) view how a macro is expanded in your IDE with/without system macro. (MAIN
+FEATURE).
 2) tag all code if they are skipped by ifdef conditional macro.
 Later features can also be gotten by other softwares
 1) syntax highlighted.

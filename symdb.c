@@ -11,7 +11,7 @@
 #include "coretypes.h"
 #include "tm.h"
 #include "tree.h"
-#include "c-common.h"
+#include "c-family/c-common.h"
 #include "input.h"
 #include "dyn-string.h"
 #include <sys/stat.h>

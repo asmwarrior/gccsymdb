@@ -1,8 +1,8 @@
-Index: gcc/libcpp/include/cpplib.h
+Index: gcc-4.6.2/libcpp/include/cpplib.h
 ===================================================================
---- gcc.orig/libcpp/include/cpplib.h
-+++ gcc/libcpp/include/cpplib.h
-@@ -207,10 +207,10 @@ struct GTY(()) cpp_identifier {
+--- gcc-4.6.2.orig/libcpp/include/cpplib.h	2010-09-30 02:18:38.000000000 +0800
++++ gcc-4.6.2/libcpp/include/cpplib.h	2012-01-08 16:36:52.000000000 +0800
+@@ -208,10 +208,10 @@
         node;
  };
  
@@ -15,7 +15,7 @@ Index: gcc/libcpp/include/cpplib.h
    ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
    unsigned short flags;		/* flags - see above */
  
-@@ -495,6 +495,29 @@ struct cpp_callbacks
+@@ -493,6 +493,29 @@
       be expanded.  */
    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
  
@@ -44,12 +44,12 @@ Index: gcc/libcpp/include/cpplib.h
 +
    /* Called to emit a diagnostic.  This callback receives the
       translated message.  */
-   bool (*error) (cpp_reader *, int, source_location, unsigned int,
-Index: gcc/libcpp/lex.c
+   bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
+Index: gcc-4.6.2/libcpp/lex.c
 ===================================================================
---- gcc.orig/libcpp/lex.c
-+++ gcc/libcpp/lex.c
-@@ -51,7 +51,8 @@ static const struct token_spelling token
+--- gcc-4.6.2.orig/libcpp/lex.c	2011-05-23 03:14:50.000000000 +0800
++++ gcc-4.6.2/libcpp/lex.c	2012-01-08 17:00:35.000000000 +0800
+@@ -51,7 +51,8 @@
  #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
  #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
  
@@ -59,7 +59,7 @@ Index: gcc/libcpp/lex.c
  static int skip_line_comment (cpp_reader *);
  static void skip_whitespace (cpp_reader *, cppchar_t);
  static void lex_string (cpp_reader *, cpp_token *, const uchar *);
-@@ -82,7 +83,8 @@ cpp_ideq (const cpp_token *token, const 
+@@ -82,7 +83,8 @@
  /* Record a note TYPE at byte POS into the current cleaned logical
     line.  */
  static void
@@ -69,7 +69,7 @@ Index: gcc/libcpp/lex.c
  {
    if (buffer->notes_used == buffer->notes_cap)
      {
-@@ -93,6 +95,7 @@ add_line_note (cpp_buffer *buffer, const
+@@ -93,6 +95,7 @@
  
    buffer->notes[buffer->notes_used].pos = pos;
    buffer->notes[buffer->notes_used].type = type;
@@ -77,25 +77,25 @@ Index: gcc/libcpp/lex.c
    buffer->notes_used++;
  }
  
-@@ -150,7 +153,7 @@ _cpp_clean_line (cpp_reader *pfile)
- 
- 	      /* Have an escaped newline; process it and proceed to
- 		 the slow path.  */
--	      add_line_note (buffer, p - 1, p != d ? ' ' : '\\');
-+	      add_line_note (buffer, p - 1, p != d ? ' ' : '\\', s + 1);
- 	      d = p - 2;
- 	      buffer->next_line = p - 1;
- 	      break;
-@@ -163,7 +166,7 @@ _cpp_clean_line (cpp_reader *pfile)
- 	    {
- 	      /* Have a trigraph.  We may or may not have to convert
- 		 it.  Add a line note regardless, for -Wtrigraphs.  */
--	      add_line_note (buffer, s, s[2]);
-+	      add_line_note (buffer, s, s[2], 0);
- 	      if (CPP_OPTION (pfile, trigraphs))
+@@ -678,7 +681,7 @@
  		{
- 		  /* We do, and that means we have to switch to the
-@@ -197,14 +200,14 @@ _cpp_clean_line (cpp_reader *pfile)
+ 		  /* Have a trigraph.  We may or may not have to convert
+ 		     it.  Add a line note regardless, for -Wtrigraphs.  */
+-		  add_line_note (buffer, s, s[2]);
++		  add_line_note (buffer, s, s[2], 0);
+ 		  if (CPP_OPTION (pfile, trigraphs))
+ 		    {
+ 		      /* We do, and that means we have to switch to the
+@@ -723,7 +726,7 @@
+ 
+       /* Have an escaped newline; process it and proceed to
+ 	 the slow path.  */
+-      add_line_note (buffer, p - 1, p != d ? ' ' : '\\');
++      add_line_note (buffer, p - 1, p != d ? ' ' : '\\', s + 1);
+       d = p - 2;
+       buffer->next_line = p - 1;
+ 
+@@ -748,14 +751,14 @@
  	      if (p == buffer->next_line || p[-1] != '\\')
  		break;
  
@@ -112,7 +112,7 @@ Index: gcc/libcpp/lex.c
  	      if (CPP_OPTION (pfile, trigraphs))
  		{
  		  *d = _cpp_trigraph_map[s[2]];
-@@ -228,7 +231,7 @@ _cpp_clean_line (cpp_reader *pfile)
+@@ -778,7 +781,7 @@
   done:
    *d = '\n';
    /* A sentinel note that should never be processed.  */
@@ -121,7 +121,7 @@ Index: gcc/libcpp/lex.c
    buffer->next_line = s + 1;
  }
  
-@@ -1173,6 +1176,8 @@ _cpp_lex_token (cpp_reader *pfile)
+@@ -1835,6 +1838,8 @@
  		 handles the directive as normal.  */
  	      && pfile->state.parsing_args != 1)
  	    {
@@ -130,7 +130,7 @@ Index: gcc/libcpp/lex.c
  	      if (_cpp_handle_directive (pfile, result->flags & PREV_WHITE))
  		{
  		  if (pfile->directive_result.type == CPP_PADDING)
-@@ -1319,6 +1324,17 @@ _cpp_lex_direct (cpp_reader *pfile)
+@@ -1981,6 +1986,17 @@
        _cpp_process_line_notes (pfile, false);
        result->src_loc = pfile->line_table->highest_line;
      }
@@ -148,7 +148,7 @@ Index: gcc/libcpp/lex.c
    c = *buffer->cur++;
  
    LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
-@@ -1444,12 +1460,18 @@ _cpp_lex_direct (cpp_reader *pfile)
+@@ -2106,12 +2122,18 @@
  	  break;
  	}
  
@@ -167,7 +167,7 @@ Index: gcc/libcpp/lex.c
        /* Save the comment as a token in its own right.  */
        save_comment (pfile, result, comment_start, c);
        break;
-@@ -1628,6 +1650,8 @@ _cpp_lex_direct (cpp_reader *pfile)
+@@ -2290,6 +2312,8 @@
        break;
      }
  
@@ -176,11 +176,11 @@ Index: gcc/libcpp/lex.c
    return result;
  }
  
-Index: gcc/libcpp/macro.c
+Index: gcc-4.6.2/libcpp/macro.c
 ===================================================================
---- gcc.orig/libcpp/macro.c
-+++ gcc/libcpp/macro.c
-@@ -848,10 +848,13 @@ enter_macro_context (cpp_reader *pfile, 
+--- gcc-4.6.2.orig/libcpp/macro.c	2010-09-29 22:49:14.000000000 +0800
++++ gcc-4.6.2/libcpp/macro.c	2012-01-08 16:36:52.000000000 +0800
+@@ -850,10 +850,13 @@
        if (macro->fun_like)
  	{
  	  _cpp_buff *buff;
@@ -194,7 +194,7 @@ Index: gcc/libcpp/macro.c
  	  buff = funlike_invocation_p (pfile, node, &pragma_buff);
  	  pfile->state.parsing_args = 0;
  	  pfile->keep_tokens--;
-@@ -867,9 +870,25 @@ enter_macro_context (cpp_reader *pfile, 
+@@ -869,9 +872,25 @@
  	      if (pragma_buff)
  		_cpp_release_buff (pfile, pragma_buff);
  
@@ -220,7 +220,7 @@ Index: gcc/libcpp/macro.c
  	  if (macro->paramc > 0)
  	    replace_args (pfile, node, macro, (macro_arg *) buff->base);
  	  _cpp_release_buff (pfile, buff);
-@@ -1254,6 +1273,8 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1256,6 +1275,8 @@
        else
  	{
  	  _cpp_pop_context (pfile);
@@ -229,7 +229,7 @@ Index: gcc/libcpp/macro.c
  	  if (pfile->state.in_directive)
  	    continue;
  	  return &pfile->avoid_paste;
-@@ -1310,7 +1331,14 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1312,7 +1333,14 @@
  		}
  	    }
  	  else
@@ -245,11 +245,11 @@ Index: gcc/libcpp/macro.c
  	  if (ret)
   	    {
  	      if (pfile->state.in_directive || ret == 2)
-Index: gcc/libcpp/directives.c
+Index: gcc-4.6.2/libcpp/directives.c
 ===================================================================
---- gcc.orig/libcpp/directives.c
-+++ gcc/libcpp/directives.c
-@@ -490,6 +490,8 @@ _cpp_handle_directive (cpp_reader *pfile
+--- gcc-4.6.2.orig/libcpp/directives.c	2011-04-29 06:39:59.000000000 +0800
++++ gcc-4.6.2/libcpp/directives.c	2012-01-08 16:36:52.000000000 +0800
+@@ -492,6 +492,8 @@
    else if (skip == 0)
      _cpp_backup_tokens (pfile, 1);
  
@@ -258,13 +258,13 @@ Index: gcc/libcpp/directives.c
    end_directive (pfile, skip);
    if (was_parsing_args && !pfile->state.in_deferred_pragma)
      {
-Index: gcc/libcpp/internal.h
+Index: gcc-4.6.2/libcpp/internal.h
 ===================================================================
---- gcc.orig/libcpp/internal.h
-+++ gcc/libcpp/internal.h
-@@ -242,6 +242,11 @@ struct _cpp_line_note
-      trigraphs, '\\' an escaped newline, ' ' an escaped newline with
-      intervening space, and anything else is invalid.  */
+--- gcc-4.6.2.orig/libcpp/internal.h	2010-09-30 02:18:38.000000000 +0800
++++ gcc-4.6.2/libcpp/internal.h	2012-01-08 16:36:52.000000000 +0800
+@@ -243,6 +243,11 @@
+      intervening space, 0 represents a note that has already been handled,
+      and anything else is invalid.  */
    unsigned int type;
 +
 +  /* file offset adjustment is recorded by add_line_note to adjust
