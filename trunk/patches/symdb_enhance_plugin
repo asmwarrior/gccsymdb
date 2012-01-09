@@ -1,8 +1,8 @@
-Index: gcc/gcc/plugin.def
+Index: gcc-4.6.2/gcc/plugin.def
 ===================================================================
---- gcc.orig/gcc/plugin.def
-+++ gcc/gcc/plugin.def
-@@ -89,6 +89,12 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
+--- gcc-4.6.2.orig/gcc/plugin.def	2012-01-08 17:21:36.000000000 +0800
++++ gcc-4.6.2/gcc/plugin.def	2012-01-08 17:25:06.000000000 +0800
+@@ -89,6 +89,12 @@
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
  
@@ -15,11 +15,11 @@ Index: gcc/gcc/plugin.def
  /* After the hard-coded events above, plugins can dynamically allocate events
     at run time.
     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
-Index: gcc/gcc/c-lex.c
+Index: gcc-4.6.2/gcc/c-family/c-lex.c
 ===================================================================
---- gcc.orig/gcc/c-lex.c
-+++ gcc/gcc/c-lex.c
-@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  
+--- gcc-4.6.2.orig/gcc/c-family/c-lex.c	2011-01-27 04:06:57.000000000 +0800
++++ gcc-4.6.2/gcc/c-family/c-lex.c	2012-01-08 17:25:06.000000000 +0800
+@@ -36,6 +36,7 @@
  #include "splay-tree.h"
  #include "debug.h"
  #include "target.h"
@@ -27,7 +27,7 @@ Index: gcc/gcc/c-lex.c
  
  /* We may keep statistics about how long which files took to compile.  */
  static int header_time, body_time;
-@@ -300,10 +301,13 @@ c_lex_with_flags (tree *value, location_
+@@ -296,10 +297,13 @@
    const cpp_token *tok;
    enum cpp_ttype type;
    unsigned char add_flags = 0;
@@ -41,11 +41,11 @@ Index: gcc/gcc/c-lex.c
    type = tok->type;
  
   retry_after_at:
-Index: gcc/gcc/c-parser.c
+Index: gcc-4.6.2/gcc/c-parser.c
 ===================================================================
---- gcc.orig/gcc/c-parser.c
-+++ gcc/gcc/c-parser.c
-@@ -123,45 +123,6 @@ c_parse_init (void)
+--- gcc-4.6.2.orig/gcc/c-parser.c	2012-01-08 17:21:36.000000000 +0800
++++ gcc-4.6.2/gcc/c-parser.c	2012-01-08 17:29:49.000000000 +0800
+@@ -121,45 +121,6 @@
     C++).  It would then be possible to share more of the C and C++
     lexer code, if desired.  */
  
@@ -82,16 +82,16 @@ Index: gcc/gcc/c-parser.c
 -  /* If this token is a CPP_PRAGMA, this indicates the pragma that
 -     was seen.  Otherwise it is PRAGMA_NONE.  */
 -  ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
--  /* The value associated with this token, if any.  */
--  tree value;
 -  /* The location at which this token was found.  */
 -  location_t location;
+-  /* The value associated with this token, if any.  */
+-  tree value;
 -} c_token;
 -
  /* A parser structure recording information about the state and
     context of parsing.  Includes lexer information with up to two
     tokens of look-ahead; more are not needed for C.  */
-@@ -310,6 +271,7 @@ c_lex_one_token (c_parser *parser, c_tok
+@@ -386,6 +347,7 @@
        break;
      }
    timevar_pop (TV_LEX);
@@ -99,11 +99,11 @@ Index: gcc/gcc/c-parser.c
  }
  
  /* Return a pointer to the next token from PARSER, reading it in if
-Index: gcc/gcc/plugin.c
+Index: gcc-4.6.2/gcc/plugin.c
 ===================================================================
---- gcc.orig/gcc/plugin.c
-+++ gcc/gcc/plugin.c
-@@ -418,6 +418,8 @@ register_callback (const char *plugin_na
+--- gcc-4.6.2.orig/gcc/plugin.c	2012-01-08 17:21:36.000000000 +0800
++++ gcc-4.6.2/gcc/plugin.c	2012-01-08 17:25:06.000000000 +0800
+@@ -438,6 +438,8 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -112,7 +112,7 @@ Index: gcc/gcc/plugin.c
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -499,6 +501,8 @@ invoke_plugin_callbacks (int event, void
+@@ -514,6 +516,8 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -121,11 +121,11 @@ Index: gcc/gcc/plugin.c
          {
            /* Iterate over every callback registered with this event and
               call it.  */
-Index: gcc/gcc/doc/plugins.texi
+Index: gcc-4.6.2/gcc/doc/plugins.texi
 ===================================================================
---- gcc.orig/gcc/doc/plugins.texi
-+++ gcc/gcc/doc/plugins.texi
-@@ -176,6 +176,8 @@ enum plugin_event
+--- gcc-4.6.2.orig/gcc/doc/plugins.texi	2012-01-08 17:21:36.000000000 +0800
++++ gcc-4.6.2/gcc/doc/plugins.texi	2012-01-08 17:25:06.000000000 +0800
+@@ -183,6 +183,8 @@
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
    PLUGIN_NEW_PASS,
@@ -134,21 +134,21 @@ Index: gcc/gcc/doc/plugins.texi
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
-Index: gcc/gcc/c-common.h
+Index: gcc-4.6.2/gcc/c-family/c-common.h
 ===================================================================
---- gcc.orig/gcc/c-common.h
-+++ gcc/gcc/c-common.h
-@@ -25,6 +25,7 @@ along with GCC; see the file COPYING3.  
+--- gcc-4.6.2.orig/gcc/c-family/c-common.h	2011-02-04 01:16:17.000000000 +0800
++++ gcc-4.6.2/gcc/c-family/c-common.h	2012-01-08 17:25:06.000000000 +0800
+@@ -25,6 +25,7 @@
  #include "splay-tree.h"
  #include "cpplib.h"
  #include "ggc.h"
 +#include "c-pragma.h"
  
- /* Usage of TREE_LANG_FLAG_?:
-    0: TREE_NEGATED_INT (in INTEGER_CST).
-@@ -1183,4 +1184,43 @@ extern void record_types_used_by_current
- #define GCC_DIAG_STYLE __gcc_cdiag__
- #endif
+ /* In order for the format checking to accept the C frontend
+    diagnostic framework extensions, you must include this file before
+@@ -1007,4 +1008,43 @@
+ extern tree c_omp_remap_decl (tree, bool);
+ extern void record_types_used_by_current_var_decl (tree);
  
 +/* The following local token type is used.  */
 +

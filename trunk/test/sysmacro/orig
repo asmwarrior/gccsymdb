@@ -1,3 +1,4 @@
+PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE ProjectOverview (
 	dbVersion text,
@@ -13,16 +14,8 @@ CREATE TABLE chFile (
 	mtime bigint,
 	sysHeader boolean
 );
-INSERT INTO "chFile" VALUES(1,'/home/zyf/patch/test/sysmacro/a.c',1258698973,'false');
-INSERT INTO "chFile" VALUES(2,'/home/zyf/patch/test//usr/include/b.h',1257303918,'true');
-DELETE FROM sqlite_sequence;
-INSERT INTO "sqlite_sequence" VALUES('iToken',167);
-INSERT INTO "sqlite_sequence" VALUES('chFile',2);
-INSERT INTO "sqlite_sequence" VALUES('iFile',1);
-INSERT INTO "sqlite_sequence" VALUES('FileDependence',2);
-INSERT INTO "sqlite_sequence" VALUES('chToken',120);
-INSERT INTO "sqlite_sequence" VALUES('MacroDescription',2);
-INSERT INTO "sqlite_sequence" VALUES('MacroToken',62);
+INSERT INTO "chFile" VALUES(1,'/home/zyf/src/symdb.gcc/test/sysmacro/a.c',1319683105,'false');
+INSERT INTO "chFile" VALUES(2,'/home/zyf/src/symdb.gcc//test//usr/include/b.h',1319683105,'true');
 CREATE TABLE iFile (
 	id integer primary key autoincrement,
 	mainFileID integer, -- chFile::id.
@@ -133,17 +126,17 @@ INSERT INTO "chToken" VALUES(83,33554485,1,1,93);
 INSERT INTO "chToken" VALUES(84,33554432,1,1,95);
 INSERT INTO "chToken" VALUES(85,33554487,1,1,97);
 INSERT INTO "chToken" VALUES(86,33554453,1,1,98);
-INSERT INTO "chToken" VALUES(87,50338869,3,1,101);
+INSERT INTO "chToken" VALUES(87,50340917,3,1,101);
 INSERT INTO "chToken" VALUES(88,50331701,1,1,105);
 INSERT INTO "chToken" VALUES(89,50331667,1,1,106);
 INSERT INTO "chToken" VALUES(90,50331701,1,1,108);
 INSERT INTO "chToken" VALUES(91,50331667,1,1,109);
 INSERT INTO "chToken" VALUES(92,50331701,1,1,111);
 INSERT INTO "chToken" VALUES(93,50331691,1,1,112);
-INSERT INTO "chToken" VALUES(94,50339893,4,1,115);
+INSERT INTO "chToken" VALUES(94,50341941,4,1,115);
 INSERT INTO "chToken" VALUES(95,50331701,3,1,120);
 INSERT INTO "chToken" VALUES(96,50331668,1,1,123);
-INSERT INTO "chToken" VALUES(97,50339893,4,1,124);
+INSERT INTO "chToken" VALUES(97,50341941,4,1,124);
 INSERT INTO "chToken" VALUES(98,50331669,1,1,128);
 INSERT INTO "chToken" VALUES(99,50331689,1,1,130);
 INSERT INTO "chToken" VALUES(100,50331701,1,1,133);
@@ -337,17 +330,17 @@ INSERT INTO "iToken" VALUES(84,33554485,1,'x',83);
 INSERT INTO "iToken" VALUES(85,33554432,1,'=',84);
 INSERT INTO "iToken" VALUES(86,33554487,1,'2',85);
 INSERT INTO "iToken" VALUES(87,33554453,1,')',86);
-INSERT INTO "iToken" VALUES(88,50338869,3,'int',87);
+INSERT INTO "iToken" VALUES(88,50340917,3,'int',87);
 INSERT INTO "iToken" VALUES(89,50331701,1,'i',88);
 INSERT INTO "iToken" VALUES(90,50331667,1,',',89);
 INSERT INTO "iToken" VALUES(91,50331701,1,'j',90);
 INSERT INTO "iToken" VALUES(92,50331667,1,',',91);
 INSERT INTO "iToken" VALUES(93,50331701,1,'k',92);
 INSERT INTO "iToken" VALUES(94,50331691,1,';',93);
-INSERT INTO "iToken" VALUES(95,50339893,4,'void',94);
+INSERT INTO "iToken" VALUES(95,50341941,4,'void',94);
 INSERT INTO "iToken" VALUES(96,50331701,3,'foo',95);
 INSERT INTO "iToken" VALUES(97,50331668,1,'(',96);
-INSERT INTO "iToken" VALUES(98,50339893,4,'void',97);
+INSERT INTO "iToken" VALUES(98,50341941,4,'void',97);
 INSERT INTO "iToken" VALUES(99,50331669,1,')',98);
 INSERT INTO "iToken" VALUES(100,50331689,1,'{',99);
 INSERT INTO "iToken" VALUES(101,50331701,1,'k',100);
@@ -446,6 +439,14 @@ CREATE TABLE TemporaryTree (
 	value blob,
 	parentTreeID integer
 );
+DELETE FROM sqlite_sequence;
+INSERT INTO "sqlite_sequence" VALUES('iToken',167);
+INSERT INTO "sqlite_sequence" VALUES('chFile',2);
+INSERT INTO "sqlite_sequence" VALUES('iFile',1);
+INSERT INTO "sqlite_sequence" VALUES('FileDependence',2);
+INSERT INTO "sqlite_sequence" VALUES('chToken',120);
+INSERT INTO "sqlite_sequence" VALUES('MacroDescription',2);
+INSERT INTO "sqlite_sequence" VALUES('MacroToken',62);
 CREATE VIEW CompileUnit as
 select
 	b.fullName as cFile, b.mtime as cTime, c.fullName as hFile, c.mtime as hTime
