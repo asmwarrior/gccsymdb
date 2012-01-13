@@ -7,7 +7,7 @@ CREATE TABLE ProjectOverview (
 	-- gcc internal debug flag.
 	debug boolean
 );
-INSERT INTO "ProjectOverview" VALUES('1.0','4.3','/home/zyf/patch','true');
+INSERT INTO "ProjectOverview" VALUES('1.0','4.6.2','/home/zyf/src/symdb.gcc','true');
 CREATE TABLE chFile (
 	id integer primary key autoincrement,
 	fullName text, -- absolute path.
