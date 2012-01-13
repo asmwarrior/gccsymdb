@@ -308,11 +308,11 @@ original value in cb_file_change.
 
 // Apply the Patch <([{
 To apply the patch:
-1) Use sqlite 3.6.10.
+1) Use sqlite 3.7.9.
 2) Create a directory or symbolic link -- `~/patch', and untar my attachment
 into it.
-3) Apply symdb_enhance_libcpp and symdb_enhance_plugin patches in patches/
-before continue.
+3) Apply symdb_enhance_libcpp and symdb_enhance_plugin patches in gcc.patches/
+to gcc-4.6.2 before continue.
 4) Compile gcc stage1 only.
 5) Open Makefile, substitute make-variables in it, then `make' to compile
 symdb plugin.

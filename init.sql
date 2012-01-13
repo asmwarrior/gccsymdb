@@ -172,7 +172,7 @@ create table TemporaryTree (
 -- }])>
 
 -- initialization sample <([{
-insert into ProjectOverview values ("1.0", "4.6.2", "/home/zyf/patch", "true");
+insert into ProjectOverview values ("1.0", "4.6.2", "/home/zyf/src/symdb.gcc", "true");
 insert into iToken (id) values (NULL); -- to make inner table `sqlite_sequence' including a record for iToken.
 -- }])>
 
