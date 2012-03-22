@@ -583,8 +583,9 @@ insert_into_chtoken (int flag, int length, int file_id, int file_offset)
  * 1) mo_append_token.
  * 2) mo_cancel.
  * 3) mo_init/mo_tini.
+ * 4) mo_maybe_cascaded.
  * 1 and 2 are called by <cpp_callbacks>.
- * data member mo.sys_macro can be visited by class cpp_callbacks directly.
+ * data member mo.cascaded_func/sys_macro can be visited by class cpp_callbacks directly.
  */
 /* db_token is used to cache EXPANDED_TOKEN and MACRO_TOKEN tokens coming from
  * cpp_get_token for class mo. */
@@ -602,6 +603,7 @@ static struct
   VEC (db_token, heap) * macro_tokens;
   long long int leader_expanded_token;
   bool cancel;
+  bool cascaded_func;
   int sys_macro;
 
   struct sqlite3_stmt *select_macrodesc;
@@ -616,6 +618,7 @@ mo_init (void)
   mo.macro_tokens = VEC_alloc (db_token, heap, 10);
   mo.leader_expanded_token = 0;
   mo.cancel = false;
+  mo.cascaded_func = false;
   mo.sys_macro = 0;
 
   db_error (sqlite3_prepare_v2 (db,
@@ -730,11 +733,14 @@ mo_revalidate (void)
 {
   int ix;
   db_token *p;
+  for (ix = 0; VEC_iterate (db_token, mo.expanded_tokens, ix, p); ix++)
+    dyn_string_delete (p->value);
   VEC_truncate (db_token, mo.expanded_tokens, 0);
   for (ix = 0; VEC_iterate (db_token, mo.macro_tokens, ix, p); ix++)
     dyn_string_delete (p->value);
   VEC_truncate (db_token, mo.macro_tokens, 0);
   mo.cancel = false;
+  mo.cascaded_func = false;
 }
 
 static int
@@ -805,6 +811,15 @@ mo_cancel (void)
     VEC_pop (db_token, mo.macro_tokens);
   else
     mo.cancel = true;
+}
+
+static inline bool
+mo_maybe_cascaded (void)
+{
+  if (VEC_length (db_token, mo.expanded_tokens) == 1
+      && VEC_length (db_token, mo.macro_tokens) == 0)
+    return true;
+  return false;
 }
 
 /* }])> */
@@ -1200,6 +1215,7 @@ cb_macro_start (cpp_reader * pfile, const cpp_token * token,
 	}
       /* The token is leader EXPANDED_TOKEN. */
       mo_append_token (token, cpp.directive_type);
+    reinit:
       if (fun_like)
 	{
 	  /* Macro expansion occurs in normal chToken stream. To capture all
@@ -1233,6 +1249,12 @@ cb_macro_start (cpp_reader * pfile, const cpp_token * token,
 		cpp.i_type = MACRO_TOKEN | SYSHDR_FLAG;
 	    }
 	  mo.sys_macro++;
+	}
+      if (mo_maybe_cascaded ())
+	{
+	  if (fun_like)
+	    mo.cascaded_func = true;
+	  goto reinit;
 	}
     }
 }
@@ -1289,6 +1311,12 @@ cb_macro_end (cpp_reader * pfile)
   if (pfile->context->prev == NULL)
     {
       /* We've left macro expansion totally. */
+      if (mo.cascaded_func)
+	{
+	  /* See document, we must cancel calling mo_flush. */
+	  mo.cascaded_func = false;
+	  return;
+	}
       mo_flush ();
       cb->macro_end_arg = NULL;
       cb->directive_token = NULL;

@@ -209,6 +209,25 @@ it makes my code flow become more complex, I place a bool `cancel' in
 symdb.c:struct mo to solve it.
 // }])>
 
+// Gcc Cascaded Macro Expansion <([{
+Consider the case
+
+    #define Y(x) x
+    #define X Y
+    ...
+    X(1);
+
+The flow is X is substituted to Y, then Y is reinterpreted as macro of the
+first line, then continue expansion. However the intern seems different,
+generally, cb_macro_start/cb_macro_end are called pairly every macro expansion,
+however in the case, the flow is cb_macro_start(X), cb_macro_start(Y),
+cb_macro_end(X), cb_macro_end(Y) and if the final cascaded token Y is
+function-like then the `pfile->context->prev == NULL' of both cb_macro_end(X)
+and cb_macro_end(Y). It makes my code a little complexer. I place a field
+mo.cascaded_func to solve it. By the way, it's obvious X can't be
+function-like macro.
+// }])>
+
 // Patch Overview <([{
 // symdb_enhance_libcpp <([{
 Several new callbacks are appended into libpp/include/cpplib.h:cpp_callbacks:

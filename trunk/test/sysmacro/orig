@@ -4,7 +4,7 @@ CREATE TABLE ProjectOverview (
 	dbVersion text,
 	gccVersion text,
 	projectRootPath text,
-	-- gcc internal debug flag.
+	-- plugin control parameters.
 	debug boolean
 );
 INSERT INTO "ProjectOverview" VALUES('1.0','4.6.2','/home/zyf/src/symdb.gcc','true');

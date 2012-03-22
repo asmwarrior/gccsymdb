@@ -7,6 +7,7 @@ elif [ "$1" = "diff" ]; then
 	diff macro/orig macro/new
 	diff sysmacro/orig sysmacro/new
 	diff advmacro/orig advmacro/new
+	diff cascaded/orig cascaded/new
 	exit 0;
 fi
 
@@ -31,3 +32,4 @@ test_it macro
 test_it advmacro
 test_it sysmacro
 test_it include
+test_it cascaded

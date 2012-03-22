@@ -33,6 +33,10 @@ test purpose
 	3) variadic macro.
 // }])>
 
+// cascaded <([{
+Gcc cascaded case.
+// }])>
+
 Note: above testcases only can be assured to pass cpp stage, not compile stage.
 
 // tree/tree.c <([{

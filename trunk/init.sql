@@ -3,9 +3,17 @@ create table ProjectOverview (
 	dbVersion text,
 	gccVersion text,
 	projectRootPath text,
-	-- gcc internal debug flag.
+	-- plugin control parameters.
 	debug boolean
 );
+
+-- Useful sql clauses set <([{
+-- create table Directive (
+-- 	id integer primary key autoincrement,
+-- 	fileOffset integer
+-- );
+
+-- }])>
 
 -- File <([{
 /**
