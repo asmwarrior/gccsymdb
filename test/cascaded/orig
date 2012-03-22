@@ -1,0 +1,209 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE ProjectOverview (
+	dbVersion text,
+	gccVersion text,
+	projectRootPath text,
+	-- plugin control parameters.
+	debug boolean
+);
+INSERT INTO "ProjectOverview" VALUES('1.0','4.6.2','/home/zyf/src/symdb.gcc','true');
+CREATE TABLE chFile (
+	id integer primary key autoincrement,
+	fullName text, -- absolute path.
+	mtime bigint,
+	sysHeader boolean
+);
+INSERT INTO "chFile" VALUES(1,'/home/zyf/src/symdb.gcc/test/cascaded/a.c',1332037970,'false');
+CREATE TABLE iFile (
+	id integer primary key autoincrement,
+	mainFileID integer, -- chFile::id.
+	hasError integer, -- 0: no error; 1: c preprocess stage error; 2: c/c++ error.
+	iTokenStartID bigint,
+	iTokenEndID bigint,
+	syntaxTreeStartID bigint,
+	syntaxTreeEndID bigint
+);
+INSERT INTO "iFile" VALUES(1,1,0,2,0,0,0);
+CREATE TABLE FileDependence (
+	id integer primary key autoincrement,
+	iFileID integer,
+	hID integer
+);
+INSERT INTO "FileDependence" VALUES(1,1,1);
+CREATE TABLE chToken (
+	id integer primary key autoincrement,
+	flag integer, -- see symdb document
+	length integer,
+	chFileID integer,
+	fileOffset integer
+);
+INSERT INTO "chToken" VALUES(1,33554469,1,1,0);
+INSERT INTO "chToken" VALUES(2,33554485,6,1,1);
+INSERT INTO "chToken" VALUES(3,33554485,1,1,8);
+INSERT INTO "chToken" VALUES(4,33554469,1,1,10);
+INSERT INTO "chToken" VALUES(5,33554485,6,1,11);
+INSERT INTO "chToken" VALUES(6,33554485,1,1,18);
+INSERT INTO "chToken" VALUES(7,33554485,1,1,20);
+INSERT INTO "chToken" VALUES(8,33554469,1,1,22);
+INSERT INTO "chToken" VALUES(9,33554485,6,1,23);
+INSERT INTO "chToken" VALUES(10,33554485,1,1,30);
+INSERT INTO "chToken" VALUES(11,33554485,1,1,32);
+INSERT INTO "chToken" VALUES(12,16777269,1,1,35);
+INSERT INTO "chToken" VALUES(13,50331691,1,1,36);
+INSERT INTO "chToken" VALUES(14,33554469,1,1,39);
+INSERT INTO "chToken" VALUES(15,33554485,6,1,40);
+INSERT INTO "chToken" VALUES(16,33554485,1,1,47);
+INSERT INTO "chToken" VALUES(17,33554452,1,1,48);
+INSERT INTO "chToken" VALUES(18,33554485,1,1,49);
+INSERT INTO "chToken" VALUES(19,33554453,1,1,50);
+INSERT INTO "chToken" VALUES(20,33554485,1,1,52);
+INSERT INTO "chToken" VALUES(21,33554469,1,1,54);
+INSERT INTO "chToken" VALUES(22,33554485,6,1,55);
+INSERT INTO "chToken" VALUES(23,33554485,1,1,62);
+INSERT INTO "chToken" VALUES(24,33554485,1,1,64);
+INSERT INTO "chToken" VALUES(25,33554469,1,1,66);
+INSERT INTO "chToken" VALUES(26,33554485,6,1,67);
+INSERT INTO "chToken" VALUES(27,33554485,1,1,74);
+INSERT INTO "chToken" VALUES(28,33554485,1,1,76);
+INSERT INTO "chToken" VALUES(29,16777269,1,1,79);
+INSERT INTO "chToken" VALUES(30,16777236,1,1,80);
+INSERT INTO "chToken" VALUES(31,16777271,1,1,81);
+INSERT INTO "chToken" VALUES(32,16777237,1,1,82);
+INSERT INTO "chToken" VALUES(33,50331691,1,1,83);
+CREATE TABLE MacroDescription (
+	id integer primary key autoincrement,
+	leaderchTokenID bigint,
+	expandedCount integer,
+	macroCount integer,
+	macroStartID bigint
+);
+INSERT INTO "MacroDescription" VALUES(1,12,1,0,1);
+INSERT INTO "MacroDescription" VALUES(2,29,4,1,1);
+CREATE TABLE MacroToken (
+	id integer primary key autoincrement,
+	flag, -- see symdb document
+	value text
+);
+INSERT INTO "MacroToken" VALUES(1,67108919,'1');
+CREATE TABLE iToken (
+	id integer primary key autoincrement,
+	flag integer, -- see symdb document
+	length integer,
+	value text,
+	relattedTokenID bigint -- chToken::id or MacroToken::id.
+);
+INSERT INTO "iToken" VALUES(1,NULL,NULL,NULL,NULL);
+INSERT INTO "iToken" VALUES(2,33554469,1,'#',1);
+INSERT INTO "iToken" VALUES(3,33554485,6,'define',2);
+INSERT INTO "iToken" VALUES(4,33554485,1,'Z',3);
+INSERT INTO "iToken" VALUES(5,33554469,1,'#',4);
+INSERT INTO "iToken" VALUES(6,33554485,6,'define',5);
+INSERT INTO "iToken" VALUES(7,33554485,1,'Y',6);
+INSERT INTO "iToken" VALUES(8,33554485,1,'Z',7);
+INSERT INTO "iToken" VALUES(9,33554469,1,'#',8);
+INSERT INTO "iToken" VALUES(10,33554485,6,'define',9);
+INSERT INTO "iToken" VALUES(11,33554485,1,'X',10);
+INSERT INTO "iToken" VALUES(12,33554485,1,'Y',11);
+INSERT INTO "iToken" VALUES(13,16777269,1,'X',12);
+INSERT INTO "iToken" VALUES(14,50331691,1,';',13);
+INSERT INTO "iToken" VALUES(15,33554469,1,'#',14);
+INSERT INTO "iToken" VALUES(16,33554485,6,'define',15);
+INSERT INTO "iToken" VALUES(17,33554485,1,'z',16);
+INSERT INTO "iToken" VALUES(18,33554452,1,'(',17);
+INSERT INTO "iToken" VALUES(19,33554485,1,'a',18);
+INSERT INTO "iToken" VALUES(20,33554453,1,')',19);
+INSERT INTO "iToken" VALUES(21,33554485,1,'a',20);
+INSERT INTO "iToken" VALUES(22,33554469,1,'#',21);
+INSERT INTO "iToken" VALUES(23,33554485,6,'define',22);
+INSERT INTO "iToken" VALUES(24,33554485,1,'y',23);
+INSERT INTO "iToken" VALUES(25,33554485,1,'z',24);
+INSERT INTO "iToken" VALUES(26,33554469,1,'#',25);
+INSERT INTO "iToken" VALUES(27,33554485,6,'define',26);
+INSERT INTO "iToken" VALUES(28,33554485,1,'x',27);
+INSERT INTO "iToken" VALUES(29,33554485,1,'y',28);
+INSERT INTO "iToken" VALUES(30,16777269,1,'x',29);
+INSERT INTO "iToken" VALUES(31,16777236,1,'(',30);
+INSERT INTO "iToken" VALUES(32,16777271,1,'1',31);
+INSERT INTO "iToken" VALUES(33,16777237,1,')',32);
+INSERT INTO "iToken" VALUES(34,67108919,1,'1',1);
+INSERT INTO "iToken" VALUES(35,50331691,1,';',33);
+CREATE TABLE SyntaxTree (
+	id integer primary key autoincrement,
+	code integer,
+	-- To compound-statement tree, store start/end treeID.
+	-- To VAR_DECL, FUNCTION_DECL etc. value = SemanticTree::id.
+	value blob,
+	parentTreeID integer -- store relative treeID of compound-statement head.
+);
+CREATE TABLE CompountStatment (
+	id integer primary key autoincrement,
+	code integer,
+	value integer,
+	value2 integer,
+	parentTreeID integer
+);
+CREATE TABLE SemanticTree (
+	id integer primary key autoincrement,
+	syntaxTreeID integer,
+	scopeCPPTokenID integer,
+	declCPPTokenID integer,
+	tokenID integer -- chToken::id or MacroToken::id.
+);
+CREATE TABLE TemporaryTree (
+	id integer primary key autoincrement,
+	memAddr integer,
+	code integer,
+	value blob,
+	parentTreeID integer
+);
+DELETE FROM sqlite_sequence;
+INSERT INTO "sqlite_sequence" VALUES('iToken',35);
+INSERT INTO "sqlite_sequence" VALUES('chFile',1);
+INSERT INTO "sqlite_sequence" VALUES('iFile',1);
+INSERT INTO "sqlite_sequence" VALUES('FileDependence',1);
+INSERT INTO "sqlite_sequence" VALUES('chToken',33);
+INSERT INTO "sqlite_sequence" VALUES('MacroDescription',2);
+INSERT INTO "sqlite_sequence" VALUES('MacroToken',1);
+CREATE VIEW CompileUnit as
+select
+	b.fullName as cFile, b.mtime as cTime, c.fullName as hFile, c.mtime as hTime
+from
+	iFile as a, chFile as b, chFile as c, FileDependence as d
+where
+	a.mainFileID = b.id and a.id = d.iFileID and c.id = d.hID;
+CREATE INDEX FileName on chFile (fullName);
+CREATE VIEW FileToken as
+select * from
+(
+select
+	f.id as fileID, fileOffset, t.id as tokenID, flag, length
+from
+	chFile f, chToken as t
+where
+	f.id = t.chFileID
+order by
+	fileID, fileOffset
+) as x
+left outer join
+(
+select
+	a.id as tokenID, b.id as macroDescriptionID
+from
+	chToken as a, MacroDescription as b
+where
+	a.id = b.leaderchTokenID
+) as y
+on
+	x.tokenID = y.tokenID;
+CREATE INDEX indexTokenFromFile on chToken (chFileID, fileOffset asc);
+CREATE INDEX indexMacroWeld on MacroDescription (leaderchTokenID);
+CREATE TRIGGER deleteTokenFromFile delete on chToken
+begin
+	delete from MacroDescription where leaderchTokenID = old.id;
+end;
+CREATE TRIGGER deleteTokenFromFile2 delete on MacroDescription
+begin
+	delete from MacroToken where id >= old.macroStartID and id < old.macroStartID + old.macroCount;
+end;
+COMMIT;
