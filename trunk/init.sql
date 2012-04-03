@@ -4,7 +4,8 @@ create table ProjectOverview (
 	gccVersion text,
 	projectRootPath text,
 	-- plugin control parameters.
-	debug boolean
+	-- heavy cpp comparsion: to .h, in most cases, the same leaderchToken will make the same macro tokens, however to maintain database consistent, I must execute heavy macro comparsion between table data and the result of current macro expansion.
+	debug boolean -- true: output iTokens every compilation unit (Causion: space explosion) and execute heavy cpp comparison.
 );
 
 -- Useful sql clauses set <([{

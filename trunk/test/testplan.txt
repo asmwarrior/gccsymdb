@@ -15,7 +15,8 @@ test purpose
 	2) using `(i + i)' as parameter to call macro.
 	3) in b.h, macro x includes macro w, both of them are system macro,
 	however SYSHDR_FLAG flag should be applied once.
-	4) system macro cancel.
+	4) system macro cancel in user macro intern.
+	5) user triggers system cancel directly.
 // }])>
 
 // include <([{
