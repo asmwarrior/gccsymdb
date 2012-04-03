@@ -14,7 +14,7 @@ CREATE TABLE chFile (
 	mtime bigint,
 	sysHeader boolean
 );
-INSERT INTO "chFile" VALUES(1,'/home/zyf/src/symdb.gcc/test/sysmacro/a.c',1319683105,'false');
+INSERT INTO "chFile" VALUES(1,'/home/zyf/src/symdb.gcc/test/sysmacro/a.c',1332554547,'false');
 INSERT INTO "chFile" VALUES(2,'/home/zyf/src/symdb.gcc//test//usr/include/b.h',1319683105,'true');
 CREATE TABLE iFile (
 	id integer primary key autoincrement,
@@ -159,7 +159,11 @@ INSERT INTO "chToken" VALUES(116,285212692,1,1,158);
 INSERT INTO "chToken" VALUES(117,285212725,1,1,159);
 INSERT INTO "chToken" VALUES(118,285212693,1,1,160);
 INSERT INTO "chToken" VALUES(119,50331691,1,1,161);
-INSERT INTO "chToken" VALUES(120,50331690,1,1,163);
+INSERT INTO "chToken" VALUES(120,50331701,1,1,164);
+INSERT INTO "chToken" VALUES(121,50331648,1,1,166);
+INSERT INTO "chToken" VALUES(122,50331703,1,1,168);
+INSERT INTO "chToken" VALUES(123,50331691,1,1,169);
+INSERT INTO "chToken" VALUES(124,50331690,1,1,171);
 CREATE TABLE MacroDescription (
 	id integer primary key autoincrement,
 	leaderchTokenID bigint,
@@ -409,7 +413,11 @@ INSERT INTO "iToken" VALUES(163,67108870,1,'*',60);
 INSERT INTO "iToken" VALUES(164,67108917,1,'k',61);
 INSERT INTO "iToken" VALUES(165,67108904,1,']',62);
 INSERT INTO "iToken" VALUES(166,50331691,1,';',119);
-INSERT INTO "iToken" VALUES(167,50331690,1,'}',120);
+INSERT INTO "iToken" VALUES(167,50331701,1,'y',120);
+INSERT INTO "iToken" VALUES(168,50331648,1,'=',121);
+INSERT INTO "iToken" VALUES(169,50331703,1,'2',122);
+INSERT INTO "iToken" VALUES(170,50331691,1,';',123);
+INSERT INTO "iToken" VALUES(171,50331690,1,'}',124);
 CREATE TABLE SyntaxTree (
 	id integer primary key autoincrement,
 	code integer,
@@ -440,11 +448,11 @@ CREATE TABLE TemporaryTree (
 	parentTreeID integer
 );
 DELETE FROM sqlite_sequence;
-INSERT INTO "sqlite_sequence" VALUES('iToken',167);
+INSERT INTO "sqlite_sequence" VALUES('iToken',171);
 INSERT INTO "sqlite_sequence" VALUES('chFile',2);
 INSERT INTO "sqlite_sequence" VALUES('iFile',1);
 INSERT INTO "sqlite_sequence" VALUES('FileDependence',2);
-INSERT INTO "sqlite_sequence" VALUES('chToken',120);
+INSERT INTO "sqlite_sequence" VALUES('chToken',124);
 INSERT INTO "sqlite_sequence" VALUES('MacroDescription',2);
 INSERT INTO "sqlite_sequence" VALUES('MacroToken',62);
 CREATE VIEW CompileUnit as

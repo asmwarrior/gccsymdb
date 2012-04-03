@@ -33,7 +33,7 @@ static struct
   dyn_string_t cwd;		/* current work path */
 
   bool debug;
-  bool compare_cpp_token;
+  bool heavy_cpp_comparison;
   bool compare_tree;
 
   /* created by main stage, filled by cpp stage, used by c stage. */
@@ -494,30 +494,22 @@ cpp_db_tini (void)
 static void
 insert_into_itoken (int flag, int length, const char *value, long long int id)
 {
+	if (!control_panel.debug)
+		return;
   switch (flag & SYMDB_TYPE_MASK)
     {
     case ERASED_TOKEN:
     case EXPANDED_TOKEN:
     case EXPANDED_TOKEN | SYSHDR_FLAG:
-      if (!control_panel.debug)
-	return;
       break;
     case MACRO_TOKEN | EXPANDED_TOKEN | SYSHDR_FLAG:
       return;
     }
   flag &= ~SYSHDR_FLAG;
   db_error (sqlite3_bind_int (cpp_db.insert_itoken, 1, flag));
-  if (control_panel.debug)
-    {
       db_error (sqlite3_bind_int (cpp_db.insert_itoken, 2, length));
       db_error (sqlite3_bind_text (cpp_db.insert_itoken, 3,
 				   value, length, SQLITE_STATIC));
-    }
-  else
-    {
-      db_error (sqlite3_bind_null (cpp_db.insert_itoken, 2));
-      db_error (sqlite3_bind_null (cpp_db.insert_itoken, 3));
-    }
   db_error (sqlite3_bind_int64 (cpp_db.insert_itoken, 4, id));
   execute_sql (cpp_db.insert_itoken);
 }
@@ -664,7 +656,7 @@ mo_compare (void)
 	  || mo_count != sqlite3_column_int (mo.select_macrodesc, 1))
 	continue;
       tmp = sqlite3_column_int64 (mo.select_macrodesc, 2);
-      if (!control_panel.compare_cpp_token)
+      if (!control_panel.heavy_cpp_comparison)
 	{
 	  mo_start = tmp;
 	  break;
@@ -807,7 +799,7 @@ mo_append_token (cpp_token_p token, int trace)
 static inline void
 mo_cancel (void)
 {
-  if (mo.sys_macro)
+  if (VEC_length (db_token, mo.expanded_tokens) > 2)
     VEC_pop (db_token, mo.macro_tokens);
   else
     mo.cancel = true;
@@ -1242,6 +1234,8 @@ cb_macro_start (cpp_reader * pfile, const cpp_token * token,
 	      mo_append_token (token, cpp.i_type);
 	      if (fun_like)
 		{
+		  /* The case is user macro including system macro, using
+		   * cb_intern_expand to collect them. */
 		  cb->macro_intern_expand = cb_intern_expand;
 		  cb->macro_end_arg = cb_end_arg;
 		}
@@ -1389,7 +1383,7 @@ symdb_init (const char *db_file)
 			       "select debug, projectRootPath from ProjectOverview;",
 			       &result, &nrow, &ncolumn, &error_msg));
   control_panel.debug = strcmp (result[2], "true") == 0 ? true : false;
-  control_panel.compare_cpp_token = control_panel.debug;
+  control_panel.heavy_cpp_comparison = control_panel.debug;
   dyn_string_copy_cstr (control_panel.prj_dir, result[3]);
   sqlite3_free_table (result);
 }

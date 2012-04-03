@@ -10,4 +10,5 @@ void foo(void)
 {
 	k = n((i + i), j);
 	k = y(k);
+	y = 2;
 }

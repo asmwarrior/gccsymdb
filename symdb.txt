@@ -141,7 +141,7 @@ Consider the case
 
 In the sample, gcc has set up some intern c syntax data when encounter `a.h'
 clause, you will miss gcc pch feature (see more from its manual). And it also
-makes symdb complexer -- a tree can be consist of multiple files, so how about
+makes symdb complex -- a tree can be consist of multiple files, so how about
 if one of the files is updated? and a token can also be linked to multiple
 trees. Alternatively, you should use `#include' clause in file scope.
 // }])>
@@ -223,7 +223,7 @@ generally, cb_macro_start/cb_macro_end are called pairly every macro expansion,
 however in the case, the flow is cb_macro_start(X), cb_macro_start(Y),
 cb_macro_end(X), cb_macro_end(Y) and if the final cascaded token Y is
 function-like then the `pfile->context->prev == NULL' of both cb_macro_end(X)
-and cb_macro_end(Y). It makes my code a little complexer. I place a field
+and cb_macro_end(Y). It makes my code a little complex. I place a field
 mo.cascaded_func to solve it. By the way, it's obvious X can't be
 function-like macro.
 // }])>

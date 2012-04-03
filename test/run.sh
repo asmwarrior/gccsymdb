@@ -3,10 +3,15 @@ if [ "$1" = "clean" ]; then
 	find . -name 'new' -exec rm -f {} \;
 	exit 0;
 elif [ "$1" = "diff" ]; then
+	echo "Case include"
 	diff include/orig include/new
+	echo "Case macro"
 	diff macro/orig macro/new
+	echo "Case sysmacro"
 	diff sysmacro/orig sysmacro/new
+	echo "Case advmacro"
 	diff advmacro/orig advmacro/new
+	echo "Case cascaded"
 	diff cascaded/orig cascaded/new
 	exit 0;
 fi
