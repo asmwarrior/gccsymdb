@@ -1,16 +1,35 @@
 /* vim: foldmarker=<([{,}])> foldmethod=marker
- * symdb plugin -- collecting gcc intern data (cpp tokens and c/c++ tree) and
- * output them to sqlite3-format database file. See more from symdb.txt. To
- * read more efficiently, open it with vim7.
- * Copyright (C) zyf.zeroos@gmail.com.
+ * Copyright (C) zyf.zeroos@gmail.com, released on GPL license. Go first from
+ * symdb.txt.
+ *
+ * Code convention:
+ *   1) If there's a class in a fold, the fold is treated as a class-fold, and
+ *   all funtions starting with `classname_' are treated as public.
+ *   2) All functions of common fold are public.
+ *
+ * Guide: Definition extraction process is surrounding with cache, macro and
+ * plugin callbacks.
+ *   1) Class cache which caches all itokens by cpp callback. It also caches
+ *   all macroes by let vector -- cache.auxiliary, so I use them to reversely
+ *   relocate itoken to chtoken (cache_itoken_to_chtoken).
+ *   2) Macro fold is collecting macro data from gcc and output them to
+ *   cache.auxiliary, it's also in the charge of macro-cache, macro-cascaded
+ *   and macro-cascaded-cache, see symdb.txt.
+ *   2) Fold plugin-callbacks: I list all possible syntax cases before every
+ *   function, here I only deal with the correct syntax result from gcc, the
+ *   flow is reversely get user-definition from cache.itokens, the only
+ *   exception is symdb_extern_var which first strips paren pair forwardly then
+ *   reversely get user-definition.
  * */
 
+/* #include... <([{ */
 #include "gcc-plugin.h"
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
 #include "tm.h"
 #include "tree.h"
+#include "gcc/c-tree.h"
 #include "c-family/c-common.h"
 #include "input.h"
 #include "dyn-string.h"
@@ -19,27 +38,23 @@
 #include "libcpp/include/cpplib.h"
 #include "libcpp/internal.h"
 #include <sqlite3.h>
+/* }])> */
 
 /* common <([{ */
-/* Code and data here is used by both cpp stage and c stage. */
+typedef const struct cpp_token *cpp_token_p;
+typedef const struct c_token *c_token_p;
 static dyn_string_t gbuf;
-
+char only_param_dbfile[256];
 static struct sqlite3 *db;
 
 static struct
 {
   dyn_string_t db_file;
   dyn_string_t prj_dir;
-  dyn_string_t cwd;		/* current work path */
+  dyn_string_t cwd;
 
-  bool debug;
-  bool heavy_cpp_comparison;
-  bool compare_tree;
-
-  /* created by main stage, filled by cpp stage, used by c stage. */
-  dyn_string_t compiled_file;
-  int ifile_id;
-  int chfile_id;
+  bool cpp_error;
+  bool c_error;
 } control_panel;
 
 static void
@@ -47,6 +62,7 @@ db_error (int cond)
 {
   if (cond)
     {
+      sqlite3_exec (db, "end transaction;", NULL, 0, NULL);
       sqlite3_close (db);
       fprintf (stderr, "SQLite3 error: %s\n", sqlite3_errmsg (db));
       exit (1);
@@ -68,75 +84,72 @@ execute_sql (struct sqlite3_stmt *stmt)
 }
 
 static void
-file_full_path (const char *file, dyn_string_t result)
-{
-  dyn_string_copy_cstr (result, "");
-  if (file[0] != DIR_SEPARATOR)	/* relative path */
-    {
-      dyn_string_append (result, control_panel.cwd);
-      dyn_string_append_char (result, DIR_SEPARATOR);
-    }
-  dyn_string_append_cstr (result, file);
-}
-
-static void
-append_file (dyn_string_t chfile_id, dyn_string_t ifile_id)
+control_panel_init (void)
 {
   int nrow, ncolumn;
   char *error_msg, **result;
-  struct stat filestat;
-  char mtime[21];
 
-  dyn_string_copy_cstr (gbuf, "select id from chFile where fullName = '");
-  dyn_string_append (gbuf, control_panel.compiled_file);
-  dyn_string_append_cstr (gbuf, "';");
-  db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &result,
-			       &nrow, &ncolumn, &error_msg));
-  if (nrow == 0)
-    {
-      sqlite3_free_table (result);
-      dyn_string_copy_cstr (gbuf, "insert into chFile values (NULL, '");
-      dyn_string_append (gbuf, control_panel.compiled_file);
-      dyn_string_append_cstr (gbuf, "', ");
-      if (stat (dyn_string_buf (control_panel.compiled_file), &filestat) != 0)
-	{
-	  perror (NULL);
-	  sqlite3_close (db);
-	  exit (1);
-	}
-      sprintf (mtime, "%lld", (long long) filestat.st_mtime);
-      dyn_string_append_cstr (gbuf, mtime);
-      dyn_string_append_cstr (gbuf, ", 'false');");
-      db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
-      dyn_string_copy_cstr (gbuf, "select max(id) from chFile;");
-      db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &result,
-				   &nrow, &ncolumn, &error_msg));
-    }
-  dyn_string_copy_cstr (chfile_id, result[1]);
-  sqlite3_free_table (result);
-
-  dyn_string_copy_cstr (gbuf, "select id from iFile where mainFileID = ");
-  dyn_string_append (gbuf, chfile_id);
-  dyn_string_append_cstr (gbuf, ";");
-  db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &result,
-			       &nrow, &ncolumn, &error_msg));
-  if (nrow == 0)
-    {
-      sqlite3_free_table (result);
-      dyn_string_copy_cstr (gbuf, "insert into iFile values (NULL, ");
-      dyn_string_append (gbuf, chfile_id);
-      dyn_string_append_cstr (gbuf, ", 0, 0, 0, 0, 0);");
-      db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
-      dyn_string_copy_cstr (gbuf, "select max(id) from iFile;");
-      db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &result,
-				   &nrow, &ncolumn, &error_msg));
-    }
-  dyn_string_copy_cstr (ifile_id, result[1]);
+  control_panel.db_file = dyn_string_new (256);
+  control_panel.prj_dir = dyn_string_new (256);
+  control_panel.cwd = dyn_string_new (256);
+  dyn_string_copy_cstr (control_panel.cwd, getpwd ());
+  dyn_string_copy_cstr (control_panel.db_file, only_param_dbfile);
+  /* initilize control data. */
+  db_error (sqlite3_get_table (db,
+			       "select projectRootPath from ProjectOverview;",
+			       &result, &nrow, &ncolumn, &error_msg));
+  dyn_string_copy_cstr (control_panel.prj_dir, result[0]);
   sqlite3_free_table (result);
 }
 
-static time_t
-file_mtime (const char *file)
+static void
+control_panel_tini (void)
+{
+  dyn_string_delete (control_panel.cwd);
+  dyn_string_delete (control_panel.prj_dir);
+  dyn_string_delete (control_panel.db_file);
+}
+
+static void
+print_token (cpp_token_p token, dyn_string_t str)
+{
+  unsigned char *head, *tail;
+  dyn_string_resize (str, cpp_token_len (token));
+  head = (unsigned char *) dyn_string_buf (str);
+  tail = cpp_spell_token (parse_in, token, head, false);
+  *tail = '\0';
+  dyn_string_length (str) = tail - head;
+}
+
+/* }])> */
+
+/* file <([{ */
+/* The class is in charge of file tables and FileDefinition table. */
+typedef struct
+{
+  long long start;
+  long long end;
+} scope;
+DEF_VEC_O (scope);
+DEF_VEC_ALLOC_O (scope, heap);
+
+DEF_VEC_I (int);
+DEF_VEC_ALLOC_I (int, heap);
+static struct
+{
+  VEC (scope, heap) * scopes;	/* for FileDefinition table. */
+  VEC (int, heap) * includee;
+
+  struct sqlite3_stmt *select_chfile;
+  struct sqlite3_stmt *insert_chfile;
+  struct sqlite3_stmt *select_filedep;
+  struct sqlite3_stmt *insert_filedep;
+  struct sqlite3_stmt *select_filedef;
+  struct sqlite3_stmt *insert_filedef;
+} file;
+
+static long long
+get_mtime (const char *file)
 {
   struct stat filestat;
   if (stat (file, &filestat) != 0)
@@ -145,1315 +158,476 @@ file_mtime (const char *file)
       sqlite3_close (db);
       exit (1);
     }
-  return filestat.st_mtime;
+  return (long long) filestat.st_mtime;
+}
+
+/* debug purpose. */
+static void __attribute__ ((unused)) dump_includee (void)
+{
+  int nrow, ncolumn;
+  char *error_msg, **table;
+  int ix, p;
+  dyn_string_t str = dyn_string_new (32);
+  FOR_EACH_VEC_ELT (int, file.includee, ix, p)
+  {
+    char tmp[16];
+    sprintf (tmp, "%d", p);
+    dyn_string_copy_cstr (str, "select name from chFile where id = ");
+    dyn_string_append_cstr (str, tmp);
+    dyn_string_append_cstr (str, ";");
+    db_error (sqlite3_get_table (db, dyn_string_buf (str), &table,
+				 &nrow, &ncolumn, &error_msg));
+    gcc_assert (nrow <= 1 && ncolumn <= 1);
+    gcc_assert (nrow != 0 && ncolumn != 0);
+    printf ("%s >> ", table[1]);
+    sqlite3_free_table (table);
+  }
+  dyn_string_delete (str);
+  printf ("\n");
+}
+
+static int
+file_get_current_fid (void)
+{
+  return VEC_last (int, file.includee);
+}
+
+static void
+insert_filedep (int hid)
+{
+  int previd = file_get_current_fid ();
+  if (previd == hid)
+    return;
+  db_error (sqlite3_bind_int (file.select_filedep, 1, previd));
+  db_error (sqlite3_bind_int (file.select_filedep, 2, hid));
+  if (sqlite3_step (file.select_filedep) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_int (file.insert_filedep, 1, previd));
+      db_error (sqlite3_bind_int (file.insert_filedep, 2, hid));
+      execute_sql (file.insert_filedep);
+    }
+  revalidate_sql (file.select_filedep);
+}
+
+static void
+insert_file (const char *fn, int *file_id, long long *mtime, bool sysp)
+{
+  int size = strlen (fn);
+  long long new_mtime = get_mtime (fn);
+  db_error (sqlite3_bind_text
+	    (file.select_chfile, 1, fn, size, SQLITE_STATIC));
+  if (sqlite3_step (file.select_chfile) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_text (file.insert_chfile, 1,
+				   fn, size, SQLITE_STATIC));
+      db_error (sqlite3_bind_int64 (file.insert_chfile, 2, new_mtime));
+      if (sysp)
+	db_error (sqlite3_bind_text (file.insert_chfile, 3,
+				     "true", sizeof ("true"), SQLITE_STATIC));
+      else
+	db_error (sqlite3_bind_text (file.insert_chfile, 3,
+				     "false", sizeof ("false"),
+				     SQLITE_STATIC));
+      execute_sql (file.insert_chfile);
+      sqlite3_reset (file.select_chfile);
+      db_error (sqlite3_step (file.select_chfile) != SQLITE_ROW);
+    }
+  *file_id = sqlite3_column_int (file.select_chfile, 0);
+  *mtime = sqlite3_column_int64 (file.select_chfile, 1);
+  if (new_mtime < *mtime)
+    gcc_assert (false);
+  revalidate_sql (file.select_chfile);
+}
+
+static void
+file_insert_defid (long long defid)
+{
+  int fileid = file_get_current_fid ();
+  db_error (sqlite3_bind_int (file.select_filedef, 1, fileid));
+  db_error (sqlite3_bind_int64 (file.select_filedef, 2, defid));
+  db_error (sqlite3_bind_int64 (file.select_filedef, 3, defid));
+  if (sqlite3_step (file.select_filedef) != SQLITE_ROW)
+    {
+      scope *s;
+      if (VEC_length (scope, file.scopes) != 0)
+	{
+	  s = VEC_last (scope, file.scopes);
+	  if (defid == s->end + 1)
+	    {
+	      s->end++;
+	      goto done;
+	    }
+	}
+      s = VEC_safe_push (scope, heap, file.scopes, NULL);
+      s->start = s->end = defid;
+    }
+done:
+  revalidate_sql (file.select_filedef);
+}
+
+static void
+flush_scopes (void)
+{
+  int ix, fileid = file_get_current_fid ();
+  scope *p;
+  FOR_EACH_VEC_ELT_REVERSE (scope, file.scopes, ix, p)
+  {
+    db_error (sqlite3_bind_int (file.insert_filedef, 1, fileid));
+    db_error (sqlite3_bind_int64 (file.insert_filedef, 2, p->start));
+    db_error (sqlite3_bind_int64 (file.insert_filedef, 3, p->end));
+    execute_sql (file.insert_filedef);
+  }
+  VEC_truncate (scope, file.scopes, 0);
+}
+
+static bool mo_isvalid (void);
+static void
+file_push (const char *f, bool sys)
+{
+  int id;
+  long long mtime;
+  gcc_assert (!mo_isvalid ());
+  insert_file (f, &id, &mtime, sys);
+  if (VEC_length (int, file.includee) != 0)
+    {
+      flush_scopes ();
+      insert_filedep (id);
+    }
+  VEC_safe_push (int, heap, file.includee, id);
+}
+
+static void
+file_pop (void)
+{
+  gcc_assert (!mo_isvalid ());
+  flush_scopes ();
+  VEC_pop (int, file.includee);
+}
+
+static void
+file_init (void)
+{
+  file.scopes = VEC_alloc (scope, heap, 10);
+  file.includee = VEC_alloc (int, heap, 10);
+
+  db_error (sqlite3_prepare_v2 (db,
+				"select id, mtime from chFile where name = ?;",
+				-1, &file.select_chfile, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into chFile values (NULL, ?, ?, ?);",
+				-1, &file.insert_chfile, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"select rowid from FileDependence where chFileID = ? and hID = ?;",
+				-1, &file.select_filedep, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into FileDependence values (?, ?);",
+				-1, &file.insert_filedep, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"select rowid from FileDefinition "
+				"where fileID = ? and startDefID <= ? and endDefID >= ?;",
+				-1, &file.select_filedef, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into FileDefinition values (?, ?, ?);",
+				-1, &file.insert_filedef, 0));
+
+  file_push (main_input_filename, false);
+}
+
+static void
+file_tini (void)
+{
+  file_pop ();
+  sqlite3_finalize (file.insert_filedef);
+  sqlite3_finalize (file.select_filedef);
+  sqlite3_finalize (file.insert_filedep);
+  sqlite3_finalize (file.select_filedep);
+  sqlite3_finalize (file.insert_chfile);
+  sqlite3_finalize (file.select_chfile);
+
+  VEC_free (int, heap, file.includee);
+  VEC_free (scope, heap, file.scopes);
 }
 
 /* }])> */
 
-/* CPP (c preprocess) specific. <([{ */
-/* The vim fold is mainly for collecting and outputting cpp/c tokens to
- * database, as the section <DB Format> of the document shows, COMMON_TOKEN is
- * outputted by symdb_cpp_token, EXPANDED_TOKEN/MACRO_TOKEN are outputted by
- * class mo, ERASED_TOKEN is outputted by cb_callbacks::{cb_comment,
- * cb_start/end_directive}. According to current plugin architecture, c/c++
- * keyword type is collected by recording the last CPP_NAME token in class
- * c_tok.
- * */
-/* cpp includes something shared by the whole symdb-cpp stage <([{ */
-typedef const struct cpp_token *cpp_token_p;
+/* macro <([{ */
+static struct
+{
+  int expanded_count;
+  int macro_count;
+  bool cancel;
+  bool cascaded;
+  bool valid;
+} mo =
+{
+0, 0, false, false, false};
 
-__extension__ enum symdb_type
+static void
+mo_append_expanded_token (void)
+{
+  mo.expanded_count++;
+}
+
+static void
+mo_append_macro_token (void)
+{
+  mo.macro_count++;
+}
+
+static int
+mo_get_macro_count (void)
+{
+  return mo.macro_count;
+}
+
+static void
+mo_substract_macro_count (int value)
+{
+  mo.macro_count -= value;
+}
+
+static void
+mo_leave (void)
+{
+  mo.expanded_count = mo.macro_count = 0;
+  mo.cancel = mo.cascaded = false;
+  mo.valid = false;
+}
+
+static void
+mo_enter (void)
+{
+  mo_append_expanded_token ();
+  mo.valid = true;
+}
+
+static bool
+mo_isvalid (void)
+{
+  return mo.valid;
+}
+
+static bool
+mo_maybe_cascaded (bool func)
+{
+  if (mo.expanded_count == 1 && mo.macro_count == 0)
+    {
+      mo.cascaded = func;
+      return true;
+    }
+  return false;
+}
+
+static bool
+mo_cascaded (void)
+{
+  if (mo.cascaded)
+    {
+      mo.cascaded = false;
+      return true;
+    }
+  return false;
+}
+
+static void
+mo_reset_cascaded (void)
+{
+  mo.cascaded = false;
+}
+
+static void
+mo_maybe_cancel (bool cancel)
+{
+  mo.cancel = cancel;
+}
+
+static bool
+mo_cancel (void)
+{
+  if (mo.cancel &&
+      /* Recheck it, cascaded-cancel case. */
+      mo.expanded_count == 2 && mo.macro_count == 0)
+    return true;
+  else
+    return false;
+}
+
+/* }])> */
+
+/* cache <([{ */
+__extension__ enum symdb_flag
 {
   CPP_TYPE_SHIFT = 0,
   CPP_TYPE_MASK = 0xff,
   C_TYPE_SHIFT = 8,
   C_TYPE_MASK = 0xffff00,
-  SYMDB_TYPE_SHIFT = 24,
-  SYMDB_TYPE_MASK = 0xff000000,
-
-  EXPANDED_TOKEN = 1 << SYMDB_TYPE_SHIFT,
-  ERASED_TOKEN = 2 << SYMDB_TYPE_SHIFT,
-  COMMON_TOKEN = 3 << SYMDB_TYPE_SHIFT,
-  MACRO_TOKEN = 4 << SYMDB_TYPE_SHIFT,
-  END_TAG_TOKEN = 5 << SYMDB_TYPE_SHIFT,
-
-  /* flags for tracing system macro expansion. */
-  SYSHDR_FLAG = 16 << SYMDB_TYPE_SHIFT,
-  SYSHDR_MASK = 0xf0000000,
-
-  CH_TOKEN_START = EXPANDED_TOKEN,
-  CH_TOKEN_END = MACRO_TOKEN,
-  I_TOKEN_START = COMMON_TOKEN,
-  I_TOKEN_END = END_TAG_TOKEN,
 };
 
-typedef void (*CB_FILE_CHANGE) (cpp_reader *, const struct line_map *);
-static struct
-{
-  cpp_reader *pfile;
-  CB_FILE_CHANGE orig_file_change;
-
-  /* control the behaviour of cb_directive_token. */
-  enum symdb_type directive_type;
-  /* control the behaviour of symdb_cpp_token. */
-  enum symdb_type i_type;
-} cpp;
-
-/* Keep it in mind that cpp_token_len can't get the exact length of the token!
- * */
-static void
-print_token (cpp_token_p token, dyn_string_t str)
-{
-  unsigned char *head, *tail;
-  dyn_string_resize (str, cpp_token_len (token));
-  head = (unsigned char *) dyn_string_buf (str);
-  tail = cpp_spell_token (cpp.pfile, token, head, false);
-  *tail = '\0';
-  dyn_string_length (str) = tail - head;
-}
-
-static long long int insert_into_chtoken (int, int, int, int);
-static void insert_into_itoken (int, int, const char *, long long int);
-static int inc_top (void);
-static int
-output_chtoken (cpp_token_p token, int flag)
-{
-  print_token (token, gbuf);
-  int length = dyn_string_length (gbuf);
-  long long int id =
-    insert_into_chtoken (flag, length, inc_top (), token->file_offset);
-  insert_into_itoken (flag, length, dyn_string_buf (gbuf), id);
-  return id;
-}
-
-static void mo_init (void);
-static void inc_init (void);
-static void cpp_db_init (void);
-static void cb_macro_start (struct cpp_reader *, const struct cpp_token *,
-			    const struct cpp_hashnode *);
-static void cb_intern_expand (struct cpp_reader *, void *, int, bool);
-static void cb_end_arg (struct cpp_reader *, bool);
-static void cb_macro_end (struct cpp_reader *);
-static void cb_comment (struct cpp_reader *, const struct cpp_token *);
-static void cb_start_directive (struct cpp_reader *,
-				const struct cpp_token *);
-static void cb_directive_token (struct cpp_reader *pfile,
-				const struct cpp_token *);
-static void cb_end_directive (struct cpp_reader *pfile);
-static void cb_file_change (cpp_reader *, const struct line_map *);
-static void
-symdb_token_init (cpp_reader * pfile)
-{
-  char id[11];
-
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  cb->macro_start_expand = cb_macro_start;
-  cb->macro_end_expand = cb_macro_end;
-  cb->comment = cb_comment;
-  cb->start_directive = cb_start_directive;
-  cb->end_directive = cb_end_directive;
-  cpp.orig_file_change = cb->file_change;
-  cb->file_change = cb_file_change;
-
-  cpp.pfile = pfile;
-  cpp.i_type = COMMON_TOKEN;
-  mo_init ();
-  inc_init ();
-  cpp_db_init ();
-
-  dyn_string_copy_cstr (gbuf, "update iFile set iTokenStartID = ");
-  dyn_string_append_cstr (gbuf,
-			  " (select seq from sqlite_sequence where name = 'iToken') + 1 ");
-  dyn_string_append_cstr (gbuf, " where id = ");
-  sprintf (id, "%d", control_panel.ifile_id);
-  dyn_string_append_cstr (gbuf, id);
-  dyn_string_append_cstr (gbuf, ";");
-  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
-}
-
-static void mo_tini (void);
-static void inc_tini (void);
-static void cpp_db_tini (void);
-static void
-symdb_token_tini (void)
-{
-  char id[11];
-  dyn_string_copy_cstr (gbuf, "update iFile set iTokenEndID = ");
-  dyn_string_append_cstr (gbuf,
-			  " (select seq from sqlite_sequence where name = 'iToken') + 1 ");
-  dyn_string_append_cstr (gbuf, " where id = ");
-  sprintf (id, "%d", control_panel.ifile_id);
-  dyn_string_append_cstr (gbuf, id);
-  dyn_string_append_cstr (gbuf, ";");
-  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
-
-  cpp_db_tini ();
-  inc_tini ();
-  mo_tini ();
-  cpp_get_callbacks (cpp.pfile)->file_change = cpp.orig_file_change;
-}
-
-/* }])> */
-
-/* class inc (abbr. include) is responsible for stacking include files. <([{ */
-/* class inc is responsible for stacking include files and recording their
- * chFile::id for table chtoken insertion. It also manages FileDependence
- * table.
- *
- * public methods are:
- * 1) inc_trace: push include-file.
- * 2) inc_top.
- * 3) inc_init/inc_tini.
- */
-DEF_VEC_I (int);
-DEF_VEC_ALLOC_I (int, heap);
-
-static struct
-{
-  VEC (int, heap) * stack;
-
-  struct sqlite3_stmt *select_chfile;
-  struct sqlite3_stmt *insert_chfile;
-  struct sqlite3_stmt *select_filedep;
-  struct sqlite3_stmt *insert_filedep;
-} inc;
-
-static void inc_trace (const char *, bool);
-static void
-inc_init (void)
-{
-  inc.stack = VEC_alloc (int, heap, 10);
-
-  db_error (sqlite3_prepare_v2 (db,
-				"select id, mtime from chFile where fullName = ?;",
-				-1, &inc.select_chfile, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into chFile values (NULL, ?, ?, ?);",
-				-1, &inc.insert_chfile, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"select id from FileDependence where iFileID = ? and hID = ?;",
-				-1, &inc.select_filedep, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into FileDependence values (NULL, ?, ?);",
-				-1, &inc.insert_filedep, 0));
-
-  inc_trace (dyn_string_buf (control_panel.compiled_file), false);
-}
-
-static void
-inc_tini (void)
-{
-  sqlite3_finalize (inc.insert_filedep);
-  sqlite3_finalize (inc.select_filedep);
-  sqlite3_finalize (inc.insert_chfile);
-  sqlite3_finalize (inc.select_chfile);
-
-  VEC_free (int, heap, inc.stack);
-}
-
-static void
-inc_reset_tokens (int chfile_id)
-{
-  char id[11];
-  /* Erase iToken table. */
-  sprintf (id, "%d", control_panel.ifile_id);
-  dyn_string_copy_cstr (gbuf, "delete from iToken where id >= ");
-  dyn_string_append_cstr (gbuf,
-			  "(select iTokenStartID from iFile where id = ");
-  dyn_string_append_cstr (gbuf, id);
-  dyn_string_append_cstr (gbuf, " ) and id < ");
-  dyn_string_append_cstr (gbuf, "(select iTokenEndID from iFile where id = ");
-  dyn_string_append_cstr (gbuf, id);
-  dyn_string_append_cstr (gbuf, ");");
-  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
-
-  /* Erase the cpp stage tokens, note, there's some triggers in database which
-   * can erase MacroDescription and MacroToken cascade. */
-  sprintf (id, "%d", chfile_id);
-  dyn_string_copy_cstr (gbuf, "delete from chToken where chFileID = ");
-  dyn_string_append_cstr (gbuf, id);
-  dyn_string_append_cstr (gbuf, ";");
-  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
-
-  /* Erase C Tree nodes. @TODO@. */
-}
-
-static void
-inc_push (const char *fn, bool sysp)
-{
-  int size, chfile_id;
-  time_t mtime;
-  if (fn == NULL)
-    {
-      VEC_pop (int, inc.stack);
-      return;
-    }
-  mtime = file_mtime (fn);
-  size = strlen (fn);
-  db_error (sqlite3_bind_text
-	    (inc.select_chfile, 1, fn, size, SQLITE_STATIC));
-  if (sqlite3_step (inc.select_chfile) != SQLITE_ROW)
-    {
-      db_error (sqlite3_bind_text (inc.insert_chfile, 1,
-				   fn, size, SQLITE_STATIC));
-      db_error (sqlite3_bind_int64 (inc.insert_chfile, 2, mtime));
-      if (sysp)
-	db_error (sqlite3_bind_text (inc.insert_chfile, 3,
-				     "true", sizeof ("true"), SQLITE_STATIC));
-      else
-	db_error (sqlite3_bind_text (inc.insert_chfile, 3,
-				     "false", sizeof ("false"),
-				     SQLITE_STATIC));
-      execute_sql (inc.insert_chfile);
-      sqlite3_reset (inc.select_chfile);
-      db_error (sqlite3_step (inc.select_chfile) != SQLITE_ROW);
-    }
-  chfile_id = sqlite3_column_int (inc.select_chfile, 0);
-  if (mtime > sqlite3_column_int64 (inc.select_chfile, 1))
-    inc_reset_tokens (chfile_id);
-  VEC_safe_push (int, heap, inc.stack, chfile_id);
-  revalidate_sql (inc.select_chfile);
-  db_error (sqlite3_bind_int (inc.select_filedep, 1, control_panel.ifile_id));
-  db_error (sqlite3_bind_int (inc.select_filedep, 2, chfile_id));
-  if (sqlite3_step (inc.select_filedep) != SQLITE_ROW)
-    {
-      db_error (sqlite3_bind_int (inc.insert_filedep, 1,
-				  control_panel.ifile_id));
-      db_error (sqlite3_bind_int (inc.insert_filedep, 2, chfile_id));
-      execute_sql (inc.insert_filedep);
-    }
-  revalidate_sql (inc.select_filedep);
-}
-
-static void
-inc_trace (const char *fn, bool sysp)
-{
-  if (fn != NULL)
-    {
-      dyn_string_t full_path = dyn_string_new (256);
-      file_full_path (fn, full_path);
-      inc_push (dyn_string_buf (full_path), sysp);
-      dyn_string_delete (full_path);
-    }
-  else
-    inc_push (NULL, sysp);
-}
-
-static int
-inc_top (void)
-{
-  return VEC_last (int, inc.stack);
-}
-
-/* }])> */
-
-/* cpp_db includes sql clauses for inserting token to database. <([{ */
-struct
-{
-  struct sqlite3_stmt *select_chtoken;
-  struct sqlite3_stmt *insert_chtoken;
-  struct sqlite3_stmt *max_chtoken;
-  struct sqlite3_stmt *insert_macrodesc;
-  struct sqlite3_stmt *insert_macrotoken;
-  struct sqlite3_stmt *insert_itoken;
-} cpp_db;
-
-static void
-cpp_db_init (void)
-{
-  db_error (sqlite3_prepare_v2 (db,
-				"select id, flag from chToken where chFileID = ? and fileOffset = ?;",
-				-1, &cpp_db.select_chtoken, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into chToken values (NULL, ?, ?, ?, ?);",
-				-1, &cpp_db.insert_chtoken, 0));
-  db_error (sqlite3_prepare_v2 (db, "select max(id) from chToken;",
-				-1, &cpp_db.max_chtoken, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into MacroDescription values (NULL, ?, ?, ?, ?);",
-				-1, &cpp_db.insert_macrodesc, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into MacroToken values (NULL, ?, ?);",
-				-1, &cpp_db.insert_macrotoken, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into iToken values (NULL, ?, ?, ?, ?);",
-				-1, &cpp_db.insert_itoken, 0));
-}
-
-static void
-cpp_db_tini (void)
-{
-  sqlite3_finalize (cpp_db.insert_itoken);
-  sqlite3_finalize (cpp_db.insert_macrotoken);
-  sqlite3_finalize (cpp_db.insert_macrodesc);
-  sqlite3_finalize (cpp_db.max_chtoken);
-  sqlite3_finalize (cpp_db.insert_chtoken);
-  sqlite3_finalize (cpp_db.select_chtoken);
-}
-
-static void
-insert_into_itoken (int flag, int length, const char *value, long long int id)
-{
-	if (!control_panel.debug)
-		return;
-  switch (flag & SYMDB_TYPE_MASK)
-    {
-    case ERASED_TOKEN:
-    case EXPANDED_TOKEN:
-    case EXPANDED_TOKEN | SYSHDR_FLAG:
-      break;
-    case MACRO_TOKEN | EXPANDED_TOKEN | SYSHDR_FLAG:
-      return;
-    }
-  flag &= ~SYSHDR_FLAG;
-  db_error (sqlite3_bind_int (cpp_db.insert_itoken, 1, flag));
-      db_error (sqlite3_bind_int (cpp_db.insert_itoken, 2, length));
-      db_error (sqlite3_bind_text (cpp_db.insert_itoken, 3,
-				   value, length, SQLITE_STATIC));
-  db_error (sqlite3_bind_int64 (cpp_db.insert_itoken, 4, id));
-  execute_sql (cpp_db.insert_itoken);
-}
-
-static void
-insert_into_macrotoken (int flag, const char *value, int length)
-{
-  db_error (sqlite3_bind_int (cpp_db.insert_macrotoken, 1, flag));
-  db_error (sqlite3_bind_text (cpp_db.insert_macrotoken, 2,
-			       value, length, SQLITE_STATIC));
-  execute_sql (cpp_db.insert_macrotoken);
-}
-
-static void
-insert_into_macrodesc (long long int leader, int ep_count, int mo_count,
-		       long long int mo_start)
-{
-  db_error (sqlite3_bind_int64 (cpp_db.insert_macrodesc, 1, leader));
-  db_error (sqlite3_bind_int (cpp_db.insert_macrodesc, 2, ep_count));
-  db_error (sqlite3_bind_int (cpp_db.insert_macrodesc, 3, mo_count));
-  db_error (sqlite3_bind_int64 (cpp_db.insert_macrodesc, 4, mo_start));
-  execute_sql (cpp_db.insert_macrodesc);
-}
-
-static long long int
-insert_into_chtoken (int flag, int length, int file_id, int file_offset)
-{
-  long long int ret = -1;
-  db_error (sqlite3_bind_int (cpp_db.select_chtoken, 1, file_id));
-  db_error (sqlite3_bind_int (cpp_db.select_chtoken, 2, file_offset));
-  while (sqlite3_step (cpp_db.select_chtoken) == SQLITE_ROW)
-    {
-      // In fact, at most 2 rows are returned, see symdb document.
-      if ((sqlite3_column_int (cpp_db.select_chtoken, 1) &
-	   (signed) (CPP_TYPE_MASK | SYMDB_TYPE_MASK)) == flag)
-	{
-	  ret = sqlite3_column_int64 (cpp_db.select_chtoken, 0);
-	  break;
-	}
-    }
-  if (ret == -1)
-    {
-      db_error (sqlite3_bind_int (cpp_db.insert_chtoken, 1, flag));
-      db_error (sqlite3_bind_int (cpp_db.insert_chtoken, 2, length));
-      db_error (sqlite3_bind_int (cpp_db.insert_chtoken, 3, file_id));
-      db_error (sqlite3_bind_int (cpp_db.insert_chtoken, 4, file_offset));
-      execute_sql (cpp_db.insert_chtoken);
-      db_error (sqlite3_step (cpp_db.max_chtoken) != SQLITE_ROW);
-      ret = sqlite3_column_int64 (cpp_db.max_chtoken, 0);
-      db_error (sqlite3_reset (cpp_db.max_chtoken));
-    }
-  db_error (sqlite3_reset (cpp_db.select_chtoken));
-  return ret;
-}
-
-/* }])> */
-
-/* class mo (abbr. macro) is responsible for macro... <([{ */
-/* class mo is responsible for collecting all EXPANDED_TOKEN and MACRO_TOKEN
- * tokens and flush them together to database by mo_flush.
- *
- * public methods are:
- * 1) mo_append_token.
- * 2) mo_cancel.
- * 3) mo_init/mo_tini.
- * 4) mo_maybe_cascaded.
- * 1 and 2 are called by <cpp_callbacks>.
- * data member mo.cascaded_func/sys_macro can be visited by class cpp_callbacks directly.
- */
-/* db_token is used to cache EXPANDED_TOKEN and MACRO_TOKEN tokens coming from
- * cpp_get_token for class mo. */
 typedef struct
 {
-  int cpp_type;
+  enum symdb_flag flag;
   dyn_string_t value;
   int file_offset;
 } db_token;
 DEF_VEC_O (db_token);
 DEF_VEC_ALLOC_O (db_token, heap);
+
+typedef struct
+{
+  /* leader expanded token. */
+  db_token leader;
+  int start;
+  int length;
+} let;
+DEF_VEC_O (let);
+DEF_VEC_ALLOC_O (let, heap);
+
 static struct
 {
-  VEC (db_token, heap) * expanded_tokens;
-  VEC (db_token, heap) * macro_tokens;
-  long long int leader_expanded_token;
-  bool cancel;
-  bool cascaded_func;
-  int sys_macro;
-
-  struct sqlite3_stmt *select_macrodesc;
-  struct sqlite3_stmt *select_macrotoken;
-  struct sqlite3_stmt *select_max_macrotoken;
-} mo;
+  VEC (db_token, heap) * itokens;
+  VEC (let, heap) * auxiliary;
+  db_token *last_cpp_token;
+} cache;
 
 static void
-mo_init (void)
+cache_init (void)
 {
-  mo.expanded_tokens = VEC_alloc (db_token, heap, 10);
-  mo.macro_tokens = VEC_alloc (db_token, heap, 10);
-  mo.leader_expanded_token = 0;
-  mo.cancel = false;
-  mo.cascaded_func = false;
-  mo.sys_macro = 0;
-
-  db_error (sqlite3_prepare_v2 (db,
-				"select expandedCount, macroCount, macroStartID from MacroDescription"
-				" where leaderchTokenID = ?;",
-				-1, &mo.select_macrodesc, 0));
-  db_error (sqlite3_prepare_v2 (db, "select max(id) from MacroToken;",
-				-1, &mo.select_max_macrotoken, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"select value from MacroToken where id >= ? and id < ? order by id;",
-				-1, &mo.select_macrotoken, 0));
+  cache.itokens = VEC_alloc (db_token, heap, 10);
+  cache.auxiliary = VEC_alloc (let, heap, 10);
 }
 
 static void
-mo_tini (void)
+vec_pop_front (void *vec, int reserve)
 {
   int ix;
-  db_token *p;
-
-  sqlite3_finalize (mo.select_macrotoken);
-  sqlite3_finalize (mo.select_max_macrotoken);
-  sqlite3_finalize (mo.select_macrodesc);
-
-  for (ix = 0; VEC_iterate (db_token, mo.macro_tokens, ix, p); ix++)
-    dyn_string_delete (p->value);
-  VEC_free (db_token, heap, mo.macro_tokens);
-  VEC_free (db_token, heap, mo.expanded_tokens);
-}
-
-static int
-mo_compare (void)
-{
-  int ep_count = VEC_length (db_token, mo.expanded_tokens);
-  int mo_count = VEC_length (db_token, mo.macro_tokens);
-  int ix;
-  long long int mo_start = 0, tmp;
-  db_token *p;
-  db_error (sqlite3_bind_int64 (mo.select_macrodesc, 1,
-				mo.leader_expanded_token));
-  while (sqlite3_step (mo.select_macrodesc) == SQLITE_ROW)
+  if (vec == cache.itokens)
     {
-      if (ep_count != sqlite3_column_int (mo.select_macrodesc, 0)
-	  || mo_count != sqlite3_column_int (mo.select_macrodesc, 1))
-	continue;
-      tmp = sqlite3_column_int64 (mo.select_macrodesc, 2);
-      if (!control_panel.heavy_cpp_comparison)
+      db_token *a, *b;
+      if (VEC_length (db_token, cache.itokens) == reserve)
+	return;
+      /* Don't accept overlap case. */
+      gcc_assert (VEC_length (db_token, cache.itokens) >= reserve * 2);
+      for (ix = 0; ix < reserve; ix++)
 	{
-	  mo_start = tmp;
-	  break;
+	  a = VEC_index (db_token, cache.itokens, ix);
+	  dyn_string_delete (a->value);
 	}
-      /* heavy comparision. */
-      db_error (sqlite3_bind_int64 (mo.select_macrotoken, 1, tmp));
-      db_error (sqlite3_bind_int64 (mo.select_macrotoken, 2, tmp + mo_count));
-      sqlite3_step (mo.select_macrotoken);
-      for (ix = 0; VEC_iterate (db_token, mo.macro_tokens, ix, p); ix++)
+      for (ix = 0; ix < reserve; ix++)
 	{
-	  if (strcmp
-	      ((const char *) sqlite3_column_text (mo.select_macrotoken, 0),
-	       dyn_string_buf (p->value)) != 0)
-	    break;
-	  sqlite3_step (mo.select_macrotoken);
+	  a = VEC_index (db_token, cache.itokens, ix);
+	  b =
+	    VEC_index (db_token, cache.itokens,
+		       VEC_length (db_token, cache.itokens) - reserve + ix);
+	  *a = *b;
 	}
-      revalidate_sql (mo.select_macrotoken);
-      if (ix == mo_count)
+      for (ix = reserve; ix < VEC_length (db_token, cache.itokens) - reserve;
+	   ix++)
 	{
-	  mo_start = tmp;
-	  break;
+	  a = VEC_index (db_token, cache.itokens, ix);
+	  dyn_string_delete (a->value);
 	}
+      VEC_truncate (db_token, cache.itokens, reserve);
     }
-  revalidate_sql (mo.select_macrodesc);
-  return mo_start;
+  else if (vec == cache.auxiliary)
+    {
+      let *a, *b;
+      gcc_assert (VEC_length (let, cache.auxiliary) >= reserve);
+      if (VEC_length (let, cache.auxiliary) == reserve)
+	return;
+      for (ix = 0; ix < reserve; ix++)
+	{
+	  a = VEC_index (let, cache.auxiliary, ix);
+	  dyn_string_delete (a->leader.value);
+	}
+      for (ix = 0; ix < reserve; ix++)
+	{
+	  a = VEC_index (let, cache.auxiliary, ix);
+	  b =
+	    VEC_index (let, cache.auxiliary,
+		       VEC_length (let, cache.auxiliary) - reserve + ix);
+	  *a = *b;
+	}
+      for (ix = reserve; ix < VEC_length (let, cache.auxiliary) - reserve;
+	   ix++)
+	{
+	  a = VEC_index (let, cache.auxiliary, ix);
+	  dyn_string_delete (a->leader.value);
+	}
+      VEC_truncate (let, cache.auxiliary, reserve);
+    }
 }
 
 static void
-mo_flush_macrotoken (long long int mo_start)
+cache_reset (int reserve)
 {
-  int ix, flag, length;
-  db_token *p;
-  const char *buf;
-  if (mo_start == 0)
+  if (mo_isvalid ())
     {
-      sqlite3_step (mo.select_max_macrotoken);
-      mo_start = sqlite3_column_int64 (mo.select_max_macrotoken, 0) + 1;
-      revalidate_sql (mo.select_max_macrotoken);
-      insert_into_macrodesc (mo.leader_expanded_token,
-			     VEC_length (db_token, mo.expanded_tokens),
-			     VEC_length (db_token, mo.macro_tokens),
-			     mo_start);
-      for (ix = 0; VEC_iterate (db_token, mo.macro_tokens, ix, p); ix++)
-	{
-	  flag = p->cpp_type;
-	  length = dyn_string_length (p->value);
-	  buf = dyn_string_buf (p->value);
-	  insert_into_macrotoken (flag, buf, length);
-	  insert_into_itoken (flag, length, buf, mo_start + ix);
-	}
+      /* Deal with multiple definitions are in a macro internal. */
+      let *p2 = VEC_last (let, cache.auxiliary);
+      mo_substract_macro_count (VEC_length (db_token, cache.itokens) -
+				reserve - p2->start);
+      p2->start = 0;
+      p2->length = 0x1fffffff;
+      vec_pop_front (cache.auxiliary, 1);
     }
   else
-    {
-      for (ix = 0; VEC_iterate (db_token, mo.macro_tokens, ix, p); ix++)
-	{
-	  flag = p->cpp_type;
-	  length = dyn_string_length (p->value);
-	  buf = dyn_string_buf (p->value);
-	  insert_into_itoken (flag, length, buf, mo_start + ix);
-	}
-    }
+    vec_pop_front (cache.auxiliary, 0);
+  vec_pop_front (cache.itokens, reserve);
 }
 
 static void
-mo_revalidate (void)
+cache_tini (void)
 {
-  int ix;
-  db_token *p;
-  for (ix = 0; VEC_iterate (db_token, mo.expanded_tokens, ix, p); ix++)
-    dyn_string_delete (p->value);
-  VEC_truncate (db_token, mo.expanded_tokens, 0);
-  for (ix = 0; VEC_iterate (db_token, mo.macro_tokens, ix, p); ix++)
-    dyn_string_delete (p->value);
-  VEC_truncate (db_token, mo.macro_tokens, 0);
-  mo.cancel = false;
-  mo.cascaded_func = false;
-}
-
-static int
-mo_flush_expandedtoken (db_token * p)
-{
-  int flag = p->cpp_type;
-  int length = dyn_string_length (p->value);
-  long long int id =
-    insert_into_chtoken (flag, length, inc_top (), p->file_offset);
-  insert_into_itoken (flag, length, dyn_string_buf (p->value), id);
-  return id;
+  cache_reset (0);
+  VEC_free (db_token, heap, cache.itokens);
+  VEC_free (let, heap, cache.auxiliary);
 }
 
 static void
-mo_flush (void)
+cache_tag_let (cpp_token_p token)
 {
-  int ix;
-  db_token *p;
-  if (mo.cancel)
-    {
-      gcc_assert (VEC_length (db_token, mo.expanded_tokens) == 2 &&
-		  VEC_length (db_token, mo.macro_tokens) == 0);
-      /* the two tokens are outputted again from symdb_cpp_token(). */
-      mo_revalidate ();
-    }
-  else
-    {
-      p = VEC_index (db_token, mo.expanded_tokens, 0);
-      mo.leader_expanded_token = mo_flush_expandedtoken (p);
-      for (ix = 1; VEC_iterate (db_token, mo.expanded_tokens, ix, p); ix++)
-	mo_flush_expandedtoken (p);
-      mo_flush_macrotoken (mo_compare ());
-      mo_revalidate ();
-    }
+  let *p = VEC_safe_push (let, heap, cache.auxiliary, NULL);
+  p->leader.value = dyn_string_new (32);
+  p->start = VEC_length (db_token, cache.itokens);
+  /* Here, the length is initialized as 0x1fffffff for tag all following cache.itokens
+   * belong to the macro. */
+  p->length = 0x1fffffff;
+  p->leader.file_offset = token->file_offset;
+  gcc_assert (token->type == CPP_NAME);
+  p->leader.flag = CPP_NAME | C_TYPE_MASK;
+  print_token (token, p->leader.value);
 }
 
-static void ctoken_push_macrotoken (db_token *);
 static void
-mo_append_token (cpp_token_p token, int trace)
+cache_cancel_last_let (void)
 {
-  db_token *p;
-  switch (trace)
-    {
-    case EXPANDED_TOKEN:
-    case EXPANDED_TOKEN | SYSHDR_FLAG:
-      p = VEC_safe_push (db_token, heap, mo.expanded_tokens, NULL);
-      break;
-    case MACRO_TOKEN:
-    case MACRO_TOKEN | SYSHDR_FLAG:
-    case MACRO_TOKEN | EXPANDED_TOKEN | SYSHDR_FLAG:
-      p = VEC_safe_push (db_token, heap, mo.macro_tokens, NULL);
-      break;
-    default:
-      gcc_unreachable ();
-    }
+  gcc_assert (VEC_length (let, cache.auxiliary) != 0);
+  let *p = VEC_last (let, cache.auxiliary);
+  dyn_string_delete (p->leader.value);
+  VEC_pop (let, cache.auxiliary);
+}
+
+static void
+cache_end_let (void)
+{
+  let *p = VEC_last (let, cache.auxiliary);
+  p->length = mo_get_macro_count ();
+}
+
+static void
+cache_append_itoken_cpp_stage (cpp_token_p token)
+{
+  db_token *p = VEC_safe_push (db_token, heap, cache.itokens, NULL);
   p->value = dyn_string_new (32);
-  p->cpp_type = trace | token->type;
+  p->flag = token->type | C_TYPE_MASK;
   p->file_offset = token->file_offset;
   print_token (token, p->value);
-  if (token->type == CPP_NAME)
-    ctoken_push_macrotoken (p);
-}
-
-static inline void
-mo_cancel (void)
-{
-  if (VEC_length (db_token, mo.expanded_tokens) > 2)
-    VEC_pop (db_token, mo.macro_tokens);
-  else
-    mo.cancel = true;
-}
-
-static inline bool
-mo_maybe_cascaded (void)
-{
-  if (VEC_length (db_token, mo.expanded_tokens) == 1
-      && VEC_length (db_token, mo.macro_tokens) == 0)
-    return true;
-  return false;
-}
-
-/* }])> */
-
-/* class c_tok <([{ */
-/* 
- * According to current plugin architecture, I append c/c++ keyword type in
- * PLUGIN_C_TOKEN after PLUGIN_CPP_TOKEN for every CPP_NAME token.
- * */
-static struct
-{
-  cpp_token_p last_common_token;
-  enum symdb_type common_type;
-  db_token *last_macro_token;
-} c_tok;
-
-static void
-ctoken_push_macrotoken (db_token * p)
-{
-  c_tok.last_macro_token = p;
-}
-
-/* }])> */
-/* }])> */
-
-/* C specific. <([{ */
-/* The vim fold is used to output gcc tree to database, currently, it isn't
- * completed! */
-/* definitions <([{ */
-__extension__ enum symdb_tree_code
-{
-  decoration_code = MAX_TREE_CODES * 2,
-  initializer_code,
-  function_args_code,
-  function_result_code,
-  function_body_code,
-};
-
-struct type_value
-{
-  /* storage declaration specifier. */
-  __extension__ enum
-  {
-    sds_typedef,
-    sds_extern,
-    sds_static,
-    sds_auto,
-    sds_register,
-    sds_inline,
-    sds___thread,
-  } sds:8;
-  /* type specifier. */
-  __extension__ enum
-  {
-    ts_void = itk_none * 2,
-    ts_float = itk_none * 2,
-    ts_double,
-    ts_struct,
-    ts_enum,
-    /* gcc extensions. */
-  } ts:16;
-  /* type qualifier. */
-  __extension__ enum
-  {
-    tq_const,
-    tq_restrict,
-    tq_volatile,
-  } tq:8;
-};
-/* }])> */
-
-static struct
-{
-  struct sqlite3_stmt *stmt_ctree;
-  struct sqlite3_stmt *stmt_ctree2;
-  struct sqlite3_stmt *stmt_ctree3;
-  struct sqlite3_stmt *stmt_ctree4;
-
-  int token_id;
-} c;
-
-/* class syntax tree. <([{ */
-static inline int
-get_syntax_id (void)
-{
-  int result;
-  db_error (sqlite3_step (c.stmt_ctree2) != SQLITE_ROW);
-  result = sqlite3_column_int (c.stmt_ctree2, 0);
-  db_error (sqlite3_reset (c.stmt_ctree2));
-  return result;
-}
-
-static int
-output_syntax (int code, void *data, int size, int parent_id)
-{
-  db_error (sqlite3_bind_int (c.stmt_ctree, 1, code));
-  if (data == NULL)
-    db_error (sqlite3_bind_null (c.stmt_ctree, 2));
-  else
-    db_error (sqlite3_bind_blob (c.stmt_ctree, 2, data, size, SQLITE_STATIC));
-  db_error (sqlite3_bind_int (c.stmt_ctree, 3, parent_id));
-  execute_sql (c.stmt_ctree);
-  return get_syntax_id ();
+  cache.last_cpp_token = p;
 }
 
 static void
-output_semantic (int syntax_id, int scope_id, int decl_id, int token_id)
+cache_append_itoken_c_stage (c_token_p token)
 {
-  db_error (sqlite3_bind_int (c.stmt_ctree3, 1, syntax_id));
-  db_error (sqlite3_bind_int (c.stmt_ctree3, 2, scope_id));
-  db_error (sqlite3_bind_int (c.stmt_ctree3, 3, decl_id));
-  db_error (sqlite3_bind_int (c.stmt_ctree3, 4, token_id));
-  execute_sql (c.stmt_ctree3);
-}
-
-static bool
-compare_semantic (int syntax_id, int scope_id, int decl_id, int token_id)
-{
-  return true;
-}
-
-static void output_type (tree, int);
-
-static int
-output_storage_specifier (tree decl)
-{
-  int result = 0;
-  if (!TREE_PUBLIC (decl))
-    result += 1;
-  if (DECL_EXTERNAL (decl))
-    result += 2;
-  if (TREE_CODE (decl) == VAR_DECL)
-    {
-      if (DECL_REGISTER (decl))
-	result += 4;
-      if (DECL_THREAD_LOCAL_P (decl))
-	result += 8;
-    }
-  else if (TREE_CODE (decl) == FUNCTION_DECL)
-    {
-      if (DECL_DECLARED_INLINE_P (decl))
-	result += 16;
-    }
-  return result;
-}
-
-static int
-output_type_specifier (tree type)
-{
-  int result = 0;
-  if (type == void_type_node)
-    result = ts_void;
-  else if (type == char_type_node)
-    result = itk_char;
-  else if (type == signed_char_type_node)
-    result = itk_signed_char;
-  else if (type == unsigned_char_type_node)
-    result = itk_unsigned_char;
-  else if (type == short_integer_type_node)
-    result = itk_short;
-  else if (type == short_unsigned_type_node)
-    result = itk_unsigned_short;
-  else if (type == integer_type_node)
-    result = itk_int;
-  else if (type == unsigned_type_node)
-    result = itk_unsigned_int;
-  else if (type == long_integer_type_node)
-    result = itk_long;
-  else if (type == long_unsigned_type_node)
-    result = itk_unsigned_long;
-  else if (type == long_long_integer_type_node)
-    result = itk_long_long;
-  else if (type == long_long_unsigned_type_node)
-    result = itk_unsigned_long_long;
-  return result << 8;
-}
-
-static int
-output_type_qualifier (tree type)
-{
-  int result = 0;
-  if (TYPE_VOLATILE (type))
-    result += 1;
-  if (TYPE_READONLY (type))
-    result += 2;
-  if (TYPE_RESTRICT (type))
-    result += 4;
-  return result << 24;
-}
-
-static tree
-output_array (tree type, int parent_id)
-{
-  int capacity = 10;
-  int *value = XNEWVEC (int, capacity);
-  int pos = 0;
-  for (; TREE_CODE (type) == ARRAY_TYPE; pos++, type = TREE_TYPE (type))
-    {
-      tree domain = TYPE_DOMAIN (type);
-      if (pos >= capacity)
-	value = XRESIZEVEC (int, value, capacity * 1.1);
-      value[pos] = TREE_INT_CST_LOW (TYPE_MAX_VALUE (domain)) + 1;
-    }
-  if (pos != 0)
-    output_syntax (ARRAY_TYPE, value, sizeof (int) * pos, parent_id);
-  XDELETEVEC (value);
-  return type;
-}
-
-static void
-output_function_pointer (tree type, int parent_id)
-{
-  int temp;
-  tree args = TYPE_ARG_TYPES (type);
-  tree result = TREE_TYPE (type);
-  output_syntax ((int) TREE_CODE (type), NULL, 0, parent_id);
-  parent_id = get_syntax_id ();
-  output_syntax (function_args_code, NULL, 0, parent_id);
-  temp = get_syntax_id ();
-  for (; args != void_list_node; args = TREE_CHAIN (args))
-    {
-      output_type (TREE_VALUE (args), temp);
-    }
-  output_syntax (function_result_code, NULL, 0, parent_id);
-  temp = get_syntax_id ();
-  output_type (result, temp);
-}
-
-static tree
-output_pointer (tree type, int parent_id)
-{
-  int capacity = 10;
-  int *value = XNEWVEC (int, capacity);
-  int pos = 0;
-  for (; TREE_CODE (type) == POINTER_TYPE; pos++, type = TREE_TYPE (type))
-    {
-      if (pos >= capacity)
-	value = XRESIZEVEC (int, value, capacity * 1.1);
-      value[pos] = output_type_qualifier (type);
-    }
-  if (pos != 0)
-    output_syntax (POINTER_TYPE, value, sizeof (int) * pos, parent_id);
-  XDELETEVEC (value);
-  return type;
-}
-
-static void
-output_initializer (tree decl)
-{
-}
-
-static void
-output_attribute (tree decl)
-{
-}
-
-static void
-output_type (tree target, int parent_id)
-{
-  tree type;
-  int value = 0;
-  if (DECL_P (target))
-    {
-      type = TREE_TYPE (target);
-      value = output_storage_specifier (target);
-    }
-  else
-    type = target;
-  if (TREE_CODE (type) == ARRAY_TYPE)
-    type = output_array (type, parent_id);
-  if (TREE_CODE (type) == POINTER_TYPE)
-    type = output_pointer (type, parent_id);
-  if (TREE_CODE (type) == FUNCTION_TYPE)
-    output_function_pointer (type, parent_id);
-  else
-    {
-      value |= output_type_specifier (type);
-      value |= output_type_qualifier (type);
-    }
-  output_syntax (decoration_code, &value, sizeof (value), parent_id);
-}
-
-/* variable tree: TREE_CODE (var) == VAR_DECL
- *    <root> = DECL_NAME (var).
- *    type = TREE_TYPE (var).
- *    attributes = DECL_ATTRIBUTES (var)
- *    initializer = DECL_INITIAL (var);
- *    location = DECL_SOURCE_LOCATION (var)
- */
-static void
-output_var (tree var)
-{
-  int parent_id;
-  c.token_id = 0;		/* SYMDB_INDEX (DECL_NAME (var)); */
-  if (!compare_semantic (parent_id, 0, 0, c.token_id))
-    return;
-  output_syntax ((int) TREE_CODE (var), &c.token_id, sizeof (c.token_id), 0);
-  parent_id = get_syntax_id ();
-  output_semantic (parent_id, 0, 0, c.token_id);
-  output_type (var, parent_id);
-  output_initializer (var);
-  output_attribute (var);
-}
-
-/* function body: TREE_CODE (fnbody) == BIND_EXPR
- *    vars = BIND_EXPR_VARS (fnbody), which is a brief profile of all variables
- *    in the function.
- *    statements = BIND_EXPR_BODY (fnbody), the set of function statements.
- *    BIND_EXPR_BLOCK (fnbody), not be outputted.
- *    misc. see more from BIND_EXPR of gcc/tree.def.
- */
-static void
-output_fnbody (tree fnbody)
-{
-}
-
-static void
-symdb_c_tree (tree ctree)
-{
-  tree tmp;
-  debug_tree (ctree);
-  if (TREE_CODE (ctree) == TYPE_DECL)
-    {
-      tmp = DECL_NAME (ctree);
-    }
-  else if (TREE_CODE (ctree) == RECORD_TYPE ||
-	   TREE_CODE (ctree) == UNION_TYPE ||
-	   TREE_CODE (ctree) == ENUMERAL_TYPE)
-    {
-    }
-  else if (TREE_CODE (ctree) == BIND_EXPR)
-    {
-      output_fnbody (ctree);
-    }
-  else if (TREE_CODE (ctree) == VAR_DECL)
-    {
-      output_var (ctree);
-    }
-  else if (TREE_CODE (ctree) == FUNCTION_DECL && !DECL_BUILT_IN (ctree))
-    {
-    }
-}
-
-static void
-symdb_tree_init (void)
-{
-}
-
-static void
-symdb_tree_tini (void)
-{
-}
-
-/* }])> */
-/* }])> */
-
-/* cpp_callbacks <([{ */
-static void
-cb_file_change (cpp_reader * pfile, const struct line_map *map)
-{
-  if (map != NULL)
-    {
-      if (map->reason == LC_ENTER && map->included_from != -1)
-	inc_trace (map->to_file, map->sysp);
-      else if (map->reason == LC_LEAVE)
-	inc_trace (NULL, false);
-    }
-  if (cpp.orig_file_change != NULL)
-    cpp.orig_file_change (pfile, map);
-}
-
-static void
-cb_macro_start (cpp_reader * pfile, const cpp_token * token,
-		const cpp_hashnode * node)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  bool syshdr = false;
-  bool fun_like = false;
-  if (!(node->flags & NODE_BUILTIN))
-    {
-      cpp_macro *macro = node->value.macro;
-      syshdr = macro->syshdr;
-      fun_like = macro->fun_like;
-    }
-  if (pfile->context->prev == NULL)
-    {
-      gcc_assert (mo.sys_macro == 0);
-      cpp.directive_type = EXPANDED_TOKEN;
-      if (syshdr)
-	{
-	  mo.sys_macro = 1;
-	  cpp.directive_type |= SYSHDR_FLAG;
-	}
-      /* The token is leader EXPANDED_TOKEN. */
-      mo_append_token (token, cpp.directive_type);
-    reinit:
-      if (fun_like)
-	{
-	  /* Macro expansion occurs in normal chToken stream. To capture all
-	   * expanded tokens which are masked by symdb_cpp_token by default, we
-	   * must use cb_directive_token. */
-	  cb->directive_token = cb_directive_token;
-	  cb->macro_end_arg = cb_end_arg;
-	}
-      else			/* token following leader EXPANDED_TOKEN is MACRO_TOKEN */
-	{
-	  cpp.i_type = MACRO_TOKEN;
-	  if (mo.sys_macro)
-	    cpp.i_type |= SYSHDR_FLAG;
-	}
-      cb->macro_intern_expand = NULL;
-    }
-  else
-    {
-      if (syshdr)
-	{
-	  if (!mo.sys_macro)
-	    {
-	      cpp.i_type = MACRO_TOKEN | EXPANDED_TOKEN | SYSHDR_FLAG;
-	      mo_append_token (token, cpp.i_type);
-	      if (fun_like)
-		{
-		  /* The case is user macro including system macro, using
-		   * cb_intern_expand to collect them. */
-		  cb->macro_intern_expand = cb_intern_expand;
-		  cb->macro_end_arg = cb_end_arg;
-		}
-	      else
-		cpp.i_type = MACRO_TOKEN | SYSHDR_FLAG;
-	    }
-	  mo.sys_macro++;
-	}
-      if (mo_maybe_cascaded ())
-	{
-	  if (fun_like)
-	    mo.cascaded_func = true;
-	  goto reinit;
-	}
-    }
-}
-
-static void
-cb_end_arg (cpp_reader * pfile, bool cancel)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  if (cancel)
-    {
-      if (mo.sys_macro)
-	cb->macro_intern_expand = NULL;
-      mo_cancel ();
-      return;
-    }
-  cb->macro_end_arg = NULL;
-  cb->directive_token = NULL;
-  cpp.i_type = MACRO_TOKEN;
-  if (mo.sys_macro)
-    cpp.i_type |= SYSHDR_FLAG;
-}
-
-static void
-cb_intern_expand (struct cpp_reader *pfile, void *base, int count,
-		  bool direct)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  cpp.directive_type = MACRO_TOKEN | EXPANDED_TOKEN | SYSHDR_FLAG;
-  cb->macro_intern_expand = NULL;
-  cpp_token_p token;
-  cpp_token_p p, *pp;
-  if (direct)
-    p = (cpp_token_p) base;
-  else
-    pp = (cpp_token_p *) base;
-  while (count--)
-    {
-      token = direct ? p++ : *pp++;
-      if (token->type == CPP_PADDING)
-	continue;
-      mo_append_token (token, cpp.directive_type);
-    }
-  cpp.i_type = MACRO_TOKEN | SYSHDR_FLAG;
-}
-
-static void
-cb_macro_end (cpp_reader * pfile)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  if (mo.sys_macro)
-    mo.sys_macro--;
-  if (!mo.sys_macro)
-    cpp.i_type = MACRO_TOKEN;
-  if (pfile->context->prev == NULL)
-    {
-      /* We've left macro expansion totally. */
-      if (mo.cascaded_func)
-	{
-	  /* See document, we must cancel calling mo_flush. */
-	  mo.cascaded_func = false;
-	  return;
-	}
-      mo_flush ();
-      cb->macro_end_arg = NULL;
-      cb->directive_token = NULL;
-      cpp.i_type = COMMON_TOKEN;
-    }
-}
-
-static void
-cb_comment (cpp_reader * pfile, const cpp_token * token)
-{
-  cpp.directive_type = ERASED_TOKEN;
-  cb_directive_token (pfile, token);
-}
-
-static void
-cb_start_directive (cpp_reader * pfile, const cpp_token * token)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  cpp.directive_type = ERASED_TOKEN;
-  cb->directive_token = cb_directive_token;
-  cb_directive_token (pfile, token);
-}
-
-static void
-cb_end_directive (cpp_reader * pfile)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  cb->directive_token = NULL;
-}
-
-static void
-cb_directive_token (cpp_reader * pfile, const cpp_token * token)
-{
-  if (cpp.directive_type == ERASED_TOKEN)
-    /* from cb_start_directive */
-    output_chtoken (token, cpp.directive_type | token->type);
-  else
-    /* from cb_macro_start */
-    mo_append_token (token, cpp.directive_type);
-}
-
-/* }])> */
-
-/* plugin <([{ */
-static void
-symdb_init (const char *db_file)
-{
-  int nrow, ncolumn;
-  char *error_msg, **result;
-
-  if (!sqlite3_threadsafe ())
-    {
-      fprintf (stderr, "sqlite3 is compiled without thread-safe!\n");
-      exit (1);
-    }
-
-  gbuf = dyn_string_new (1024);
-  control_panel.db_file = dyn_string_new (256);
-  control_panel.prj_dir = dyn_string_new (256);
-  control_panel.cwd = dyn_string_new (256);
-  dyn_string_copy_cstr (control_panel.cwd, getpwd ());
-  dyn_string_copy_cstr (control_panel.db_file, db_file);
-
-  db_error ((sqlite3_open_v2 (db_file, &db, SQLITE_OPEN_READWRITE, NULL)));
-  db_error ((sqlite3_exec
-	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
-
-  /* initilize control data. */
-  db_error (sqlite3_get_table (db,
-			       "select debug, projectRootPath from ProjectOverview;",
-			       &result, &nrow, &ncolumn, &error_msg));
-  control_panel.debug = strcmp (result[2], "true") == 0 ? true : false;
-  control_panel.heavy_cpp_comparison = control_panel.debug;
-  dyn_string_copy_cstr (control_panel.prj_dir, result[3]);
-  sqlite3_free_table (result);
-}
-
-static void
-symdb_unit_init (void *gcc_data, void *user_data)
-{
-  int nrow, ncolumn;
-  char *error_msg, **result;
-  dyn_string_t chfile_id = dyn_string_new (8);
-  dyn_string_t ifile_id = dyn_string_new (8);
-
-  control_panel.compiled_file = dyn_string_new (256);
-  file_full_path (main_input_filename, control_panel.compiled_file);
-  append_file (chfile_id, ifile_id);
-  control_panel.ifile_id = strtol (dyn_string_buf (ifile_id), NULL, 10);
-  control_panel.chfile_id = strtol (dyn_string_buf (chfile_id), NULL, 10);
-
-  dyn_string_delete (ifile_id);
-  dyn_string_delete (chfile_id);
-
-  symdb_token_init (parse_in);
-  symdb_tree_init ();
-}
-
-static void
-symdb_unit_tini (void *gcc_data, void *user_data)
-{
-  symdb_tree_tini ();
-  symdb_token_tini ();
-
-  dyn_string_delete (control_panel.compiled_file);
-}
-
-static void
-symdb_tini (void *gcc_data, void *user_data)
-{
-  db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
-  sqlite3_close (db);
-
-  dyn_string_delete (control_panel.cwd);
-  dyn_string_delete (control_panel.prj_dir);
-  dyn_string_delete (control_panel.db_file);
-  dyn_string_delete (gbuf);
-}
-
-static void
-symdb_cpp_token (void *gcc_data, void *user_data)
-{
-  cpp_token_p token = (cpp_token_p) gcc_data;
-  if (token->type == CPP_EOF || token->type == CPP_PADDING)
-    return;
-  if (cpp.i_type == COMMON_TOKEN)
-    {
-      if (token->type != CPP_NAME)
-	output_chtoken (token, cpp.i_type | token->type);
-      else
-	{
-	  c_tok.last_common_token = token;
-	  c_tok.common_type = cpp.i_type | token->type;
-	}
-    }
-  else
-    mo_append_token (token, cpp.i_type);
-}
-
-static void
-symdb_c_token (void *gcc_data, void *user_data)
-{
-  c_token *token = gcc_data;
   int keyword = 0;
   if (token->type != CPP_EOF)
     {
@@ -1478,39 +652,727 @@ symdb_c_token (void *gcc_data, void *user_data)
   else
     return;
   if (token->type == CPP_KEYWORD)
-    keyword = token->keyword;
-  keyword <<= C_TYPE_SHIFT;
-  if (cpp.i_type == COMMON_TOKEN)
+    keyword = ~token->keyword;
+  keyword = (keyword << C_TYPE_SHIFT) & C_TYPE_MASK;
+  cache.last_cpp_token->flag ^= keyword;
+}
+
+static inline int
+revert_index (int index)
+{
+  return VEC_length (db_token, cache.itokens) - 1 - index;
+}
+
+static db_token *
+cache_get (int index)
+{
+  return VEC_index (db_token, cache.itokens, revert_index (index));
+}
+
+static db_token *
+cache_itoken_to_chtoken (int index)
+{
+  db_token *result = NULL;
+  int ix;
+  let *p;
+  int tmp = revert_index (index);
+  FOR_EACH_VEC_ELT_REVERSE (let, cache.auxiliary, ix, p)
+  {
+    if (p->start <= tmp && tmp < p->start + p->length)
+      break;
+  }
+  if (ix != -1)
+    result = &VEC_index (let, cache.auxiliary, ix)->leader;
+  else
+    result = cache_get (index);
+  return result;
+}
+
+static int
+cache_skip_match_pair (int index, char c)
+{
+  int recurse = 1;
+  int result = revert_index (index) - 1;
+  char *from, *to;
+  switch (c)
     {
-      c_tok.common_type |= keyword;
-      output_chtoken (c_tok.last_common_token, c_tok.common_type);
+    case ')':
+      from = "(";
+      to = ")";
+      break;
+    case ']':
+      from = "[";
+      to = "]";
+      break;
+    case '}':
+      from = "{";
+      to = "}";
+      break;
+    }
+  while (true)
+    {
+      db_token *p = VEC_index (db_token, cache.itokens, result);
+      if (strcmp (dyn_string_buf (p->value), from) == 0)
+	{
+	  recurse--;
+	  if (recurse == 0)
+	    break;
+	}
+      if (strcmp (dyn_string_buf (p->value), to) == 0)
+	recurse++;
+      result--;
+    }
+  return VEC_length (db_token, cache.itokens) - 1 - (result - 1);
+}
+
+/* }])> */
+
+/* definition <([{ */
+__extension__ enum definition_flag
+{
+  DEF_VAR = 1,
+  DEF_FUNC,
+  DEF_MACRO,
+  DEF_TYPEDEF,
+  DEF_STRUCT,
+  DEF_UNION,
+  DEF_ENUM,
+  DEF_ENUM_MEMBER,
+  DEF_CALLED_FUNC,
+};
+
+static struct
+{
+  long long caller_id;
+
+  struct sqlite3_stmt *helper;
+  struct sqlite3_stmt *insert_def;
+  struct sqlite3_stmt *select_defrel;
+  struct sqlite3_stmt *insert_defrel;
+} def;
+
+static long long
+insert_def (enum definition_flag flag, dyn_string_t str, int offset)
+{
+  int fid = file_get_current_fid ();
+  long long defid;
+  db_error (sqlite3_bind_int (def.helper, 1, fid));
+  db_error (sqlite3_bind_int (def.helper, 2, offset));
+  db_error (sqlite3_bind_text
+	    (def.helper, 3, dyn_string_buf (str),
+	     dyn_string_length (str), SQLITE_STATIC));
+  db_error (sqlite3_bind_int (def.helper, 4, flag));
+  if (sqlite3_step (def.helper) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_text
+		(def.insert_def, 1, dyn_string_buf (str),
+		 dyn_string_length (str), SQLITE_STATIC));
+      db_error (sqlite3_bind_int (def.insert_def, 2, flag));
+      db_error (sqlite3_bind_int (def.insert_def, 3, offset));
+      execute_sql (def.insert_def);
+      defid = sqlite3_last_insert_rowid (db);
     }
   else
+    defid = sqlite3_column_int64 (def.helper, 2);
+  revalidate_sql (def.helper);
+  return defid;
+}
+
+static void
+insert_defrel (long long callee)
+{
+  long long caller = def.caller_id;
+  db_error (sqlite3_bind_int64 (def.select_defrel, 1, caller));
+  db_error (sqlite3_bind_int64 (def.select_defrel, 2, callee));
+  if (sqlite3_step (def.select_defrel) != SQLITE_ROW)
     {
-      c_tok.last_macro_token->cpp_type |= keyword;
+      db_error (sqlite3_bind_int64 (def.insert_defrel, 1, caller));
+      db_error (sqlite3_bind_int64 (def.insert_defrel, 2, callee));
+      execute_sql (def.insert_defrel);
+    }
+  revalidate_sql (def.select_defrel);
+}
+
+static void
+def_append (enum definition_flag flag, dyn_string_t str, int offset)
+{
+  long long defid = insert_def (flag, str, offset);
+  if (flag == DEF_FUNC)
+    def.caller_id = defid;
+  else if (flag == DEF_CALLED_FUNC)
+    insert_defrel (defid);
+  file_insert_defid (defid);
+}
+
+static inline bool
+is_uid (int cpp_type, int c_type)
+{
+  return cpp_type == CPP_NAME && c_type == 0xffff;
+}
+
+static inline void
+demangle_type (db_token * token, int *cpp_type, int *c_type)
+{
+  enum symdb_flag flag = token->flag;
+  *cpp_type = flag & CPP_TYPE_MASK;
+  *c_type = (flag & C_TYPE_MASK) >> C_TYPE_SHIFT;
+}
+
+static int
+def_strip_paren_declarator_outer (int index)
+{
+  int pair = 0;
+  while (true)
+    {
+      int cpp_type, c_type;
+      db_token *tmp = cache_get (index);
+      demangle_type (tmp, &cpp_type, &c_type);
+      if (cpp_type != CPP_CLOSE_PAREN)
+	break;
+      if (VEC_length (db_token, cache.itokens) -
+	  cache_skip_match_pair (index, ')') != pair++)
+	break;
+      index++;
+    }
+  return index;
+}
+
+static int
+def_strip_paren_declarator_inner (int index)
+{
+  while (true)
+    {
+      int cpp_type, c_type;
+      db_token *tmp = cache_get (index++);
+      demangle_type (tmp, &cpp_type, &c_type);
+      if (cpp_type != CPP_CLOSE_PAREN)
+	break;
+    }
+  return index - 1;
+}
+
+static void
+def_append_chk (int index, enum definition_flag flag)
+{
+  db_token *token;
+  dyn_string_t str;
+  int cpp_type, c_type;
+  token = cache_get (index);
+  str = token->value;
+  demangle_type (token, &cpp_type, &c_type);
+  if (!is_uid (cpp_type, c_type))
+    gcc_assert (false);
+  token = cache_itoken_to_chtoken (index);
+  demangle_type (token, &cpp_type, &c_type);
+  if (!is_uid (cpp_type, c_type))
+    gcc_assert (false);
+  def_append (flag, str, token->file_offset);
+}
+
+static void
+def_init (void)
+{
+  /* Search fileDefinition view not Definition table. */
+  db_error (sqlite3_prepare_v2 (db,
+				"select fileID, position, defID, defName, flag from Helper "
+				"where fileID = ? and position = ? and defName = ? and flag = ?;",
+				-1, &def.helper, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into Definition values (NULL, ?, ?, ?);",
+				-1, &def.insert_def, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"select rowid from DefinitionRelationship where caller = ? and callee = ?;",
+				-1, &def.select_defrel, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into DefinitionRelationship values (?, ?);",
+				-1, &def.insert_defrel, 0));
+}
+
+static void
+def_tini (void)
+{
+  sqlite3_finalize (def.insert_defrel);
+  sqlite3_finalize (def.select_defrel);
+  sqlite3_finalize (def.insert_def);
+  sqlite3_finalize (def.helper);
+}
+
+/* }])> */
+
+/* cpp callbacks <([{ */
+/* The fold isn't class fold. */
+static struct
+{
+  int macro_tristate;
+} define_helper;
+
+static void
+cb_directive_token (cpp_reader * pfile, cpp_token_p token)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  /* Whether we're skipping by #ifdef/#if clause. */
+  if (pfile->state.skipping)
+    return;
+  if (mo_isvalid ())
+    mo_append_expanded_token ();
+  else
+    {
+      print_token (token, gbuf);
+      if (define_helper.macro_tristate == 1
+	  && strcmp (dyn_string_buf (gbuf), "define") == 0)
+	{
+	  define_helper.macro_tristate = 2;
+	  return;
+	}
+      if (define_helper.macro_tristate == 2)
+	{
+	  def_append (DEF_MACRO, gbuf, token->file_offset);
+	  define_helper.macro_tristate = 0;
+	}
+      cb->directive_token = NULL;
     }
 }
 
+static void
+cb_start_directive (cpp_reader * pfile, cpp_token_p token)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  define_helper.macro_tristate = 1;
+  cb->directive_token = cb_directive_token;
+}
+
+static void
+cb_end_arg (cpp_reader * pfile, bool cancel)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  mo_reset_cascaded ();
+  mo_maybe_cancel (cancel);
+  cb->macro_end_arg = NULL;
+}
+
+static void
+cb_macro_start (cpp_reader * pfile, cpp_token_p token,
+		const cpp_hashnode * node)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  bool fun_like = false;
+  if (!(node->flags & NODE_BUILTIN))
+    fun_like = node->value.macro->fun_like;
+  if (pfile->context->prev == NULL)
+    {
+      mo_enter ();
+      cache_tag_let (token);
+    reinit:
+      if (fun_like)
+	{
+	  cb->macro_end_arg = cb_end_arg;
+	  cb->directive_token = cb_directive_token;
+	}
+    }
+  else
+    {
+      if (mo_maybe_cascaded (fun_like))
+	goto reinit;
+    }
+}
+
+static void
+cb_macro_end (cpp_reader * pfile)
+{
+  if (pfile->context->prev == NULL)
+    {
+      if (mo_cascaded ())
+	return;
+      if (mo_cancel ())
+	cache_cancel_last_let ();
+      else
+	cache_end_let ();
+      mo_leave ();
+    }
+}
+
+typedef void (*CB_FILE_CHANGE) (cpp_reader *, const struct line_map *);
+static CB_FILE_CHANGE orig_file_change;
+static void
+cb_file_change (cpp_reader * pfile, const struct line_map *map)
+{
+  if (map != NULL)
+    {
+      if (map->reason == LC_ENTER && map->included_from != -1)
+	file_push (map->to_file, map->sysp);
+      else if (map->reason == LC_LEAVE)
+	file_pop ();
+    }
+  if (orig_file_change != NULL)
+    orig_file_change (pfile, map);
+}
+
+/* }])> */
+
+/* plugin callbacks <([{ */
+/* The fold isn't class fold. */
+static struct
+{
+  bool call_func;
+  bool enum_spec;
+} block_list =
+{
+.call_func = false,.enum_spec = false};
+
+static bool in_pragma = false;
+
+static void
+symdb_unit_init (void *gcc_data, void *user_data)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (parse_in);
+  orig_file_change = cb->file_change;
+  cb->file_change = cb_file_change;
+
+  db_error ((sqlite3_open_v2
+	     (only_param_dbfile, &db, SQLITE_OPEN_READWRITE, NULL)));
+  db_error ((sqlite3_exec
+	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
+
+  control_panel_init ();
+  cache_init ();
+  file_init ();
+  def_init ();
+  gbuf = dyn_string_new (1024);
+
+}
+
+static void
+symdb_unit_tini (void *gcc_data, void *user_data)
+{
+  dyn_string_delete (gbuf);
+  def_tini ();
+  file_tini ();
+  cache_tini ();
+  control_panel_tini ();
+
+  db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
+  sqlite3_close (db);
+}
+
+static void
+symdb_cpp_token (void *gcc_data, void *user_data)
+{
+  cpp_token_p token = (cpp_token_p) gcc_data;
+  static cpp_token fake = {.type = CPP_STRING,.val.str.text =
+      (unsigned char *) "",.val.str.len = 1
+  };
+  if (token == NULL)
+    token = &fake;
+  if (token->type == CPP_EOF)
+    return;
+  if (token->type == CPP_PRAGMA_EOL)
+    {
+      in_pragma = false;
+      return;
+    }
+  if (token->type == CPP_PRAGMA || in_pragma)
+    {
+      in_pragma = true;
+      return;
+    }
+  cache_append_itoken_cpp_stage (token);
+  if (mo_isvalid ())
+    mo_append_macro_token ();
+}
+
+static void
+symdb_c_token (void *gcc_data, void *user_data)
+{
+  c_token *token = gcc_data;
+  if (in_pragma)
+    return;
+  cache_append_itoken_c_stage (token);
+}
+
+/*
+ * postfix-expression:
+ *   primary-expression
+ *   postfix-expression ( argument-expression-list[opt] )
+ *
+ * primary-expression:
+ *   identifier
+ *   (expression) << a function pointer is called.
+ */
+static void
+symdb_call_func (void *gcc_data, void *user_data)
+{
+  tree decl = (tree) gcc_data;
+  db_token *token;
+  int cpp_type, c_type;
+  int index;
+  if (block_list.call_func)
+    return;
+  if (TREE_CODE (decl) == FUNCTION_DECL && DECL_BUILT_IN (decl))
+    return;
+  token = cache_get (0);
+  demangle_type (token, &cpp_type, &c_type);
+  gcc_assert (cpp_type == CPP_OPEN_PAREN);
+  index = def_strip_paren_declarator_inner (1);
+  token = cache_get (index);
+  demangle_type (token, &cpp_type, &c_type);
+  if (!is_uid (cpp_type, c_type))
+    /* The case is do function call by function-pointer, we don't audit it. */
+    return;
+  def_append_chk (index, DEF_CALLED_FUNC);
+  cache_reset (0);
+}
+
+/*
+ * enumerator-list:
+ *   enumerator
+ *   enumerator-list , enumerator
+ * enumerator:
+ *   enumeration-constant
+ *   enumeration-constant = constant-expression
+ */
+static void
+symdb_enum_spec (void *gcc_data, void *user_data)
+{
+  if (block_list.enum_spec)
+    return;
+  def_append_chk (0, DEF_ENUM_MEMBER);
+}
+
+/*
+ * function-definition:
+ *   declaration-specifiers[opt] declarator compound-statement
+ * declarator:
+ *   pointer[opt] direct-declarator
+ * direct-declarator:
+ *   direct-declarator ( parameter-type-list )
+ *   ( attributes[opt] declarator )
+ */
+static void
+symdb_extern_func (void *gcc_data, void *user_data)
+{
+  db_token *token;
+  int cpp_type, c_type;
+  int index;
+  token = cache_get (0);
+  demangle_type (token, &cpp_type, &c_type);
+  gcc_assert (cpp_type == CPP_OPEN_BRACE);
+  token = cache_get (1);
+  demangle_type (token, &cpp_type, &c_type);
+  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
+  index = cache_skip_match_pair (1, ')');
+  index = def_strip_paren_declarator_inner (index);
+  def_append_chk (index, DEF_FUNC);
+  block_list.enum_spec = true;
+  block_list.call_func = false;
+  cache_reset (0);
+}
+
+/*
+* declarator:
+*   pointer[opt] direct-declarator
+* direct-declarator:
+*   identifier
+*   ( attributes[opt] declarator ) << `int (v)' or `int ((v))'.
+*   direct-declarator array-declarator
+*   direct-declarator ( parameter-type-list ) << function declaration.
+*   direct-declarator ( identifier-list[opt] ) << function call.
+* pointer:
+*   type-qualifier-list[opt]
+*   type-qualifier-list[opt] pointer
+* type-qualifier-list:
+*   type-qualifier
+*   attributes
+*   type-qualifier-list type-qualifier
+*   type-qualifier-list attributes
+*
+* We callback hook makes sure there's not function-call case at all.
+* The second case makes me strip paren pair forwardly first.
+*/
+static void
+symdb_extern_var (void *gcc_data, void *user_data)
+{
+  void **pair = (void **) gcc_data;
+  const struct c_declspecs *ds = pair[0];
+  const struct c_declarator *da = pair[1];
+  db_token *token;
+  int cpp_type, c_type;
+  int index;
+  bool funpvar = false;
+
+  if (ds->storage_class == csc_extern)
+    /* User needn't the kind of definition at all. */
+    goto done;
+
+  while (da->kind == cdk_pointer || da->kind == cdk_attrs)
+    da = da->declarator;
+  if (da->kind == cdk_function)
+    {
+      if (da->declarator->kind != cdk_pointer)
+	/* We encountered a function declaration. */
+	goto done;
+      funpvar = true;
+    }
+
+  index = def_strip_paren_declarator_outer (1);
+  while (true)
+    {
+      token = cache_get (index);
+      demangle_type (token, &cpp_type, &c_type);
+      if (funpvar)
+	{
+	  funpvar = false;
+	  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
+	  index = cache_skip_match_pair (index, ')');
+	  index++;
+	}
+      else if (cpp_type == CPP_CLOSE_SQUARE)
+	index = cache_skip_match_pair (index, ']');
+      else
+	{
+	  index = def_strip_paren_declarator_inner (index);
+	  if (ds->storage_class == csc_typedef)
+	    /* We encountered a typedef. */
+	    def_append_chk (index, DEF_TYPEDEF);
+	  else
+	    def_append_chk (index, DEF_VAR);
+	  break;
+	}
+    }
+
+done:
+  cache_reset (0);
+}
+
+/*
+ * struct-or-union-specifier:
+ *   struct-or-union attributes[opt] identifier[opt] { struct-contents } attributes[opt]
+ *   struct-or-union attributes[opt] identifier
+ *
+ * enum-specifier:
+ *   enum attributes[opt] identifier[opt] { enumerator-list } attributes[opt]
+ *   enum attributes[opt] identifier[opt] { enumerator-list , } attributes[opt]
+ *   enum attributes[opt] identifier
+ */
+static void
+symdb_struct_union_enum (void *gcc_data, void *user_data)
+{
+  void **pair = (void **) gcc_data;
+  const struct c_declspecs *ds = pair[0];
+  int index = (int) pair[1];
+  tree node = ds->type;
+  enum tree_code code = TREE_CODE (node);
+  enum definition_flag flag;
+  db_token *token;
+  int cpp_type, c_type;
+
+  while (true)
+    {
+      token = cache_get (index);
+      demangle_type (token, &cpp_type, &c_type);
+      if (cpp_type != CPP_CLOSE_PAREN)
+	break;
+      index = cache_skip_match_pair (index, ')');
+      token = cache_get (index);
+      demangle_type (token, &cpp_type, &c_type);
+      gcc_assert (cpp_type == CPP_NAME && c_type == RID_ATTRIBUTE);
+      index++;
+    }
+
+  token = cache_get (index);
+  demangle_type (token, &cpp_type, &c_type);
+  if (cpp_type != CPP_CLOSE_BRACE)
+    goto done;
+
+  switch (code)
+    {
+    case ENUMERAL_TYPE:
+      flag = DEF_ENUM;
+      break;
+    case RECORD_TYPE:
+      flag = DEF_STRUCT;
+      break;
+    case UNION_TYPE:
+      flag = DEF_UNION;
+      break;
+    default:
+      goto done;
+    }
+
+  index = cache_skip_match_pair (index, '}');
+  token = cache_get (index);
+  demangle_type (token, &cpp_type, &c_type);
+  if (is_uid (cpp_type, c_type))
+    def_append_chk (index, flag);
+  /* else is anonymous struct/union/enum. */
+
+done:
+  cache_reset ((int) pair[1]);
+}
+
+static void
+symdb_extern_decl (void *gcc_data, void *user_data)
+{
+  block_list.enum_spec = false;
+  block_list.call_func = true;
+}
+
+/* }])> */
+
 int plugin_is_GPL_compatible;
+
+static void
+plugin_tini (void *gcc_data, void *user_data)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (parse_in);
+  cb->file_change = orig_file_change;
+  cb->macro_start_expand = NULL;
+  cb->macro_end_expand = NULL;
+  cb->start_directive = NULL;
+
+  unregister_callback ("symdb", PLUGIN_START_UNIT);
+  unregister_callback ("symdb", PLUGIN_FINISH_UNIT);
+  unregister_callback ("symdb", PLUGIN_FINISH);
+  unregister_callback ("symdb", PLUGIN_CPP_TOKEN);
+  unregister_callback ("symdb", PLUGIN_C_TOKEN);
+  unregister_callback ("symdb", PLUGIN_EXTERN_DECL);
+  unregister_callback ("symdb", PLUGIN_CALL_FUNCTION);
+  unregister_callback ("symdb", PLUGIN_ENUM_SPECIFIER);
+  unregister_callback ("symdb", PLUGIN_EXTERN_FUNC);
+  unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
+  unregister_callback ("symdb", PLUGIN_EXTERN_STRUCT_UNION_ENUM);
+}
 
 int
 plugin_init (struct plugin_name_args *plugin_info,
 	     struct plugin_gcc_version *version)
 {
-  printf ("%d, %s, %s\n", plugin_info->argc, plugin_info->argv->key,
-	  plugin_info->argv->value);
+  /* When `-E' is passed, symdb_unit_init is skipped. */
+  if (flag_preprocess_only)
+    return 0;
+  /* We only accept a param -- `dbfile', using ProjectOverview table of
+   * database to do further jobs. */
   gcc_assert (plugin_info->argc == 1
 	      && strcmp (plugin_info->argv[0].key, "dbfile") == 0);
-  symdb_init (plugin_info->argv[0].value);
-  register_callback ("symdb_start_unit", PLUGIN_START_UNIT, &symdb_unit_init,
-		     NULL);
-  register_callback ("symdb_finish_unit", PLUGIN_FINISH_UNIT,
-		     &symdb_unit_tini, NULL);
-  register_callback ("symdb_finish", PLUGIN_FINISH, &symdb_tini, NULL);
-  register_callback ("symdb_cpp_token", PLUGIN_CPP_TOKEN, &symdb_cpp_token,
-		     NULL);
-  register_callback ("symdb_c_token", PLUGIN_C_TOKEN, &symdb_c_token, NULL);
+  strcpy (only_param_dbfile, plugin_info->argv[0].value);
+
+  register_callback ("symdb", PLUGIN_START_UNIT, &symdb_unit_init, NULL);
+  register_callback ("symdb", PLUGIN_FINISH_UNIT, &symdb_unit_tini, NULL);
+  register_callback ("symdb", PLUGIN_FINISH, &plugin_tini, NULL);
+  register_callback ("symdb", PLUGIN_CPP_TOKEN, &symdb_cpp_token, NULL);
+  register_callback ("symdb", PLUGIN_C_TOKEN, &symdb_c_token, NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_DECL, &symdb_extern_decl, NULL);
+  register_callback ("symdb", PLUGIN_CALL_FUNCTION, &symdb_call_func, NULL);
+  register_callback ("symdb", PLUGIN_ENUM_SPECIFIER, &symdb_enum_spec, NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_FUNC, &symdb_extern_func, NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_VAR, &symdb_extern_var, NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_STRUCT_UNION_ENUM,
+		     &symdb_struct_union_enum, NULL);
+
+  cpp_callbacks *cb = cpp_get_callbacks (parse_in);
+  cb->macro_start_expand = cb_macro_start;
+  cb->macro_end_expand = cb_macro_end;
+  cb->start_directive = cb_start_directive;
+  /* Note: cb->file_change callback is delayed to install in symdb_unit_init
+   * for there's an inner hook -- cb_file_change of gcc/c-family/c-opts.c. */
   return 0;
 }
-
-/* }])> */

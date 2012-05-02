@@ -1,7 +1,7 @@
 // vim: foldmarker=<([{,}])> foldmethod=marker
                          Gcc symbol database (symdb)
                              zyf.zeroos@gmail.com
-							  November 24, 2009
+                              November 24, 2009
 
 // Purpose <([{
 The file is used to record the idea I got -- collecting gcc internal data (cpp
@@ -118,7 +118,7 @@ during a compilation session, ONLY a ifdef branch should be available!
 // }])>
 // }])>
 
-// Canconical Code Style <([{
+// Canonical Code Style <([{
 Read section <Macro-polymorph> before go, the section records some style which
 can make symdb more straightforwordly and simply
 1) Make only a branch available in `#ifdef' clause.
@@ -212,20 +212,28 @@ symdb.c:struct mo to solve it.
 // Gcc Cascaded Macro Expansion <([{
 Consider the case
 
-    #define Y(x) x
-    #define X Y
-    ...
+    #define Z(a) a
+    #define Y Z
     X(1);
+    #define X Z(1)
+    X;
 
-The flow is X is substituted to Y, then Y is reinterpreted as macro of the
-first line, then continue expansion. However the intern seems different,
-generally, cb_macro_start/cb_macro_end are called pairly every macro expansion,
-however in the case, the flow is cb_macro_start(X), cb_macro_start(Y),
-cb_macro_end(X), cb_macro_end(Y) and if the final cascaded token Y is
-function-like then the `pfile->context->prev == NULL' of both cb_macro_end(X)
-and cb_macro_end(Y). It makes my code a little complex. I place a field
-mo.cascaded_func to solve it. By the way, it's obvious X can't be
-function-like macro.
+The case is special due to the expansion process of X and Y is converted to
+the expansion process of a fun-like macro finally.
+To the second line, the sequence is
+    cb_macro_start(Y)
+    cb_macro_start(Z)
+    cb_macro_end(Y)
+    cb_end_arg(Z)
+    cb_macro_end(Z)
+To the fourth line, the sequence is
+    cb_macro_start(X)
+    cb_macro_start(Z)
+    cb_end_arg(Z)
+    cb_macro_end(Z)
+    cb_macro_end(X)
+The second line is also breaking cb_macro_start/cb_macro_end pair rule.  It
+makes my code a little complex. I place a field mo.cascaded to solve it.
 // }])>
 
 // Patch Overview <([{
@@ -260,7 +268,7 @@ A new field -- file_offset is added into cpplib.h:cpp_token, the field is used
 to sign every chToken exclusively, it's just like libcpp::line_map, but
 simpler, and to collect the value more accurately in the case
 --| ^#define X \    $
---| ^	a + b$
+--| ^    a + b$
 Pay attention that there're some spaces left after `\' token, so I change
 libcpp/{internal.h, lex.c} to deal with the case.
 // }])>
@@ -345,9 +353,9 @@ value, then `make db'.
 To implement the c/c++ syntax tree feature of <Feature List>, I need help from
 gcc developers, consider the case
     int g;
-	void foo(void)
+    void foo(void)
     {
-		g = 1;
+        g = 1;
         ...
     }
 when gcc starts to parse c tree, it sets up a VAR_DECL tree for `g', later
