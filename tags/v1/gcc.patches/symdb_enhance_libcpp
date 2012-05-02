@@ -1,0 +1,276 @@
+Index: gcc-4.6.2/libcpp/include/cpplib.h
+===================================================================
+--- gcc-4.6.2.orig/libcpp/include/cpplib.h	2010-09-30 02:18:38.000000000 +0800
++++ gcc-4.6.2/libcpp/include/cpplib.h	2012-01-08 16:36:52.000000000 +0800
+@@ -208,10 +208,10 @@
+        node;
+ };
+ 
+-/* A preprocessing token.  This has been carefully packed and should
+-   occupy 16 bytes on 32-bit hosts and 24 bytes on 64-bit hosts.  */
++/* A preprocessing token. */
+ struct GTY(()) cpp_token {
+   source_location src_loc;	/* Location of first char of token.  */
++  int file_offset;
+   ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
+   unsigned short flags;		/* flags - see above */
+ 
+@@ -493,6 +493,29 @@
+      be expanded.  */
+   cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
+ 
++  /* macro_{start/end}_expand are called when gcc starts to expand macro, note
++   * if A macro includes B macro, the pair is called multiple times. */
++  void (*macro_start_expand) (cpp_reader *, const cpp_token *,
++		  const cpp_hashnode *);
++  void (*macro_end_expand) (cpp_reader *);
++  /* Called when a function-like macro stops collecting macro parameters,
++   * cancel = true, macro expansion is canceled. */
++  void (*macro_end_arg) (cpp_reader *, bool cancel);
++  /* Used to collect intern data of gcc macro expansion, normally they are
++   * invisible to user. */
++  void (*macro_intern_expand) (cpp_reader *, void*, int, bool);
++  /* Called to collect comment. */
++  void (*comment) (cpp_reader *, const cpp_token*);
++  /* The pair is called when cpp directive (starting from `#', such as
++   * `#define', `#endif' etc) is encountered and reaches end. */
++  void (*start_directive) (cpp_reader *, const cpp_token*);
++  void (*end_directive) (cpp_reader *);
++  /* The more powerful function getting token than cpp_get_token. Here, name
++   * directive_token maybe makes you confused, it's named from
++   * libcpp/lex.c:_cpp_lex_direct, there isn't relationship between
++   * directive_token and {start, end}_directive above. */
++  void (*directive_token) (cpp_reader *, const cpp_token*);
++
+   /* Called to emit a diagnostic.  This callback receives the
+      translated message.  */
+   bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
+Index: gcc-4.6.2/libcpp/lex.c
+===================================================================
+--- gcc-4.6.2.orig/libcpp/lex.c	2011-05-23 03:14:50.000000000 +0800
++++ gcc-4.6.2/libcpp/lex.c	2012-01-08 17:00:35.000000000 +0800
+@@ -51,7 +51,8 @@
+ #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
+ #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
+ 
+-static void add_line_note (cpp_buffer *, const uchar *, unsigned int);
++static void add_line_note (cpp_buffer *, const uchar *, unsigned int,
++			   const uchar *);
+ static int skip_line_comment (cpp_reader *);
+ static void skip_whitespace (cpp_reader *, cppchar_t);
+ static void lex_string (cpp_reader *, cpp_token *, const uchar *);
+@@ -82,7 +83,8 @@
+ /* Record a note TYPE at byte POS into the current cleaned logical
+    line.  */
+ static void
+-add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type)
++add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type,
++	       const uchar * offset)
+ {
+   if (buffer->notes_used == buffer->notes_cap)
+     {
+@@ -93,6 +95,7 @@
+ 
+   buffer->notes[buffer->notes_used].pos = pos;
+   buffer->notes[buffer->notes_used].type = type;
++  buffer->notes[buffer->notes_used].adjust_offset = offset;
+   buffer->notes_used++;
+ }
+ 
+@@ -678,7 +681,7 @@
+ 		{
+ 		  /* Have a trigraph.  We may or may not have to convert
+ 		     it.  Add a line note regardless, for -Wtrigraphs.  */
+-		  add_line_note (buffer, s, s[2]);
++		  add_line_note (buffer, s, s[2], 0);
+ 		  if (CPP_OPTION (pfile, trigraphs))
+ 		    {
+ 		      /* We do, and that means we have to switch to the
+@@ -723,7 +726,7 @@
+ 
+       /* Have an escaped newline; process it and proceed to
+ 	 the slow path.  */
+-      add_line_note (buffer, p - 1, p != d ? ' ' : '\\');
++      add_line_note (buffer, p - 1, p != d ? ' ' : '\\', s + 1);
+       d = p - 2;
+       buffer->next_line = p - 1;
+ 
+@@ -748,14 +751,14 @@
+ 	      if (p == buffer->next_line || p[-1] != '\\')
+ 		break;
+ 
+-	      add_line_note (buffer, p - 1, p != d ? ' ': '\\');
++	      add_line_note (buffer, p - 1, p != d ? ' ': '\\', s + 1);
+ 	      d = p - 2;
+ 	      buffer->next_line = p - 1;
+ 	    }
+ 	  else if (c == '?' && s[1] == '?' && _cpp_trigraph_map[s[2]])
+ 	    {
+ 	      /* Add a note regardless, for the benefit of -Wtrigraphs.  */
+-	      add_line_note (buffer, d, s[2]);
++	      add_line_note (buffer, d, s[2], 0);
+ 	      if (CPP_OPTION (pfile, trigraphs))
+ 		{
+ 		  *d = _cpp_trigraph_map[s[2]];
+@@ -778,7 +781,7 @@
+  done:
+   *d = '\n';
+   /* A sentinel note that should never be processed.  */
+-  add_line_note (buffer, d + 1, '\n');
++  add_line_note (buffer, d + 1, '\n', s + 1);
+   buffer->next_line = s + 1;
+ }
+ 
+@@ -1835,6 +1838,8 @@
+ 		 handles the directive as normal.  */
+ 	      && pfile->state.parsing_args != 1)
+ 	    {
++	      if (pfile->cb.start_directive)
++		pfile->cb.start_directive (pfile, result);
+ 	      if (_cpp_handle_directive (pfile, result->flags & PREV_WHITE))
+ 		{
+ 		  if (pfile->directive_result.type == CPP_PADDING)
+@@ -1981,6 +1986,17 @@
+       _cpp_process_line_notes (pfile, false);
+       result->src_loc = pfile->line_table->highest_line;
+     }
++  if (buffer->cur_note != 0)
++    {
++      int index = buffer->cur_note - 1;
++      result->file_offset = buffer->cur - buffer->buf;
++      result->file_offset +=
++	buffer->notes[index].adjust_offset - buffer->notes[index].pos;
++    }
++  else
++    {
++      result->file_offset = buffer->cur - buffer->buf;
++    }
+   c = *buffer->cur++;
+ 
+   LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
+@@ -2106,12 +2122,18 @@
+ 	  break;
+ 	}
+ 
++      if (pfile->cb.comment)
++	{
++	  save_comment (pfile, result, comment_start, c);
++	  pfile->cb.comment (pfile, result);
++	}
+       if (!pfile->state.save_comments)
+ 	{
+ 	  result->flags |= PREV_WHITE;
+ 	  goto update_tokens_line;
+ 	}
+ 
++      if (!pfile->cb.comment)
+       /* Save the comment as a token in its own right.  */
+       save_comment (pfile, result, comment_start, c);
+       break;
+@@ -2290,6 +2312,8 @@
+       break;
+     }
+ 
++  if (pfile->cb.directive_token)
++    pfile->cb.directive_token (pfile, result);
+   return result;
+ }
+ 
+Index: gcc-4.6.2/libcpp/macro.c
+===================================================================
+--- gcc-4.6.2.orig/libcpp/macro.c	2010-09-29 22:49:14.000000000 +0800
++++ gcc-4.6.2/libcpp/macro.c	2012-01-08 16:36:52.000000000 +0800
+@@ -850,10 +850,13 @@
+       if (macro->fun_like)
+ 	{
+ 	  _cpp_buff *buff;
++	  void *expanded_beg = NULL, *expanded_end;
+ 
+ 	  pfile->state.prevent_expansion++;
+ 	  pfile->keep_tokens++;
+ 	  pfile->state.parsing_args = 1;
++	  if (pfile->cb.macro_intern_expand)
++	    expanded_beg = (void *) FIRST (pfile->context).token;
+ 	  buff = funlike_invocation_p (pfile, node, &pragma_buff);
+ 	  pfile->state.parsing_args = 0;
+ 	  pfile->keep_tokens--;
+@@ -869,9 +872,25 @@
+ 	      if (pragma_buff)
+ 		_cpp_release_buff (pfile, pragma_buff);
+ 
++	      if (pfile->cb.macro_end_arg)
++		pfile->cb.macro_end_arg (pfile, true);
+ 	      return 0;
+ 	    }
++	  if (pfile->cb.macro_intern_expand)
++	    {
++	      cpp_context *context = pfile->context;
++	      expanded_end = (void *) FIRST (context).token;
++	      pfile->cb.macro_intern_expand (pfile, expanded_beg,
++					     context->direct_p ?
++					     (cpp_token *) expanded_end -
++					     (cpp_token *) expanded_beg
++					     : (cpp_token **) expanded_end -
++					     (cpp_token **) expanded_beg,
++					     context->direct_p);
++	    }
+ 
++	  if (pfile->cb.macro_end_arg)
++	    pfile->cb.macro_end_arg (pfile, false);
+ 	  if (macro->paramc > 0)
+ 	    replace_args (pfile, node, macro, (macro_arg *) buff->base);
+ 	  _cpp_release_buff (pfile, buff);
+@@ -1256,6 +1275,8 @@
+       else
+ 	{
+ 	  _cpp_pop_context (pfile);
++	  if (pfile->cb.macro_end_expand)
++	    pfile->cb.macro_end_expand (pfile);
+ 	  if (pfile->state.in_directive)
+ 	    continue;
+ 	  return &pfile->avoid_paste;
+@@ -1312,7 +1333,14 @@
+ 		}
+ 	    }
+ 	  else
+-	    ret = enter_macro_context (pfile, node, result);
++ 	    {
++	      if (pfile->cb.macro_start_expand)
++		pfile->cb.macro_start_expand (pfile, result, node);
++	  ret = enter_macro_context (pfile, node, result);
++    if (ret == 0 && pfile->cb.macro_end_expand)
++      /* macro expansion is canceled. */
++      pfile->cb.macro_end_expand (pfile);
++	    }
+ 	  if (ret)
+  	    {
+ 	      if (pfile->state.in_directive || ret == 2)
+Index: gcc-4.6.2/libcpp/directives.c
+===================================================================
+--- gcc-4.6.2.orig/libcpp/directives.c	2011-04-29 06:39:59.000000000 +0800
++++ gcc-4.6.2/libcpp/directives.c	2012-01-08 16:36:52.000000000 +0800
+@@ -492,6 +492,8 @@
+   else if (skip == 0)
+     _cpp_backup_tokens (pfile, 1);
+ 
++  if (pfile->cb.end_directive)
++    pfile->cb.end_directive (pfile);
+   end_directive (pfile, skip);
+   if (was_parsing_args && !pfile->state.in_deferred_pragma)
+     {
+Index: gcc-4.6.2/libcpp/internal.h
+===================================================================
+--- gcc-4.6.2.orig/libcpp/internal.h	2010-09-30 02:18:38.000000000 +0800
++++ gcc-4.6.2/libcpp/internal.h	2012-01-08 16:36:52.000000000 +0800
+@@ -243,6 +243,11 @@
+      intervening space, 0 represents a note that has already been handled,
+      and anything else is invalid.  */
+   unsigned int type;
++
++  /* file offset adjustment is recorded by add_line_note to adjust
++   * cpp_token::file_offset. The case is when some spaces are left after an
++   * escaped newline `\', cpp_token::file_offset becomes inexact. */
++  const unsigned char *adjust_offset;
+ };
+ 
+ /* Represents the contents of a file cpplib has read in.  */
