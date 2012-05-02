@@ -1,0 +1,58 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE chFile (
+	id integer primary key autoincrement,
+	name text,
+	mtime bigint,
+	sysHeader boolean
+);
+INSERT INTO "chFile" VALUES(1,'test/paren_declarator/a.c',1334888839,'false');
+CREATE INDEX FileName on chFile (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDependence (
+	chFileID integer,
+	hID integer
+);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	position integer
+);
+INSERT INTO "Definition" VALUES(1,'td',4,17);
+INSERT INTO "Definition" VALUES(2,'tdfunp',4,38);
+INSERT INTO "Definition" VALUES(3,'p',1,67);
+INSERT INTO "Definition" VALUES(4,'arr',1,94);
+INSERT INTO "Definition" VALUES(5,'funpvar',1,115);
+INSERT INTO "Definition" VALUES(6,'abc',5,147);
+INSERT INTO "Definition" VALUES(7,'v1',1,173);
+INSERT INTO "Definition" VALUES(8,'v2',1,190);
+INSERT INTO "Definition" VALUES(9,'enumx',8,207);
+INSERT INTO "Definition" VALUES(10,'enumy',8,219);
+INSERT INTO "Definition" VALUES(11,'foo',2,234);
+INSERT INTO "Definition" VALUES(12,'main',2,270);
+INSERT INTO "Definition" VALUES(13,'foo',9,316);
+CREATE INDEX DefName on Definition (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE DefinitionRelationship (
+	caller bigint,
+	callee bigint
+);
+INSERT INTO "DefinitionRelationship" VALUES(12,13);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDefinition (
+	fileID integer,
+	startDefID bigint,
+	endDefID bigint
+);
+INSERT INTO "FileDefinition" VALUES(1,1,13);
+COMMIT;
