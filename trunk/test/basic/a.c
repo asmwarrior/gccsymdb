@@ -10,6 +10,8 @@ extern int exi, exj;
 ;
 
 int muldef;
+int muldef;
+
 struct abc {
 	char c;
 	int i;
@@ -18,8 +20,13 @@ enum {
 	enumx = 2,
 	enumy
 } __attribute__((packed));
+struct def {};
+typeof(struct ghi {char c; int i;}) tp;
 
-int muldef;
+void oldfun(abc)
+int ((abc));
+{
+}
 int foo(void)
 {
 	return enumx;

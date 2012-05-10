@@ -6,7 +6,7 @@ CREATE TABLE chFile (
 	mtime bigint,
 	sysHeader boolean
 );
-INSERT INTO "chFile" VALUES(1,'test/paren_declarator/a.c',1334888839,'false');
+INSERT INTO "chFile" VALUES(1,'test/paren_declarator/a.c',1325350860,'false');
 CREATE INDEX FileName on chFile (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -34,9 +34,10 @@ INSERT INTO "Definition" VALUES(7,'v1',1,173);
 INSERT INTO "Definition" VALUES(8,'v2',1,190);
 INSERT INTO "Definition" VALUES(9,'enumx',8,207);
 INSERT INTO "Definition" VALUES(10,'enumy',8,219);
-INSERT INTO "Definition" VALUES(11,'foo',2,234);
-INSERT INTO "Definition" VALUES(12,'main',2,270);
-INSERT INTO "Definition" VALUES(13,'foo',9,316);
+INSERT INTO "Definition" VALUES(11,'oldfun',2,235);
+INSERT INTO "Definition" VALUES(12,'foo',2,270);
+INSERT INTO "Definition" VALUES(13,'main',2,306);
+INSERT INTO "Definition" VALUES(14,'foo',9,352);
 CREATE INDEX DefName on Definition (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -45,7 +46,7 @@ CREATE TABLE DefinitionRelationship (
 	caller bigint,
 	callee bigint
 );
-INSERT INTO "DefinitionRelationship" VALUES(12,13);
+INSERT INTO "DefinitionRelationship" VALUES(13,14);
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -54,5 +55,5 @@ CREATE TABLE FileDefinition (
 	startDefID bigint,
 	endDefID bigint
 );
-INSERT INTO "FileDefinition" VALUES(1,1,13);
+INSERT INTO "FileDefinition" VALUES(1,1,14);
 COMMIT;

@@ -15,12 +15,16 @@ enum {
 	enumy
 };
 
+void (oldfun(abc))
+int ((abc));
+{
+}
 int (foo)(void)
 {
 	return enumx;
 }
 
-int (main)(void)
+int (main(void))
 {
 	((*funpvar[0][1]))();
 	return (foo)();

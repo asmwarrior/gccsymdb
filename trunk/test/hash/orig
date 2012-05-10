@@ -6,7 +6,7 @@ CREATE TABLE chFile (
 	mtime bigint,
 	sysHeader boolean
 );
-INSERT INTO "chFile" VALUES(1,'test/hash/a.c',1335662753,'false');
+INSERT INTO "chFile" VALUES(1,'test/hash/a.c',1325350860,'false');
 CREATE INDEX FileName on chFile (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;

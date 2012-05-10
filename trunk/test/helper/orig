@@ -1,6 +1,0 @@
-test/helper/a.c 5 DEF_FUNC
-test/helper/a.c 5 DEF_FUNC
-caller
-test/helper/a.c 38 foo DEF_CALLED_FUNC
-callee
-test/helper/a.c 24 main DEF_FUNC
