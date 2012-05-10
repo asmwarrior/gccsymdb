@@ -1,8 +1,8 @@
 Index: gcc-4.6.2/gcc/plugin.def
 ===================================================================
 --- gcc-4.6.2.orig/gcc/plugin.def	2012-04-23 09:13:04.301830324 +0800
-+++ gcc-4.6.2/gcc/plugin.def	2012-04-23 09:13:57.654781377 +0800
-@@ -89,6 +89,30 @@
++++ gcc-4.6.2/gcc/plugin.def	2012-05-07 13:09:11.177813560 +0800
+@@ -89,6 +89,34 @@
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
  
@@ -15,14 +15,18 @@ Index: gcc-4.6.2/gcc/plugin.def
 +/* An extern declaration (file-scope) is encounted. */
 +DEFEVENT (PLUGIN_EXTERN_DECL)
 +
++/* Cooperate PLUGIN_EXTERN_FUNC to parse a function with old-style parameter
++ * declaration. */
++DEFEVENT (PLUGIN_EXTERN_FUNC_OLD_PARAM)
++
 +/* Called when an extern function definition is parsed. */
 +DEFEVENT (PLUGIN_EXTERN_FUNC)
 +
 +/* Called when an extern variable definition is parsed. */
 +DEFEVENT (PLUGIN_EXTERN_VAR)
 +
-+/* An struct, union and enum definition is parsed. */
-+DEFEVENT (PLUGIN_EXTERN_STRUCT_UNION_ENUM)
++/* An extern declaration specifier definition is parsed. */
++DEFEVENT (PLUGIN_EXTERN_DECLSPECS)
 +
 +/* A function is called. */
 +DEFEVENT (PLUGIN_CALL_FUNCTION)
@@ -36,7 +40,7 @@ Index: gcc-4.6.2/gcc/plugin.def
 Index: gcc-4.6.2/gcc/c-family/c-lex.c
 ===================================================================
 --- gcc-4.6.2.orig/gcc/c-family/c-lex.c	2012-04-23 09:13:04.293736840 +0800
-+++ gcc-4.6.2/gcc/c-family/c-lex.c	2012-04-25 09:11:07.516705913 +0800
++++ gcc-4.6.2/gcc/c-family/c-lex.c	2012-05-03 16:41:59.388911324 +0800
 @@ -36,6 +36,7 @@
  #include "splay-tree.h"
  #include "debug.h"
@@ -61,17 +65,7 @@ Index: gcc-4.6.2/gcc/c-family/c-lex.c
  	  break;
  	}
        *value = build_string (tok->val.str.len, (const char *) tok->val.str.text);
-@@ -455,9 +458,6 @@
-       break;
-     }
- 
--  if (cpp_flags)
--    *cpp_flags = tok->flags | add_flags;
--
-   if (!no_more_pch)
-     {
-       no_more_pch = true;
-@@ -465,6 +465,7 @@
+@@ -465,6 +468,7 @@
      }
  
    timevar_pop (TV_CPP);
@@ -82,7 +76,7 @@ Index: gcc-4.6.2/gcc/c-family/c-lex.c
 Index: gcc-4.6.2/gcc/c-parser.c
 ===================================================================
 --- gcc-4.6.2.orig/gcc/c-parser.c	2012-04-23 09:13:04.302604873 +0800
-+++ gcc-4.6.2/gcc/c-parser.c	2012-04-24 09:43:55.439558269 +0800
++++ gcc-4.6.2/gcc/c-parser.c	2012-05-07 13:10:08.882044806 +0800
 @@ -121,45 +121,6 @@
     C++).  It would then be possible to share more of the C and C++
     lexer code, if desired.  */
@@ -152,7 +146,7 @@ Index: gcc-4.6.2/gcc/c-parser.c
 +  {
 +    void* pair[2]; pair[0] = specs; pair[1] = (void*) parser->tokens_avail;
 +    if (!nested)
-+      invoke_plugin_callbacks (PLUGIN_EXTERN_STRUCT_UNION_ENUM, pair);
++      invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, pair);
 +  }
    if (c_parser_next_token_is (parser, CPP_SEMICOLON))
      {
@@ -169,7 +163,14 @@ Index: gcc-4.6.2/gcc/c-parser.c
  	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
  	    {
  	      diagnosed_no_specs = true;
-@@ -1714,6 +1687,8 @@
+@@ -1709,11 +1682,15 @@
+ 	 declarator with a nonempty identifier list in a definition;
+ 	 and postfix attributes have never been accepted here in
+ 	 function definitions either.  */
++      if (!nested)
++        invoke_plugin_callbacks (PLUGIN_EXTERN_FUNC_OLD_PARAM, NULL);
+       while (c_parser_next_token_is_not (parser, CPP_EOF)
+ 	     && c_parser_next_token_is_not (parser, CPP_OPEN_BRACE))
  	c_parser_declaration_or_fndef (parser, false, false, false,
  				       true, false, NULL);
        store_parm_decls ();
@@ -178,7 +179,7 @@ Index: gcc-4.6.2/gcc/c-parser.c
        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
  	= c_parser_peek_token (parser)->location;
        fnbody = c_parser_compound_statement (parser);
-@@ -2211,6 +2186,7 @@
+@@ -2211,6 +2188,7 @@
  	    }
  	  token = c_parser_peek_token (parser);
  	  enum_id = token->value;
@@ -186,7 +187,7 @@ Index: gcc-4.6.2/gcc/c-parser.c
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
-@@ -6563,6 +6539,7 @@
+@@ -6563,6 +6541,7 @@
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -197,32 +198,34 @@ Index: gcc-4.6.2/gcc/c-parser.c
 Index: gcc-4.6.2/gcc/plugin.c
 ===================================================================
 --- gcc-4.6.2.orig/gcc/plugin.c	2012-04-23 09:13:04.300629221 +0800
-+++ gcc-4.6.2/gcc/plugin.c	2012-04-23 09:13:57.670036375 +0800
-@@ -438,6 +438,14 @@
++++ gcc-4.6.2/gcc/plugin.c	2012-05-07 13:09:48.486780120 +0800
+@@ -438,6 +438,15 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
 +      case PLUGIN_CPP_TOKEN:
 +      case PLUGIN_C_TOKEN:
 +      case PLUGIN_EXTERN_DECL:
++      case PLUGIN_EXTERN_FUNC_OLD_PARAM:
 +      case PLUGIN_EXTERN_FUNC:
 +      case PLUGIN_EXTERN_VAR:
-+      case PLUGIN_EXTERN_STRUCT_UNION_ENUM:
++      case PLUGIN_EXTERN_DECLSPECS:
 +      case PLUGIN_CALL_FUNCTION:
 +      case PLUGIN_ENUM_SPECIFIER:
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -514,6 +522,14 @@
+@@ -514,6 +523,15 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
 +      case PLUGIN_CPP_TOKEN:
 +      case PLUGIN_C_TOKEN:
 +      case PLUGIN_EXTERN_DECL:
++      case PLUGIN_EXTERN_FUNC_OLD_PARAM:
 +      case PLUGIN_EXTERN_FUNC:
 +      case PLUGIN_EXTERN_VAR:
-+      case PLUGIN_EXTERN_STRUCT_UNION_ENUM:
++      case PLUGIN_EXTERN_DECLSPECS:
 +      case PLUGIN_CALL_FUNCTION:
 +      case PLUGIN_ENUM_SPECIFIER:
          {
@@ -231,8 +234,8 @@ Index: gcc-4.6.2/gcc/plugin.c
 Index: gcc-4.6.2/gcc/doc/plugins.texi
 ===================================================================
 --- gcc-4.6.2.orig/gcc/doc/plugins.texi	2012-04-23 09:13:04.300629221 +0800
-+++ gcc-4.6.2/gcc/doc/plugins.texi	2012-04-23 09:13:57.671566582 +0800
-@@ -183,6 +183,20 @@
++++ gcc-4.6.2/gcc/doc/plugins.texi	2012-05-07 13:08:14.087944170 +0800
+@@ -183,6 +183,23 @@
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
    PLUGIN_NEW_PASS,
@@ -240,12 +243,15 @@ Index: gcc-4.6.2/gcc/doc/plugins.texi
 +  PLUGIN_C_TOKEN,                  /* Called when GCC gets a c token. */
 +  /* An extern declaration (file-scope) is encounted. */
 +  PLUGIN_EXTERN_DECL,
++  /* Cooperate PLUGIN_EXTERN_FUNC to parse a function with old-style parameter
++   * declaration. */
++  PLUGIN_EXTERN_FUNC_OLD_PARAM,
 +  /* An extern function definition is parsed. */
 +  PLUGIN_EXTERN_FUNC,
 +  /* An extern variable definition is parsed. */
 +  PLUGIN_EXTERN_VAR,
-+  /* An struct, union and enum definition is parsed. */
-+  PLUGIN_EXTERN_STRUCT_UNION_ENUM,
++  /* An extern declaration specifier definition is parsed. */
++  PLUGIN_EXTERN_DECLSPECS,
 +  /* A function is called. */
 +  PLUGIN_CALL_FUNCTION,
 +  /* An enum specifier is parsed. */

@@ -14,7 +14,7 @@
  *   relocate itoken to chtoken (cache_itoken_to_chtoken).
  *   2) Macro fold is collecting macro data from gcc and output them to
  *   cache.auxiliary, it's also in the charge of macro-cache, macro-cascaded
- *   and macro-cascaded-cache, see symdb.txt.
+ *   and macro-cascaded-cache expansion cases, see symdb.txt.
  *   2) Fold plugin-callbacks: I list all possible syntax cases before every
  *   function, here I only deal with the correct syntax result from gcc, the
  *   flow is reversely get user-definition from cache.itokens, the only
@@ -44,7 +44,7 @@
 typedef const struct cpp_token *cpp_token_p;
 typedef const struct c_token *c_token_p;
 static dyn_string_t gbuf;
-char only_param_dbfile[256];
+static char path[PATH_MAX + 1];
 static struct sqlite3 *db;
 
 static struct
@@ -89,16 +89,16 @@ control_panel_init (void)
   int nrow, ncolumn;
   char *error_msg, **result;
 
-  control_panel.db_file = dyn_string_new (256);
-  control_panel.prj_dir = dyn_string_new (256);
-  control_panel.cwd = dyn_string_new (256);
+  control_panel.db_file = dyn_string_new (PATH_MAX + 1);
+  control_panel.prj_dir = dyn_string_new (PATH_MAX + 1);
+  control_panel.cwd = dyn_string_new (PATH_MAX + 1);
   dyn_string_copy_cstr (control_panel.cwd, getpwd ());
-  dyn_string_copy_cstr (control_panel.db_file, only_param_dbfile);
+  dyn_string_copy_cstr (control_panel.db_file, path);
   /* initilize control data. */
   db_error (sqlite3_get_table (db,
 			       "select projectRootPath from ProjectOverview;",
 			       &result, &nrow, &ncolumn, &error_msg));
-  dyn_string_copy_cstr (control_panel.prj_dir, result[0]);
+  dyn_string_copy_cstr (control_panel.prj_dir, result[1]);
   sqlite3_free_table (result);
 }
 
@@ -158,6 +158,7 @@ get_mtime (const char *file)
       sqlite3_close (db);
       exit (1);
     }
+  gcc_assert (sizeof (filestat.st_mtime) <= sizeof (long long));
   return (long long) filestat.st_mtime;
 }
 
@@ -209,11 +210,25 @@ insert_filedep (int hid)
   revalidate_sql (file.select_filedep);
 }
 
+static const char *
+adjust_path (const char *f)
+{
+  char *str = lrealpath (f);
+  int len = dyn_string_length (control_panel.prj_dir);
+  if (strncmp (str, dyn_string_buf (control_panel.prj_dir), len) == 0)
+    strcpy (path, str + len);
+  else
+    strcpy (path, str);
+  free (str);
+  return path;
+}
+
 static void
 insert_file (const char *fn, int *file_id, long long *mtime, bool sysp)
 {
-  int size = strlen (fn);
   long long new_mtime = get_mtime (fn);
+  fn = adjust_path (fn);
+  int size = strlen (fn);
   db_error (sqlite3_bind_text
 	    (file.select_chfile, 1, fn, size, SQLITE_STATIC));
   if (sqlite3_step (file.select_chfile) != SQLITE_ROW)
@@ -669,6 +684,12 @@ cache_get (int index)
   return VEC_index (db_token, cache.itokens, revert_index (index));
 }
 
+static int
+cache_record_itoken_position (void)
+{
+  return VEC_length (db_token, cache.itokens);
+}
+
 static db_token *
 cache_itoken_to_chtoken (int index)
 {
@@ -1019,17 +1040,27 @@ static struct
 {
 .call_func = false,.enum_spec = false};
 
+/* in_pragma is used by symdb_cpp_token and symdb_c_token. */
 static bool in_pragma = false;
+/* func_old_param is used by symdb_extern_func_old_param and symdb_extern_func.
+ * */
+static int func_old_param = 0;
 
+static void plugin_tini (void *gcc_data, void *user_data);
 static void
 symdb_unit_init (void *gcc_data, void *user_data)
 {
   cpp_callbacks *cb = cpp_get_callbacks (parse_in);
   orig_file_change = cb->file_change;
   cb->file_change = cb_file_change;
+  /* The case is `echo "" | gcc -xc -'. */
+  if (strcmp (main_input_filename, "") == 0)
+    {
+      plugin_tini (NULL, NULL);
+      return;
+    }
 
-  db_error ((sqlite3_open_v2
-	     (only_param_dbfile, &db, SQLITE_OPEN_READWRITE, NULL)));
+  db_error ((sqlite3_open_v2 (path, &db, SQLITE_OPEN_READWRITE, NULL)));
   db_error ((sqlite3_exec
 	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
 
@@ -1138,6 +1169,17 @@ symdb_enum_spec (void *gcc_data, void *user_data)
   def_append_chk (0, DEF_ENUM_MEMBER);
 }
 
+static void
+symdb_extern_func_old_param (void *gcc_data, void *user_data)
+{
+  db_token *token;
+  int cpp_type, c_type;
+  token = cache_get (1);
+  demangle_type (token, &cpp_type, &c_type);
+  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
+  func_old_param = cache_record_itoken_position ();
+}
+
 /*
  * function-definition:
  *   declaration-specifiers[opt] declarator compound-statement
@@ -1146,6 +1188,8 @@ symdb_enum_spec (void *gcc_data, void *user_data)
  * direct-declarator:
  *   direct-declarator ( parameter-type-list )
  *   ( attributes[opt] declarator )
+*
+* We also includes outer-paren cases, see symdb_extern_var.
  */
 static void
 symdb_extern_func (void *gcc_data, void *user_data)
@@ -1153,13 +1197,23 @@ symdb_extern_func (void *gcc_data, void *user_data)
   db_token *token;
   int cpp_type, c_type;
   int index;
-  token = cache_get (0);
-  demangle_type (token, &cpp_type, &c_type);
-  gcc_assert (cpp_type == CPP_OPEN_BRACE);
-  token = cache_get (1);
+  if (func_old_param != cache_record_itoken_position ())
+    {
+      /* We encounter old-style parameter declaration of function. */
+      index = cache_record_itoken_position () - func_old_param + 1;
+    }
+  else
+    {
+      token = cache_get (0);
+      demangle_type (token, &cpp_type, &c_type);
+      gcc_assert (cpp_type == CPP_OPEN_BRACE);
+      index = 1;
+    }
+  token = cache_get (index);
   demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_CLOSE_PAREN);
-  index = cache_skip_match_pair (1, ')');
+  index = def_strip_paren_declarator_outer (index);
+  index = cache_skip_match_pair (index, ')');
   index = def_strip_paren_declarator_inner (index);
   def_append_chk (index, DEF_FUNC);
   block_list.enum_spec = true;
@@ -1185,8 +1239,11 @@ symdb_extern_func (void *gcc_data, void *user_data)
 *   type-qualifier-list type-qualifier
 *   type-qualifier-list attributes
 *
-* We callback hook makes sure there's not function-call case at all.
-* The second case makes me strip paren pair forwardly first.
+* Our callback hook makes sure there's not function-call case at all.
+*
+* Case `( attributes[opt] declarator )' is called outer-paren and inner-paren
+* cases, see test/paren_declarator/. So let's strip outer-paren pair forwardly
+* first, then parsing reversely.
 */
 static void
 symdb_extern_var (void *gcc_data, void *user_data)
@@ -1244,6 +1301,21 @@ done:
 }
 
 /*
+ * declaration-specifiers:
+ *   storage-class-specifier declaration-specifiers[opt]
+ *   type-specifier declaration-specifiers[opt]
+ *   type-qualifier declaration-specifiers[opt]
+ *   function-specifier declaration-specifiers[opt]
+ *
+ * type-specifier:
+ *   typeof-specifier:
+ *   struct-or-union-specifier:
+ *   enum-specifier:
+ *
+ * typeof-specifier:
+ *   typeof ( expression )
+ *   typeof ( type-name )
+ *
  * struct-or-union-specifier:
  *   struct-or-union attributes[opt] identifier[opt] { struct-contents } attributes[opt]
  *   struct-or-union attributes[opt] identifier
@@ -1254,7 +1326,7 @@ done:
  *   enum attributes[opt] identifier
  */
 static void
-symdb_struct_union_enum (void *gcc_data, void *user_data)
+symdb_declspecs (void *gcc_data, void *user_data)
 {
   void **pair = (void **) gcc_data;
   const struct c_declspecs *ds = pair[0];
@@ -1264,6 +1336,9 @@ symdb_struct_union_enum (void *gcc_data, void *user_data)
   enum definition_flag flag;
   db_token *token;
   int cpp_type, c_type;
+
+  if (ds->typespec_kind == ctsk_typeof)
+    return;
 
   while (true)
     {
@@ -1337,9 +1412,10 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_EXTERN_DECL);
   unregister_callback ("symdb", PLUGIN_CALL_FUNCTION);
   unregister_callback ("symdb", PLUGIN_ENUM_SPECIFIER);
+  unregister_callback ("symdb", PLUGIN_EXTERN_FUNC_OLD_PARAM);
   unregister_callback ("symdb", PLUGIN_EXTERN_FUNC);
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
-  unregister_callback ("symdb", PLUGIN_EXTERN_STRUCT_UNION_ENUM);
+  unregister_callback ("symdb", PLUGIN_EXTERN_DECLSPECS);
 }
 
 int
@@ -1353,7 +1429,7 @@ plugin_init (struct plugin_name_args *plugin_info,
    * database to do further jobs. */
   gcc_assert (plugin_info->argc == 1
 	      && strcmp (plugin_info->argv[0].key, "dbfile") == 0);
-  strcpy (only_param_dbfile, plugin_info->argv[0].value);
+  strcpy (path, plugin_info->argv[0].value);
 
   register_callback ("symdb", PLUGIN_START_UNIT, &symdb_unit_init, NULL);
   register_callback ("symdb", PLUGIN_FINISH_UNIT, &symdb_unit_tini, NULL);
@@ -1363,10 +1439,12 @@ plugin_init (struct plugin_name_args *plugin_info,
   register_callback ("symdb", PLUGIN_EXTERN_DECL, &symdb_extern_decl, NULL);
   register_callback ("symdb", PLUGIN_CALL_FUNCTION, &symdb_call_func, NULL);
   register_callback ("symdb", PLUGIN_ENUM_SPECIFIER, &symdb_enum_spec, NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_FUNC_OLD_PARAM,
+		     &symdb_extern_func_old_param, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_FUNC, &symdb_extern_func, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_VAR, &symdb_extern_var, NULL);
-  register_callback ("symdb", PLUGIN_EXTERN_STRUCT_UNION_ENUM,
-		     &symdb_struct_union_enum, NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_DECLSPECS,
+		     &symdb_declspecs, NULL);
 
   cpp_callbacks *cb = cpp_get_callbacks (parse_in);
   cb->macro_start_expand = cb_macro_start;

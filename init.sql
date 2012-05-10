@@ -1,4 +1,5 @@
 -- vim: foldmarker=<([{,}])> foldmethod=marker
+-- Synchronize helper.c:initdb() if the table is changed.
 create table ProjectOverview (
 	dbVersion text,
 	pluginVersion text,
@@ -63,4 +64,4 @@ create index FileName on chFile (name);
 create index DefName on Definition (name);
 -- }])>
 
-insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "/home/zyf/src/symdb.gcc");
+insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "/project/root/path/");

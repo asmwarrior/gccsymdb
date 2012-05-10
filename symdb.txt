@@ -207,9 +207,17 @@ in fact, gcc doesn't complain the last line. After prefetch two tokens `x' and
 expansion and return `x' and `=' as COMMON_TOKEN not EXPANDED_TOKEN. However
 it makes my code flow become more complex, I place a bool `cancel' in
 symdb.c:struct mo to solve it.
+Calling sequence (Note, cb_macro_start and cb_macro_end are always matched
+even macro expansion is canceled):
+	cb_macro_start
+	cb_end_arg(cancel = true)
+	cb_macro_end
+	cb_macro_end
+	symdb_cpp_token('x')
+	symdb_cpp_token('=')
 // }])>
 
-// Gcc Cascaded Macro Expansion <([{
+// GCC Cascaded Macro Expansion <([{
 Consider the case
 
     #define Z(a) a
@@ -223,9 +231,9 @@ the expansion process of a fun-like macro finally.
 To the second line, the sequence is
     cb_macro_start(Y)
     cb_macro_start(Z)
-    cb_macro_end(Y)
+    cb_macro_end(Y, prev = NULL)
     cb_end_arg(Z)
-    cb_macro_end(Z)
+    cb_macro_end(Z, prev = NULL)
 To the fourth line, the sequence is
     cb_macro_start(X)
     cb_macro_start(Z)
@@ -234,6 +242,36 @@ To the fourth line, the sequence is
     cb_macro_end(X)
 The second line is also breaking cb_macro_start/cb_macro_end pair rule.  It
 makes my code a little complex. I place a field mo.cascaded to solve it.
+// }])>
+
+// GCC Cancel + Cascaded <([{
+Consider the case
+
+	#define a(p) x
+	#define ma a
+	#define na a = 1
+	int ma = 1;
+	int na;
+
+When cancel encounters cascaded, thing will go even worse.
+To the fourth line, the sequence is
+	cb_macro_start
+	cb_macro_start
+	cb_macro_end (prev == NULL, cascaded)
+	cb_end_arg (cancel)
+	cb_macro_end (match-pair to cb_end_arg)
+	symdb_cpp_token (a token is returned, which is the result of ma macro)
+	cb_macro_end (cascaded = false, cancel = true)
+To the fifth line, the sequence is
+	cb_macro_start
+	cb_macro_start
+	cb_end_arg (cancel)
+	cb_macro_end (match-pair to cb_end_arg)
+	symdb_cpp_token (a)
+	symdb_cpp_token (=)
+	symdb_cpp_token (1)
+	cb_macro_end (cascaded = false, cancel = true)
+The only difference is symdb_cpp_token occurs between cb_macro_end.
 // }])>
 
 // Patch Overview <([{

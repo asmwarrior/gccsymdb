@@ -6,10 +6,10 @@ CREATE TABLE chFile (
 	mtime bigint,
 	sysHeader boolean
 );
-INSERT INTO "chFile" VALUES(1,'test/file_dependence/a.c',1334993275,'false');
-INSERT INTO "chFile" VALUES(2,'test/file_dependence/a.h',1334803479,'false');
-INSERT INTO "chFile" VALUES(3,'test/file_dependence/b.h',1334803483,'false');
-INSERT INTO "chFile" VALUES(4,'test/file_dependence/c.h',1334993261,'false');
+INSERT INTO "chFile" VALUES(1,'test/file_dependence/a.c',1325350860,'false');
+INSERT INTO "chFile" VALUES(2,'test/file_dependence/a.h',1325350860,'false');
+INSERT INTO "chFile" VALUES(3,'test/file_dependence/b.h',1325350860,'false');
+INSERT INTO "chFile" VALUES(4,'test/file_dependence/c.h',1325350860,'false');
 CREATE INDEX FileName on chFile (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;

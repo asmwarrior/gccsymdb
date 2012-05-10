@@ -1,7 +1,8 @@
 /* vim: foldmarker=<([{,}])> foldmethod=marker
  * */
-#include"dyn-string.h"
-#include <sys/stat.h>
+#include"include/dyn-string.h"
+#include"include/libiberty.h"
+#include<sys/stat.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
@@ -66,11 +67,10 @@ int
 usage (void)
 {
   printf ("Usage:\n");
-  printf ("    sym def/caller/callee filename definition\n");
-  printf ("    sym rmsym filename definition position\n");
-  printf ("    sym addsym filename definition position\n");
-  printf ("        Meanwhile, filename can be substituted by `--'"
-	  "if command isn't the third type. \n");
+  printf ("    gs def/caller/callee filename definition\n");
+  printf ("    gs addsym/rmsym filename definition position\n");
+  printf ("    gs initdb\n");
+  printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
   return EXIT_FAILURE;
 }
 
@@ -319,6 +319,18 @@ rmsym (const char *root_fn, const char *def, const char *position)
   db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
 }
 
+static void
+initdb (void)
+{
+  char *str = lrealpath (getpwd ());
+  dyn_string_copy_cstr (gbuf,
+			"update ProjectOverview set projectRootPath = '");
+  dyn_string_append_cstr (gbuf, str);
+  dyn_string_append_cstr (gbuf, "/';");
+  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
+  free (str);
+}
+
 /* }])> */
 
 int
@@ -332,7 +344,9 @@ main (int argc, char **argv)
   gbuf = dyn_string_new (1024);
   list = dyn_string_new (256);
   dep_init ();
-  if (argc < 4)
+  if (argc == 2 && strcmp (argv[1], "initdb") == 0)
+    initdb ();
+  else if (argc < 4)
     ret = usage ();
   else if (strcmp (argv[1], "def") == 0)
     def (argv[2], argv[3]);
