@@ -1,25 +1,27 @@
 /* vim: foldmarker=<([{,}])> foldmethod=marker
  * Copyright (C) zyf.zeroos@gmail.com, released on GPL license. Go first from
- * symdb.txt.
+ * doc.txt.
  *
  * Code convention:
  *   1) If there's a class in a fold, the fold is treated as a class-fold, and
  *   all funtions starting with `classname_' are treated as public.
  *   2) All functions of common fold are public.
  *
- * Guide: Definition extraction process is surrounding with cache, macro and
- * plugin callbacks.
- *   1) Class cache which caches all itokens by cpp callback. It also caches
- *   all macroes by let vector -- cache.auxiliary, so I use them to reversely
- *   relocate itoken to chtoken (cache_itoken_to_chtoken).
- *   2) Macro fold is collecting macro data from gcc and output them to
- *   cache.auxiliary, it's also in the charge of macro-cache, macro-cascaded
- *   and macro-cascaded-cache expansion cases, see symdb.txt.
- *   2) Fold plugin-callbacks: I list all possible syntax cases before every
- *   function, here I only deal with the correct syntax result from gcc, the
- *   flow is reversely get user-definition from cache.itokens, the only
- *   exception is symdb_extern_var which first strips paren pair forwardly then
+ * Guide: Definition extraction process is surrounding with cache, macro.
+ *   1) Class cache caches all itokens from gcc. It also caches all macroes by
+ *   cache.auxiliary, so I use them to reversely relocate itoken to chtoken
+ *   (cache_itoken_to_chtoken).
+ *   2) Class macro records macro data from gcc and dump them to
+ *   cache.auxiliary, it's also in the charge of macro-cancel, macro-cascaded
+ *   and macro-cascaded-cancel expansion cases, see doc.txt.
+ *   3) Fold plugin-callbacks: implements new PLUGIN_XXXX event. Dump token
+ *   data to class cache/macro, parse DEF_XXX when special event occurs. I
+ *   list all possible syntax cases before every function, and use them
+ *   reversely search user-definition from cache.itokens, the only exception
+ *   is parsing `( declarator )' -- first strips paren pair forwardly then
  *   reversely get user-definition.
+ *   4) Fold cpp-callbacks: implements cpp_callback::XXXX, collects macro data
+ *   for class macro, DEF_MACRO and file dependence.
  * */
 
 /* #include... <([{ */

@@ -69,7 +69,8 @@ usage (void)
   printf ("Usage:\n");
   printf ("    gs def/caller/callee filename definition\n");
   printf ("    gs addsym/rmsym filename definition position\n");
-  printf ("    gs initdb\n");
+  printf ("    gs initdb prjpath\n");
+  printf ("    gs vacuumdb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
   return EXIT_FAILURE;
 }
@@ -260,7 +261,7 @@ addsym (const char *root_fn, const char *def, const char *position)
       dyn_string_append_cstr (gbuf, root_fn);
       dyn_string_append_cstr (gbuf, "', ");
       dyn_string_append_cstr (gbuf, lltoa (mtime));
-      dyn_string_append_cstr (gbuf, ", false);");
+      dyn_string_append_cstr (gbuf, ", 'false');");
       db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
       fid = dep_get_fid (root_fn);
     }
@@ -320,15 +321,34 @@ rmsym (const char *root_fn, const char *def, const char *position)
 }
 
 static void
-initdb (void)
+initdb (const char *path)
 {
-  char *str = lrealpath (getpwd ());
+  dyn_string_copy_cstr (gbuf, "rm -f ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/gccsym.db");
+  system (dyn_string_buf (gbuf));
+  dyn_string_copy_cstr (gbuf, "sqlite3 -init init.sql ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/gccsym.db ''");
+  system (dyn_string_buf (gbuf));
+  char *str = lrealpath (path);
   dyn_string_copy_cstr (gbuf,
-			"update ProjectOverview set projectRootPath = '");
+			"echo \"update ProjectOverview set projectRootPath = '");
   dyn_string_append_cstr (gbuf, str);
-  dyn_string_append_cstr (gbuf, "/';");
-  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
+  dyn_string_append_cstr (gbuf, "/';\" | sqlite3 -batch ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/gccsym.db");
+  system (dyn_string_buf (gbuf));
   free (str);
+}
+
+static void
+vacuumdb (const char *path)
+{
+  dyn_string_copy_cstr (gbuf, "echo 'vacuum;' | sqlite3 -batch  ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/gccsym.db");
+  system (dyn_string_buf (gbuf));
 }
 
 /* }])> */
@@ -337,16 +357,24 @@ int
 main (int argc, char **argv)
 {
   int ret = EXIT_SUCCESS;
+  gbuf = dyn_string_new (1024);
+  list = dyn_string_new (256);
+  if (argc == 3 && strcmp (argv[1], "initdb") == 0)
+    {
+      initdb (argv[2]);
+      goto done;
+    }
+  if (argc == 3 && strcmp (argv[1], "vacuumdb") == 0)
+    {
+      vacuumdb (argv[2]);
+      goto done;
+    }
   db_error ((sqlite3_open_v2
 	     ("gccsym.db", &db, SQLITE_OPEN_READWRITE, NULL)));
   db_error ((sqlite3_exec
 	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
-  gbuf = dyn_string_new (1024);
-  list = dyn_string_new (256);
   dep_init ();
-  if (argc == 2 && strcmp (argv[1], "initdb") == 0)
-    initdb ();
-  else if (argc < 4)
+  if (argc < 4)
     ret = usage ();
   else if (strcmp (argv[1], "def") == 0)
     def (argv[2], argv[3]);
@@ -366,9 +394,10 @@ main (int argc, char **argv)
   else
     ret = usage ();
   dep_tini ();
-  dyn_string_delete (list);
-  dyn_string_delete (gbuf);
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);
+done:
+  dyn_string_delete (list);
+  dyn_string_delete (gbuf);
   return ret;
 }
