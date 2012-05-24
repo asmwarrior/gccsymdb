@@ -1,7 +1,7 @@
 Index: gcc-4.6.2/libcpp/include/cpplib.h
 ===================================================================
---- gcc-4.6.2.orig/libcpp/include/cpplib.h	2010-09-30 02:18:38.000000000 +0800
-+++ gcc-4.6.2/libcpp/include/cpplib.h	2012-01-08 16:36:52.000000000 +0800
+--- gcc-4.6.2.orig/libcpp/include/cpplib.h	2012-04-03 13:50:53.978161140 +0800
++++ gcc-4.6.2/libcpp/include/cpplib.h	2012-05-24 14:31:12.581823397 +0800
 @@ -208,10 +208,10 @@
         node;
  };
@@ -15,7 +15,7 @@ Index: gcc-4.6.2/libcpp/include/cpplib.h
    ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
    unsigned short flags;		/* flags - see above */
  
-@@ -493,6 +493,29 @@
+@@ -493,6 +493,24 @@
       be expanded.  */
    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
  
@@ -27,11 +27,6 @@ Index: gcc-4.6.2/libcpp/include/cpplib.h
 +  /* Called when a function-like macro stops collecting macro parameters,
 +   * cancel = true, macro expansion is canceled. */
 +  void (*macro_end_arg) (cpp_reader *, bool cancel);
-+  /* Used to collect intern data of gcc macro expansion, normally they are
-+   * invisible to user. */
-+  void (*macro_intern_expand) (cpp_reader *, void*, int, bool);
-+  /* Called to collect comment. */
-+  void (*comment) (cpp_reader *, const cpp_token*);
 +  /* The pair is called when cpp directive (starting from `#', such as
 +   * `#define', `#endif' etc) is encountered and reaches end. */
 +  void (*start_directive) (cpp_reader *, const cpp_token*);
@@ -47,8 +42,8 @@ Index: gcc-4.6.2/libcpp/include/cpplib.h
    bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
 Index: gcc-4.6.2/libcpp/lex.c
 ===================================================================
---- gcc-4.6.2.orig/libcpp/lex.c	2011-05-23 03:14:50.000000000 +0800
-+++ gcc-4.6.2/libcpp/lex.c	2012-01-08 17:00:35.000000000 +0800
+--- gcc-4.6.2.orig/libcpp/lex.c	2012-04-03 13:50:53.976753852 +0800
++++ gcc-4.6.2/libcpp/lex.c	2012-05-24 14:34:25.714657801 +0800
 @@ -51,7 +51,8 @@
  #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
  #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
@@ -148,26 +143,7 @@ Index: gcc-4.6.2/libcpp/lex.c
    c = *buffer->cur++;
  
    LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
-@@ -2106,12 +2122,18 @@
- 	  break;
- 	}
- 
-+      if (pfile->cb.comment)
-+	{
-+	  save_comment (pfile, result, comment_start, c);
-+	  pfile->cb.comment (pfile, result);
-+	}
-       if (!pfile->state.save_comments)
- 	{
- 	  result->flags |= PREV_WHITE;
- 	  goto update_tokens_line;
- 	}
- 
-+      if (!pfile->cb.comment)
-       /* Save the comment as a token in its own right.  */
-       save_comment (pfile, result, comment_start, c);
-       break;
-@@ -2290,6 +2312,8 @@
+@@ -2290,6 +2306,8 @@
        break;
      }
  
@@ -178,23 +154,9 @@ Index: gcc-4.6.2/libcpp/lex.c
  
 Index: gcc-4.6.2/libcpp/macro.c
 ===================================================================
---- gcc-4.6.2.orig/libcpp/macro.c	2010-09-29 22:49:14.000000000 +0800
-+++ gcc-4.6.2/libcpp/macro.c	2012-01-08 16:36:52.000000000 +0800
-@@ -850,10 +850,13 @@
-       if (macro->fun_like)
- 	{
- 	  _cpp_buff *buff;
-+	  void *expanded_beg = NULL, *expanded_end;
- 
- 	  pfile->state.prevent_expansion++;
- 	  pfile->keep_tokens++;
- 	  pfile->state.parsing_args = 1;
-+	  if (pfile->cb.macro_intern_expand)
-+	    expanded_beg = (void *) FIRST (pfile->context).token;
- 	  buff = funlike_invocation_p (pfile, node, &pragma_buff);
- 	  pfile->state.parsing_args = 0;
- 	  pfile->keep_tokens--;
-@@ -869,9 +872,25 @@
+--- gcc-4.6.2.orig/libcpp/macro.c	2012-04-03 13:50:53.976753852 +0800
++++ gcc-4.6.2/libcpp/macro.c	2012-05-24 14:37:12.658632333 +0800
+@@ -869,9 +869,13 @@
  	      if (pragma_buff)
  		_cpp_release_buff (pfile, pragma_buff);
  
@@ -202,25 +164,13 @@ Index: gcc-4.6.2/libcpp/macro.c
 +		pfile->cb.macro_end_arg (pfile, true);
  	      return 0;
  	    }
-+	  if (pfile->cb.macro_intern_expand)
-+	    {
-+	      cpp_context *context = pfile->context;
-+	      expanded_end = (void *) FIRST (context).token;
-+	      pfile->cb.macro_intern_expand (pfile, expanded_beg,
-+					     context->direct_p ?
-+					     (cpp_token *) expanded_end -
-+					     (cpp_token *) expanded_beg
-+					     : (cpp_token **) expanded_end -
-+					     (cpp_token **) expanded_beg,
-+					     context->direct_p);
-+	    }
  
 +	  if (pfile->cb.macro_end_arg)
 +	    pfile->cb.macro_end_arg (pfile, false);
  	  if (macro->paramc > 0)
  	    replace_args (pfile, node, macro, (macro_arg *) buff->base);
  	  _cpp_release_buff (pfile, buff);
-@@ -1256,6 +1275,8 @@
+@@ -1256,6 +1260,8 @@
        else
  	{
  	  _cpp_pop_context (pfile);
@@ -229,7 +179,7 @@ Index: gcc-4.6.2/libcpp/macro.c
  	  if (pfile->state.in_directive)
  	    continue;
  	  return &pfile->avoid_paste;
-@@ -1312,7 +1333,14 @@
+@@ -1312,7 +1318,14 @@
  		}
  	    }
  	  else
@@ -247,8 +197,8 @@ Index: gcc-4.6.2/libcpp/macro.c
  	      if (pfile->state.in_directive || ret == 2)
 Index: gcc-4.6.2/libcpp/directives.c
 ===================================================================
---- gcc-4.6.2.orig/libcpp/directives.c	2011-04-29 06:39:59.000000000 +0800
-+++ gcc-4.6.2/libcpp/directives.c	2012-01-08 16:36:52.000000000 +0800
+--- gcc-4.6.2.orig/libcpp/directives.c	2012-04-03 13:50:53.976753852 +0800
++++ gcc-4.6.2/libcpp/directives.c	2012-04-03 13:51:16.424351219 +0800
 @@ -492,6 +492,8 @@
    else if (skip == 0)
      _cpp_backup_tokens (pfile, 1);
@@ -260,8 +210,8 @@ Index: gcc-4.6.2/libcpp/directives.c
      {
 Index: gcc-4.6.2/libcpp/internal.h
 ===================================================================
---- gcc-4.6.2.orig/libcpp/internal.h	2010-09-30 02:18:38.000000000 +0800
-+++ gcc-4.6.2/libcpp/internal.h	2012-01-08 16:36:52.000000000 +0800
+--- gcc-4.6.2.orig/libcpp/internal.h	2012-04-03 13:50:53.978161140 +0800
++++ gcc-4.6.2/libcpp/internal.h	2012-04-03 13:51:16.425544300 +0800
 @@ -243,6 +243,11 @@
       intervening space, 0 represents a note that has already been handled,
       and anything else is invalid.  */

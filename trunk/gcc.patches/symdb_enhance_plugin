@@ -1,7 +1,7 @@
 Index: gcc-4.6.2/gcc/plugin.def
 ===================================================================
---- gcc-4.6.2.orig/gcc/plugin.def	2012-04-23 09:13:04.301830324 +0800
-+++ gcc-4.6.2/gcc/plugin.def	2012-05-07 13:09:11.177813560 +0800
+--- gcc-4.6.2.orig/gcc/plugin.def	2012-05-24 14:56:27.470726411 +0800
++++ gcc-4.6.2/gcc/plugin.def	2012-05-24 16:13:07.571652415 +0800
 @@ -89,6 +89,34 @@
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
@@ -39,8 +39,8 @@ Index: gcc-4.6.2/gcc/plugin.def
     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
 Index: gcc-4.6.2/gcc/c-family/c-lex.c
 ===================================================================
---- gcc-4.6.2.orig/gcc/c-family/c-lex.c	2012-04-23 09:13:04.293736840 +0800
-+++ gcc-4.6.2/gcc/c-family/c-lex.c	2012-05-03 16:41:59.388911324 +0800
+--- gcc-4.6.2.orig/gcc/c-family/c-lex.c	2012-05-24 14:56:27.464999992 +0800
++++ gcc-4.6.2/gcc/c-family/c-lex.c	2012-05-24 16:13:07.574121890 +0800
 @@ -36,6 +36,7 @@
  #include "splay-tree.h"
  #include "debug.h"
@@ -75,8 +75,8 @@ Index: gcc-4.6.2/gcc/c-family/c-lex.c
  }
 Index: gcc-4.6.2/gcc/c-parser.c
 ===================================================================
---- gcc-4.6.2.orig/gcc/c-parser.c	2012-04-23 09:13:04.302604873 +0800
-+++ gcc-4.6.2/gcc/c-parser.c	2012-05-07 13:10:08.882044806 +0800
+--- gcc-4.6.2.orig/gcc/c-parser.c	2012-05-24 14:56:27.470726411 +0800
++++ gcc-4.6.2/gcc/c-parser.c	2012-05-24 16:13:07.581411593 +0800
 @@ -121,45 +121,6 @@
     C++).  It would then be possible to share more of the C and C++
     lexer code, if desired.  */
@@ -197,8 +197,8 @@ Index: gcc-4.6.2/gcc/c-parser.c
  	    exprlist = NULL;
 Index: gcc-4.6.2/gcc/plugin.c
 ===================================================================
---- gcc-4.6.2.orig/gcc/plugin.c	2012-04-23 09:13:04.300629221 +0800
-+++ gcc-4.6.2/gcc/plugin.c	2012-05-07 13:09:48.486780120 +0800
+--- gcc-4.6.2.orig/gcc/plugin.c	2012-05-24 14:56:27.469640797 +0800
++++ gcc-4.6.2/gcc/plugin.c	2012-05-24 16:13:07.582419026 +0800
 @@ -438,6 +438,15 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
@@ -233,8 +233,8 @@ Index: gcc-4.6.2/gcc/plugin.c
               call it.  */
 Index: gcc-4.6.2/gcc/doc/plugins.texi
 ===================================================================
---- gcc-4.6.2.orig/gcc/doc/plugins.texi	2012-04-23 09:13:04.300629221 +0800
-+++ gcc-4.6.2/gcc/doc/plugins.texi	2012-05-07 13:08:14.087944170 +0800
+--- gcc-4.6.2.orig/gcc/doc/plugins.texi	2012-05-24 14:56:27.468648970 +0800
++++ gcc-4.6.2/gcc/doc/plugins.texi	2012-05-24 16:13:07.583388593 +0800
 @@ -183,6 +183,23 @@
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
@@ -261,8 +261,8 @@ Index: gcc-4.6.2/gcc/doc/plugins.texi
                                     array.  */
 Index: gcc-4.6.2/gcc/c-family/c-common.h
 ===================================================================
---- gcc-4.6.2.orig/gcc/c-family/c-common.h	2012-04-23 09:13:04.293736840 +0800
-+++ gcc-4.6.2/gcc/c-family/c-common.h	2012-04-23 09:13:57.672983344 +0800
+--- gcc-4.6.2.orig/gcc/c-family/c-common.h	2012-05-24 14:56:27.466683681 +0800
++++ gcc-4.6.2/gcc/c-family/c-common.h	2012-05-24 16:13:07.585339298 +0800
 @@ -25,6 +25,7 @@
  #include "splay-tree.h"
  #include "cpplib.h"

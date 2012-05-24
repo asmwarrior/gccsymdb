@@ -39,7 +39,7 @@ function! s:showSelection()
 let s:alist = split(s:str, '\n')
 let s:selection = len(s:alist)
 if s:selection != 1
-	echo 'Multiple definition:'
+	echo 'GS multiple definition:'
 	let s:i = 1
 	for s:element in s:alist
 		echo s:i . ')' . s:element
@@ -129,4 +129,7 @@ endfunction
 nmap <C-]> :call <SID>GS_def(0)<CR>
 nmap <C-[> :call <SID>GS_called(0)<CR>
 nmap <C-T> :call <SID>GS_jumpback()<CR>
+
+" Gs command of vim only supports def/callee subcommands, and filename is
+" always `--'.
 command! -nargs=* Gs  call <SID>GS_cmd(<f-args>)
