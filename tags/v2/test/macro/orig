@@ -1,0 +1,73 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE chFile (
+	id integer primary key autoincrement,
+	name text,
+	mtime bigint,
+	sysHeader boolean
+);
+INSERT INTO "chFile" VALUES(1,'test/macro/a.c',1325350860,'false');
+CREATE INDEX FileName on chFile (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDependence (
+	chFileID integer,
+	hID integer
+);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	position integer
+);
+INSERT INTO "Definition" VALUES(1,'MUL_DEFINITION',3,12);
+INSERT INTO "Definition" VALUES(2,'i',1,59);
+INSERT INTO "Definition" VALUES(3,'j',1,59);
+INSERT INTO "Definition" VALUES(4,'foo',2,59);
+INSERT INTO "Definition" VALUES(5,'a',3,93);
+INSERT INTO "Definition" VALUES(6,'b',3,108);
+INSERT INTO "Definition" VALUES(7,'c',3,120);
+INSERT INTO "Definition" VALUES(8,'d',3,130);
+INSERT INTO "Definition" VALUES(9,'e',3,145);
+INSERT INTO "Definition" VALUES(10,'ma',3,174);
+INSERT INTO "Definition" VALUES(11,'x',1,183);
+INSERT INTO "Definition" VALUES(12,'mb',3,200);
+INSERT INTO "Definition" VALUES(13,'y',1,209);
+INSERT INTO "Definition" VALUES(14,'mc',3,221);
+INSERT INTO "Definition" VALUES(15,'x',1,235);
+INSERT INTO "Definition" VALUES(16,'md',3,247);
+INSERT INTO "Definition" VALUES(17,'na',3,301);
+INSERT INTO "Definition" VALUES(18,'e',1,314);
+INSERT INTO "Definition" VALUES(19,'a',1,322);
+INSERT INTO "Definition" VALUES(20,'oa',3,364);
+INSERT INTO "Definition" VALUES(21,'x',1,379);
+INSERT INTO "Definition" VALUES(22,'ob',3,391);
+INSERT INTO "Definition" VALUES(23,'y',1,401);
+INSERT INTO "Definition" VALUES(24,'oc',3,413);
+INSERT INTO "Definition" VALUES(25,'pa',3,461);
+INSERT INTO "Definition" VALUES(26,'x',1,478);
+INSERT INTO "Definition" VALUES(27,'pb',3,490);
+INSERT INTO "Definition" VALUES(28,'y',1,502);
+INSERT INTO "Definition" VALUES(29,'pc',3,514);
+CREATE INDEX DefName on Definition (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE DefinitionRelationship (
+	caller bigint,
+	callee bigint
+);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDefinition (
+	fileID integer,
+	startDefID bigint,
+	endDefID bigint
+);
+INSERT INTO "FileDefinition" VALUES(1,1,29);
+COMMIT;

@@ -1,0 +1,49 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE chFile (
+	id integer primary key autoincrement,
+	name text,
+	mtime bigint,
+	sysHeader boolean
+);
+INSERT INTO "chFile" VALUES(1,'test/file_dependence/a.c',1325350860,'false');
+INSERT INTO "chFile" VALUES(2,'test/file_dependence/a.h',1325350860,'false');
+INSERT INTO "chFile" VALUES(3,'test/file_dependence/b.h',1325350860,'false');
+INSERT INTO "chFile" VALUES(4,'test/file_dependence/c.h',1325350860,'false');
+CREATE INDEX FileName on chFile (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDependence (
+	chFileID integer,
+	hID integer
+);
+INSERT INTO "FileDependence" VALUES(1,2);
+INSERT INTO "FileDependence" VALUES(2,3);
+INSERT INTO "FileDependence" VALUES(1,4);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	position integer
+);
+CREATE INDEX DefName on Definition (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE DefinitionRelationship (
+	caller bigint,
+	callee bigint
+);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDefinition (
+	fileID integer,
+	startDefID bigint,
+	endDefID bigint
+);
+COMMIT;

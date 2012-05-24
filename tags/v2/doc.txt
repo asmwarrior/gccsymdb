@@ -1,0 +1,365 @@
+// vim: foldmarker=<([{,}])> foldmethod=marker
+                         Gcc symbol database (symdb)
+                             zyf.zeroos@gmail.com
+                              November 24, 2009
+                           revised on May 24, 2012
+
+// Purpose <([{
+The file is used to record the idea I got -- collecting gcc internal data
+(definition, file-dependence etc.) and outputting them into database for
+further usage.  Have you knowed cscope? but I think it's more appropriate that
+symbols should be collected by gcc itself. Later sections can be cataloged
+into two genres
+
+For user (here user is IDE-like develop tools, not final user)
+1) Need to know what symdb can do, goto section <Feature List>.
+2) Goto section <User Manual> for how to using symdb.
+3) <Multiple results> and <Tested cases> have more about the plugin.
+For gcc internal developer
+1) Section <New Token Type> defines some new token types used in my symdb.
+2) Sections <Gcc XXXX Macro Expansion> shows some complex cases linking to
+macro expansion, I list calling sequence from plugin-side and stack snapshot
+from gcc-side in every section, read them carefully, it's the key to
+understand so.c:class mo.  test/testplan.txt and test/macro have the
+testcases.
+3) Section <Patch Overview> makes focus on which files and how are changed in
+the patch.
+
+Before we go, let's clear up some terminology or abbreviation used in my symdb
+1) cpp abbreviates from c preprocess (follows gcc intern convention); however,
+cxx represents c++.
+2) In gcc/c-ppoutput.c, gcc defines compilation unit as compiling a file, new
+noun `compilation session' means compiling all files of a project.
+// }])>
+
+For User
+// Feature List <([{
+1) The plugin only works on C not C++.
+2) Plugin can collect all extern definitins and dump them to database.
+3) As the convention, the members of an extern enum are collected and dumped
+to database.
+4) Funtion call relationship are collected too, just like cscope.
+5) You can use table FileDependence of database to reconstruct file dependence
+relationship.
+6) Not in cscope, you can use `gs addsym/rmsym' to re-edit the database,
+remove the duplicate results and append new symbols to the database, see
+section <Multiple-results ...>.
+7) I finished a vim script `helper.vim' to help you using the database in vim.
+8) My plugin is better than cscope in any cases, since I can catch definition
+after macro expansion (such as tell you where `sys_open' is defined in linux
+source) and skip `#ifdef/#if'.
+// }])>
+
+// User Manual <([{
+Note: Using my plugin on correct code, buggy code maybe cause my plugin
+infinite-loop.
+
+Prepare stage (patch on gcc-4.6.3):
+1) cp gcc.patches/* gcc.src/patches
+2) quilt push -a
+3) make # as usual
+More about compilation suite (such as crosstool-ng-1.13.2):
+1) Since gcc plugin is implemented as shared library, so disable compiling
+static toolchain option.
+2) add `--enable-plugin' to your gcc configure line, or append
+`CT_CC_GCC_ENABLE_PLUGINS=y' to your crossng.config.
+3) See section <Tested cases> for a sample command line on gcc-4.6.3.
+
+Compiling source by patched gcc (cd myplugin.src/):
+1) make
+2) cp gs helper.vim init.sql target.src/ && cd target.src/
+3) ./gs initdb ./ # Initialize database. If you want to custom the plugin,
+update plugin-control-fields of database:ProjectOverview.
+4) Append `-fplugin=/path/to/symdb.so
+-fplugin-arg-symdb-dbfile=/target.src/gccsym.db' to your CFLAGS.
+5) Since sqlite uses file-lock to synchronize database, so use `make -j1' to
+compile source.
+6) It will cost more time to compile your project, because my plugin need
+compare whether a token has been inserted into database and multi-core can't
+help you -- see previous steps, do it overnight.
+7) ./gs vacuumdb ./ # Rearrange and defrag your database.
+Of course, you can use some short-cuts to compile your projects without any
+modification.
+    alias gcc='gccplugin -fplugin=symdb.so -fplugin-arg-symdb-dbfile=gccsym.db'
+    alias make='make -j1'
+
+Working with new database:
+1) cd /target.src
+2) vi
+3) execute `:source helper.vim'
+4) Using `CTRL-]' to search a definition.
+5) Using `CTRL-[' to search which functions calls the function.
+6) Using `CTRL-T' to jump back.
+7) Using `Gs def yoursymbol' to search a definition.
+8) Using `Gs callee yourfunction' to search function call relationship.
+
+Vim quickref:
+Since my database stores the file-offset of every token, so
+1) Using `:go fileoffset' to jump to the token.
+2) Using `g<CTRL-g>' on the char to get the file-offset.
+
+Testing my plugin:
+1) cd test && ./run.sh
+// }])>
+
+// Multiple-results from my database and my solution <([{
+Things are not always perfect, here I list some cases which makes my plugin
+return multiple-resuls when search a definition.
+
+    int i;
+    int i;
+    extern int i;
+The syntax is acceped by gcc, so to my plugin, by the way, my plugin doesn't
+store the third line to database.
+
+    typedef abc abc;
+    struct abc {
+        ...
+    };
+The syntax is correct. `gs' will return two results, one is DEF_TYPEDEF,
+another is DEF_STRUCT, however `helper.vim' doesn't distingush them. In
+gcc-4.6.2, search `cpp_reader' will see the case, by the way, my script will
+search definition from current file and its dependence, then all files, so in
+libcpp/internal.h searching `cpp_reader' will return a result.
+
+    #define X a
+    #include "afile"
+    #undef X
+    #define X b
+    #include "afile"
+    #undef X
+Search `X' will return multiple results, gcc/tree.c includes several
+gcc/tree.def and definite symbol `DEFTREECODE' several times.
+
+    #ifdef X
+    int x;
+    #else
+    char x;
+    #endif
+Sometime `x' is returned two results.
+glibc-2.13/include/shlib-compat.h:compat_symbol is the case. The reason is
+generally every file is compiled two times in glibc internal
+    gcc .. -DSHARED .. -o x.os
+    gcc .. -o x.o
+It causes the strange case.
+
+Fortunately, I add two commands (not in cscope :)
+    gs addsym/rmsym filename definition position
+So you can remove the item you doesn't like by them. `gs addsym' is also
+useful since you can use it to append the symbols which are invisible from my
+plugin, such as `gs addsym arch/mips/kernel/vmlinux.lds jiffies 6601'.
+// }])>
+
+// Tested cases (gcc, glibc and linux) <([{
+Prepare gcc support packages:
+sqlite-autoconf-3070900:
+    ./configure --prefix=/home/zyf/root
+    make install
+gmp-5.0.1
+    ./configure --prefix=/home/zyf/root/ --enable-shared=no && make install
+mpfr-3.0.1
+    ./configure --prefix=/home/zyf/root/ --with-gmp=/home/zyf/root/
+    --enable-shared=no && make install
+mpc-0.9
+    ./configure --prefix=/home/zyf/root/ --with-mpfr=/home/zyf/root/
+    --with-gmp=/home/zyf/root/ --enable-shared=no && make install
+gcc-4.6.3 (x86):
+    *) ./configure --prefix=/home/zyf/root/ --with-mpc=/home/zyf/root/
+    --with-gmp=/home/zyf/root/ --with-mpfr=/home/zyf/root/
+    --enable-stage1-languages=c++
+    *) # After quilt my patches.
+    *) make STAGE1_CFLAGS="-ggdb" all-stage1
+    *) # prepare database.
+    *) make STAGE2_CFLAGS="-fplugin=/home/zyf/src/symdb.gcc/symdb.so
+    -fplugin-arg-symdb-dbfile=/home/zyf/src/gcc-4.6.2/gccsym.db" all-stage2
+    *) # rearrange database.
+glibc-2.13 (mips):
+    *) Change glibc.src/Makeconfig: `override CFLAGS = '.
+linux-2.6.35 (mips):
+    *) Change linux.src/Makefile: `KBUILD_CFLAGS := '.
+// }])>
+
+For Developer
+// New Token Type <([{
+In this section, I'll define some new token type which is available everywhere
+in my symdb, but before we go, we need go further into gcc internal on how gcc
+compiles a file, consider the case
+
+    ----------- a.c -----------
+    #define FOO \
+        = 2;
+    // a line comment only.
+    ...
+    int x FOO;
+
+Now do `gcc -save-temps --verbose a.c', you will get all intermediate files
+and gcc call hierarchy -- main, preprocess, compiling, assemble and linkage
+stage. Comparing a.c and a.i, we find some tokens are erased, some are
+substituted, so my new token types are
+1) EXPANDED_TOKEN -- is macro-expanded or substituted (`FOO' of the last
+line).
+2) ERASED_TOKEN -- erased during preprocess stage (The first 3 lines).
+3) COMMON_TOKEN -- exist in both .c and .i.
+4) MACRO_TOKEN -- macro result (sample is `=' and `2').
+
+And
+*) Original .c/.h include the first 3 types -- also called chToken.
+*) .i includes the last 2 types -- called iToken.
+*) To function-like macro, such as, `x', `(', `a', `)', all four tokens are
+EXPANDED_TOKEN, and the first is also called leader EXPANDED_TOKEN.
+
+By the way, preprocess stage also combines all soft carriage line -- tailing
+with `\' into a line, so the first 2 lines are combined, and `\' itself isn't
+cpp token.
+// }])>
+
+// GCC Cancel Macro Expansion <([{
+Consider the case
+    #define Z(a) a
+    int Z = 3;
+
+in fact, gcc doesn't complain the last line. After prefetch two tokens `Z' and
+`=', gcc realizes that `Z' shouldn't be treated as macro, so it cancels macro
+expansion and return `Z' and `=' as COMMON_TOKEN not EXPANDED_TOKEN. However
+it makes my code flow become more complex, I place a bool mo.cancel to solve
+it.
+Calling sequence (Note, cb_macro_start and cb_macro_end are always matched
+even macro expansion is canceled):
+    cb_macro_start(Z)
+    cb_end_arg(cancel = true)
+    cb_macro_end(Z, prev = NULL)
+    symdb_cpp_token('Z')
+    symdb_cpp_token('=')
+// }])>
+
+// GCC Cascaded Macro Expansion <([{
+Consider the case
+    #define Z(a) a
+    #define Y Z
+    #define X Z(1)
+    Y(1);
+    X;
+
+The case is special due to the expansion process of X and Y is converted to
+the expansion process of a fun-like macro finally.
+To the fourth line, the sequence is
+    cb_macro_start(Y)
+    cb_macro_start(Z)
+# enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token
+    cb_macro_end(Y, prev = NULL)
+# Y macro is popped from pfile.context.
+    cb_end_arg(Z)
+# enter_macro_context(Z) end. Z macro is pushed to pfile.context.
+    symdb_cpp_token(a)
+    cb_macro_end(Z, prev = NULL)
+To the fifth line, the sequence is
+    cb_macro_start(X)
+    cb_macro_start(Z)
+    cb_end_arg(Z)
+    cb_macro_end(Z)
+    cb_macro_end(X)
+The fourth line is also breaking cb_macro_start/cb_macro_end pair rule. It
+makes my code a little complex. I place a field mo.cascaded to solve it.
+// }])>
+
+// GCC Cancel + Cascaded <([{
+Consider the case
+    #define Z(p) a
+    #define Y Z
+    #define X Z = 1
+    int Y = 1;
+    int X;
+
+When cancel encounters cascaded, thing will go even worse.
+To the fourth line, the sequence is
+    cb_macro_start(Y)
+    cb_macro_start(Z)
+# enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token
+    cb_macro_end(Y, prev = NULL)
+# Y macro is popped from pfile.context. Howver, since the macro is canceled,
+# so `funlike_invocation_p >> _cpp_push_token_context' which pushes a NULL
+# macro context to pfile.context.
+    cb_end_arg(cancel = true)
+    cb_macro_end(match-pair to cb_end_arg, prev != NULL)
+# So in my cb_macro_end, prev != NULL.
+    symdb_cpp_token(`Z' is returned, which is the result of Y macro)
+# enter_macro_context(Z) end. Note now, NULL macro context has been pushed to
+# pfile.context.
+    cb_macro_end(prev = NULL)
+    symdb_cpp_token(=)
+To the fifth line, the sequence is
+    cb_macro_start(X)
+    cb_macro_start(Z)
+    cb_end_arg(cancel = true)
+    cb_macro_end(X, match-pair to cb_end_arg)
+    symdb_cpp_token(Z)
+    symdb_cpp_token(=)
+    symdb_cpp_token(1)
+    cb_macro_end
+To the fourth line, two cb_macro_start are called and three cb_macro_end are
+called.
+// }])>
+
+// Patch Overview <([{
+// symdb_enhance_libcpp <([{
+Several new callbacks are appended into libpp/include/cpplib.h:cpp_callbacks:
+void (*macro_start_expand) (...);
+void (*macro_end_arg) (..., bool cancel);
+void (*macro_end_expand) (...);
+    are used to collect EXPANDED_TOKEN and MACRO_TOKEN.
+Note:
+1) macro_end_arg is callbacked when a function-like macro ends to collect
+its arguments.
+2) See section <GCC Cancel Macro Expansion> for more about parameter cancel of
+macro_end_arg.
+3) macro_{start, end}_expand can be called several times if the macro includes
+more macroes in its define clause.
+4) Even macro expansion cancel, a macro_end_expand is called too.
+void (*start_directive) (...);
+void (*end_directive) (...);
+void (*directive_token) (...);
+    are used to collect ERASED_TOKEN. Meanwhile, directive_token is much
+powerful than cpp_get_token since cpp_get_token doesn't output ERASED_TOKEN.
+Most code in libcpp directory is surrounding how to implement the callbacks.
+
+A new field -- file_offset is added into cpplib.h:cpp_token, the field is used
+to mark every chToken exclusively, it's just like line_map + source_location,
+but simpler and to show line/column to user, new script offset2lc(filename,
+fileoffset, &line, &column) should be used, so cpp_token::src_loc should be
+removed in the furture.  internal.h:_cpp_line_note is also changed to fit with
+the purpose.
+// }])>
+
+// symdb_enhance_plugin <([{
+New events are added into current plugin architecture
+PLUGIN_CPP_TOKEN
+PLUGIN_C_TOKEN
+PLUGIN_EXTERN_DECL
+PLUGIN_EXTERN_FUNC_OLD_PARAM
+PLUGIN_EXTERN_FUNC
+PLUGIN_EXTERN_VAR
+PLUGIN_EXTERN_DECLSPECS
+PLUGIN_CALL_FUNCTION
+PLUGIN_ENUM_SPECIFIER
+The first two events are used to cache iToken, the remain are used to collect
+definition.
+// }])>
+// }])>
+
+// Database (init.sql) <([{
+*) User should use the fields of ProjectOverview to control the plugin.
+*) User should use view Helper to search file, definition and position.
+*) Using `gs initdb/vacuumdb' to initialize database and arrange it.
+
+init.sql has been organized by vim fold feature. Meanwhile table chFile is
+the root.
+// }])>
+
+// Misc. <([{
+Gcc defines a default cpp_callbacks::file_change, to listen the callback in my
+patch to monitor file depedence, I replace the value in symdb_unit_init and
+call the original value in cb_file_change.
+
+New field cpp_token::file_offset breaks the fact the size of cpp_token should
+be fit with a cacheline. See section <Patch Overview> for the solution.
+// }])>

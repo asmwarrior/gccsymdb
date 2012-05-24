@@ -1,0 +1,64 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE chFile (
+	id integer primary key autoincrement,
+	name text,
+	mtime bigint,
+	sysHeader boolean
+);
+INSERT INTO "chFile" VALUES(1,'test/basic/a.c',1325350860,'false');
+CREATE INDEX FileName on chFile (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDependence (
+	chFileID integer,
+	hID integer
+);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	position integer
+);
+INSERT INTO "Definition" VALUES(1,'M',3,12);
+INSERT INTO "Definition" VALUES(2,'td',4,29);
+INSERT INTO "Definition" VALUES(3,'tdfunp',4,48);
+INSERT INTO "Definition" VALUES(4,'arr',1,73);
+INSERT INTO "Definition" VALUES(5,'funpvar',1,91);
+INSERT INTO "Definition" VALUES(6,'p',1,118);
+INSERT INTO "Definition" VALUES(7,'muldef',1,197);
+INSERT INTO "Definition" VALUES(8,'muldef',1,209);
+INSERT INTO "Definition" VALUES(9,'abc',5,225);
+INSERT INTO "Definition" VALUES(10,'v1',1,250);
+INSERT INTO "Definition" VALUES(11,'v2',1,265);
+INSERT INTO "Definition" VALUES(12,'enumx',8,280);
+INSERT INTO "Definition" VALUES(13,'enumy',8,292);
+INSERT INTO "Definition" VALUES(14,'def',5,332);
+INSERT INTO "Definition" VALUES(15,'tp',1,376);
+INSERT INTO "Definition" VALUES(16,'oldfun',2,386);
+INSERT INTO "Definition" VALUES(17,'foo',2,419);
+INSERT INTO "Definition" VALUES(18,'main',2,453);
+INSERT INTO "Definition" VALUES(19,'foo',9,582);
+CREATE INDEX DefName on Definition (name);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE DefinitionRelationship (
+	caller bigint,
+	callee bigint
+);
+INSERT INTO "DefinitionRelationship" VALUES(18,19);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDefinition (
+	fileID integer,
+	startDefID bigint,
+	endDefID bigint
+);
+INSERT INTO "FileDefinition" VALUES(1,1,19);
+COMMIT;
