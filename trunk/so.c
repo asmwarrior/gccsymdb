@@ -5,7 +5,7 @@
  * Code convention:
  *   1) If there's a class in a fold, the fold is treated as a class-fold, and
  *   all funtions starting with `classname_' are treated as public.
- *   2) All functions of common fold are public.
+ *   2) All in common fold are public.
  *
  * Guide: Definition extraction process is surrounding with cache, macro.
  *   1) Class cache caches all itokens from gcc. It also caches all macroes by
@@ -22,6 +22,17 @@
  *   reversely get user-definition.
  *   4) Fold cpp-callbacks: implements cpp_callback::XXXX, collects macro data
  *   for class macro, DEF_MACRO and file dependence.
+ *   5) Class def: cooperate plugin-callbacks to parse definition in
+ *   cache.itokens and is in charge of Definition fold of init.sql.
+ *   6) Class file: is in charge of File fold and FileDepedence of init.sql.
+ *
+ * GDB Guide:
+ *   1) To support debug, I place a class `bug' in common fold, to use it,
+ *     gdb -x gdb.script
+ *     gdb> dlc
+ *     gdb> call bug_init("filename", offset)
+ *   only leader expanded token and common token can be break.
+ *   2) file::dump_includee and cache::dump_cache.
  * */
 
 /* #include... <([{ */
@@ -45,19 +56,11 @@
 /* common <([{ */
 typedef const struct cpp_token *cpp_token_p;
 typedef const struct c_token *c_token_p;
-static dyn_string_t gbuf;
-static char path[PATH_MAX + 1];
+
+static dyn_string_t gbuf;	/* Global temporary variable. */
+
+/* sqlite auxiliary <([{ */
 static struct sqlite3 *db;
-
-static struct
-{
-  dyn_string_t db_file;
-  dyn_string_t prj_dir;
-  dyn_string_t cwd;
-
-  bool cpp_error;
-  bool c_error;
-} control_panel;
 
 static void
 db_error (int cond)
@@ -85,17 +88,43 @@ execute_sql (struct sqlite3_stmt *stmt)
   revalidate_sql (stmt);
 }
 
+/* }])> */
+
+/* control_panel <([{ */
+static struct
+{
+  dyn_string_t db_file;
+  dyn_string_t prj_dir;
+  dyn_string_t cwd;
+  dyn_string_t main_file;
+} control_panel;
+
+static const char *
+canonical_path (const char *f)
+{
+  static char path[PATH_MAX + 1];
+  char *str = lrealpath (f);
+  int len = dyn_string_length (control_panel.prj_dir);
+  if (strncmp (str, dyn_string_buf (control_panel.prj_dir), len) == 0)
+    strcpy (path, str + len);
+  else
+    strcpy (path, str);
+  free (str);
+  return path;
+}
+
 static void
-control_panel_init (void)
+control_panel_init (const char *main_file)
 {
   int nrow, ncolumn;
   char *error_msg, **result;
 
-  control_panel.db_file = dyn_string_new (PATH_MAX + 1);
+  /* control_panel.db_file has been initilized in plugin_init. */
   control_panel.prj_dir = dyn_string_new (PATH_MAX + 1);
   control_panel.cwd = dyn_string_new (PATH_MAX + 1);
+  control_panel.main_file = dyn_string_new (PATH_MAX + 1);
   dyn_string_copy_cstr (control_panel.cwd, getpwd ());
-  dyn_string_copy_cstr (control_panel.db_file, path);
+  dyn_string_copy_cstr (control_panel.main_file, canonical_path (main_file));
   /* initilize control data. */
   db_error (sqlite3_get_table (db,
 			       "select projectRootPath from ProjectOverview;",
@@ -107,10 +136,49 @@ control_panel_init (void)
 static void
 control_panel_tini (void)
 {
+  dyn_string_delete (control_panel.main_file);
   dyn_string_delete (control_panel.cwd);
   dyn_string_delete (control_panel.prj_dir);
   dyn_string_delete (control_panel.db_file);
 }
+
+/* }])> */
+
+/* bug <([{ */
+static struct
+{
+  char file_name[PATH_MAX + 1];
+  int file_offset;
+  int file_id;
+} bug =
+{
+.file_id = -1,};
+
+/* My plugin callback. */
+static void
+bug_trap_file (const char *fn, int fid)
+{
+  if (bug.file_id == 0 && strcmp (fn, bug.file_name) == 0)
+    bug.file_id = fid;
+}
+
+static int file_get_current_fid (void);
+static void
+bug_trap_token (int off)
+{
+  if (file_get_current_fid () == bug.file_id && off == bug.file_offset)
+    asm volatile ("int $3");
+}
+
+/* Is used by user to initialize. */
+static void __attribute__ ((unused)) bug_init (char *fn, int off)
+{
+  strcpy (bug.file_name, fn);
+  bug.file_offset = off;
+  bug.file_id = 0;
+}
+
+/* }])> */
 
 static void
 print_token (cpp_token_p token, dyn_string_t str)
@@ -180,9 +248,8 @@ static void __attribute__ ((unused)) dump_includee (void)
     dyn_string_append_cstr (str, ";");
     db_error (sqlite3_get_table (db, dyn_string_buf (str), &table,
 				 &nrow, &ncolumn, &error_msg));
-    gcc_assert (nrow <= 1 && ncolumn <= 1);
-    gcc_assert (nrow != 0 && ncolumn != 0);
-    printf ("%s >> ", table[1]);
+    gcc_assert (nrow == 1 && ncolumn == 1);
+    printf ("%s:%s >> ", tmp, table[1]);
     sqlite3_free_table (table);
   }
   dyn_string_delete (str);
@@ -212,24 +279,11 @@ insert_filedep (int hid)
   revalidate_sql (file.select_filedep);
 }
 
-static const char *
-adjust_path (const char *f)
-{
-  char *str = lrealpath (f);
-  int len = dyn_string_length (control_panel.prj_dir);
-  if (strncmp (str, dyn_string_buf (control_panel.prj_dir), len) == 0)
-    strcpy (path, str + len);
-  else
-    strcpy (path, str);
-  free (str);
-  return path;
-}
-
 static void
 insert_file (const char *fn, int *file_id, long long *mtime, bool sysp)
 {
   long long new_mtime = get_mtime (fn);
-  fn = adjust_path (fn);
+  fn = canonical_path (fn);
   int size = strlen (fn);
   db_error (sqlite3_bind_text
 	    (file.select_chfile, 1, fn, size, SQLITE_STATIC));
@@ -240,11 +294,10 @@ insert_file (const char *fn, int *file_id, long long *mtime, bool sysp)
       db_error (sqlite3_bind_int64 (file.insert_chfile, 2, new_mtime));
       if (sysp)
 	db_error (sqlite3_bind_text (file.insert_chfile, 3,
-				     "true", sizeof ("true"), SQLITE_STATIC));
+				     "t", sizeof ("t"), SQLITE_STATIC));
       else
 	db_error (sqlite3_bind_text (file.insert_chfile, 3,
-				     "false", sizeof ("false"),
-				     SQLITE_STATIC));
+				     "f", sizeof ("f"), SQLITE_STATIC));
       execute_sql (file.insert_chfile);
       sqlite3_reset (file.select_chfile);
       db_error (sqlite3_step (file.select_chfile) != SQLITE_ROW);
@@ -252,8 +305,12 @@ insert_file (const char *fn, int *file_id, long long *mtime, bool sysp)
   *file_id = sqlite3_column_int (file.select_chfile, 0);
   *mtime = sqlite3_column_int64 (file.select_chfile, 1);
   if (new_mtime < *mtime)
-    gcc_assert (false);
+    {
+      printf ("Update single file isn't supported now.");
+      gcc_assert (false);
+    }
   revalidate_sql (file.select_chfile);
+  bug_trap_file (fn, *file_id);
 }
 
 static void
@@ -322,7 +379,7 @@ file_pop (void)
 }
 
 static void
-file_init (void)
+file_init (const char *main_file)
 {
   file.scopes = VEC_alloc (scope, heap, 10);
   file.includee = VEC_alloc (int, heap, 10);
@@ -347,7 +404,7 @@ file_init (void)
 				"insert into FileDefinition values (?, ?, ?);",
 				-1, &file.insert_filedef, 0));
 
-  file_push (main_input_filename, false);
+  file_push (main_file, false);
 }
 
 static void
@@ -370,6 +427,7 @@ file_tini (void)
 /* macro <([{ */
 static struct
 {
+  /* expanded_count field is updated for debug only. */
   int expanded_count;
   int macro_count;
   bool cancel;
@@ -408,6 +466,7 @@ mo_leave (void)
 {
   mo.expanded_count = mo.macro_count = 0;
   mo.cancel = mo.cascaded = false;
+  gcc_assert (mo.valid == true);
   mo.valid = false;
 }
 
@@ -415,6 +474,7 @@ static void
 mo_enter (void)
 {
   mo_append_expanded_token ();
+  gcc_assert (mo.valid == false);
   mo.valid = true;
 }
 
@@ -425,14 +485,27 @@ mo_isvalid (void)
 }
 
 static bool
-mo_maybe_cascaded (bool func)
+mo_maybe_cascaded (cpp_reader * pfile, bool func)
 {
-  if (mo.expanded_count == 1 && mo.macro_count == 0)
+  cpp_context *context = pfile->context;
+  gcc_assert (context->prev != NULL);
+  if (!func)
+    return false;
+  do
     {
-      mo.cascaded = func;
-      return true;
+      if (FIRST (context).token == LAST (context).token)
+	continue;
+      if (!context->direct_p
+	  && FIRST (context).ptoken + 1 == LAST (context).ptoken)
+	{
+	  gcc_assert (*FIRST (context).ptoken == &pfile->avoid_paste);
+	  continue;
+	}
+      return false;
     }
-  return false;
+  while ((context = context->prev) != NULL);
+  mo.cascaded = func;
+  return true;
 }
 
 static bool
@@ -461,12 +534,7 @@ mo_maybe_cancel (bool cancel)
 static bool
 mo_cancel (void)
 {
-  if (mo.cancel &&
-      /* Recheck it, cascaded-cancel case. */
-      mo.expanded_count == 2 && mo.macro_count == 0)
-    return true;
-  else
-    return false;
+  return mo.cancel;
 }
 
 /* }])> */
@@ -505,6 +573,26 @@ static struct
   VEC (let, heap) * auxiliary;
   db_token *last_cpp_token;
 } cache;
+
+/* debug purpose. */
+static void __attribute__ ((unused)) dump_cache (void)
+{
+  int ix;
+  db_token *p;
+  printf ("cache.itokens ----------------\n");
+  FOR_EACH_VEC_ELT (db_token, cache.itokens, ix, p)
+  {
+    printf ("[%d]: %s, %d\n", ix, dyn_string_buf (p->value), p->file_offset);
+  }
+  printf ("cache.auxiliary ----------------\n");
+  let *p2;
+  FOR_EACH_VEC_ELT (let, cache.auxiliary, ix, p2)
+  {
+    printf ("[%d]: (%s:%d), %d, %d\n", ix, dyn_string_buf (p2->leader.value),
+	    p2->leader.file_offset, p2->start, p2->length);
+  }
+  printf ("\n");
+}
 
 static void
 cache_init (void)
@@ -750,7 +838,7 @@ cache_skip_match_pair (int index, char c)
 
 /* }])> */
 
-/* definition <([{ */
+/* def <([{ */
 __extension__ enum definition_flag
 {
   DEF_VAR = 1,
@@ -883,12 +971,10 @@ def_append_chk (int index, enum definition_flag flag)
   token = cache_get (index);
   str = token->value;
   demangle_type (token, &cpp_type, &c_type);
-  if (!is_uid (cpp_type, c_type))
-    gcc_assert (false);
+  gcc_assert (is_uid (cpp_type, c_type));
   token = cache_itoken_to_chtoken (index);
   demangle_type (token, &cpp_type, &c_type);
-  if (!is_uid (cpp_type, c_type))
-    gcc_assert (false);
+  gcc_assert (is_uid (cpp_type, c_type));
   def_append (flag, str, token->file_offset);
 }
 
@@ -930,11 +1016,13 @@ static struct
 } define_helper;
 
 static void
-cb_directive_token (cpp_reader * pfile, cpp_token_p token)
+cb_lex_token (cpp_reader * pfile, cpp_token_p token)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
   /* Whether we're skipping by #ifdef/#if clause. */
   if (pfile->state.skipping)
+    return;
+  if (token->type == CPP_EOF)
     return;
   if (mo_isvalid ())
     mo_append_expanded_token ();
@@ -952,16 +1040,30 @@ cb_directive_token (cpp_reader * pfile, cpp_token_p token)
 	  def_append (DEF_MACRO, gbuf, token->file_offset);
 	  define_helper.macro_tristate = 0;
 	}
-      cb->directive_token = NULL;
+      cb->lex_token = NULL;
     }
 }
 
 static void
-cb_start_directive (cpp_reader * pfile, cpp_token_p token)
+cb_start_directive (cpp_reader * pfile)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
   define_helper.macro_tristate = 1;
-  cb->directive_token = cb_directive_token;
+  cb->lex_token = cb_lex_token;
+  /* We don't care about macro expansion in directive, it's reset back in
+   * cb_end_directive. */
+  cb->macro_start_expand = NULL;
+  cb->macro_end_expand = NULL;
+}
+
+static void cb_macro_start (cpp_reader *, cpp_token_p, const cpp_hashnode *);
+static void cb_macro_end (cpp_reader *);
+static void
+cb_end_directive (cpp_reader * pfile)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  cb->macro_start_expand = cb_macro_start;
+  cb->macro_end_expand = cb_macro_end;
 }
 
 static void
@@ -978,6 +1080,9 @@ cb_macro_start (cpp_reader * pfile, cpp_token_p token,
 		const cpp_hashnode * node)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  if (pfile->state.context_for_expand_arg != 0)
+    return;
+  bug_trap_token (token->file_offset);
   bool fun_like = false;
   if (!(node->flags & NODE_BUILTIN))
     fun_like = node->value.macro->fun_like;
@@ -989,12 +1094,12 @@ cb_macro_start (cpp_reader * pfile, cpp_token_p token,
       if (fun_like)
 	{
 	  cb->macro_end_arg = cb_end_arg;
-	  cb->directive_token = cb_directive_token;
+	  cb->lex_token = cb_lex_token;
 	}
     }
   else
     {
-      if (mo_maybe_cascaded (fun_like))
+      if (mo_maybe_cascaded (pfile, fun_like))
 	goto reinit;
     }
 }
@@ -1062,13 +1167,15 @@ symdb_unit_init (void *gcc_data, void *user_data)
       return;
     }
 
-  db_error ((sqlite3_open_v2 (path, &db, SQLITE_OPEN_READWRITE, NULL)));
+  db_error ((sqlite3_open_v2
+	     (dyn_string_buf (control_panel.db_file), &db,
+	      SQLITE_OPEN_READWRITE, NULL)));
   db_error ((sqlite3_exec
 	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
 
-  control_panel_init ();
+  control_panel_init (main_input_filename);
   cache_init ();
-  file_init ();
+  file_init (main_input_filename);
   def_init ();
   gbuf = dyn_string_new (1024);
 
@@ -1108,6 +1215,7 @@ symdb_cpp_token (void *gcc_data, void *user_data)
       in_pragma = true;
       return;
     }
+  bug_trap_token (token->file_offset);
   cache_append_itoken_cpp_stage (token);
   if (mo_isvalid ())
     mo_append_macro_token ();
@@ -1140,7 +1248,10 @@ symdb_call_func (void *gcc_data, void *user_data)
   int index;
   if (block_list.call_func)
     return;
-  if (TREE_CODE (decl) == FUNCTION_DECL && DECL_BUILT_IN (decl))
+  if (TREE_CODE (decl) != FUNCTION_DECL)
+    /* function-pointer, we don't care about it. */
+    return;
+  if (DECL_BUILT_IN (decl))
     return;
   token = cache_get (0);
   demangle_type (token, &cpp_type, &c_type);
@@ -1148,9 +1259,7 @@ symdb_call_func (void *gcc_data, void *user_data)
   index = def_strip_paren_declarator_inner (1);
   token = cache_get (index);
   demangle_type (token, &cpp_type, &c_type);
-  if (!is_uid (cpp_type, c_type))
-    /* The case is do function call by function-pointer, we don't audit it. */
-    return;
+  gcc_assert (is_uid (cpp_type, c_type));
   def_append_chk (index, DEF_CALLED_FUNC);
   cache_reset (0);
 }
@@ -1164,11 +1273,13 @@ symdb_call_func (void *gcc_data, void *user_data)
  *   enumeration-constant = constant-expression
  */
 static void
-symdb_enum_spec (void *gcc_data, void *user_data)
+symdb_enumerator (void *gcc_data, void *user_data)
 {
   if (block_list.enum_spec)
     return;
   def_append_chk (0, DEF_ENUM_MEMBER);
+  /* Don't call cache_reset(0) here, since enum specifier hasn't been parsed,
+   * see symdb_declspecs. */
 }
 
 static void
@@ -1413,7 +1524,7 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_C_TOKEN);
   unregister_callback ("symdb", PLUGIN_EXTERN_DECL);
   unregister_callback ("symdb", PLUGIN_CALL_FUNCTION);
-  unregister_callback ("symdb", PLUGIN_ENUM_SPECIFIER);
+  unregister_callback ("symdb", PLUGIN_ENUMERATOR);
   unregister_callback ("symdb", PLUGIN_EXTERN_FUNC_OLD_PARAM);
   unregister_callback ("symdb", PLUGIN_EXTERN_FUNC);
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
@@ -1428,10 +1539,13 @@ plugin_init (struct plugin_name_args *plugin_info,
   if (flag_preprocess_only)
     return 0;
   /* We only accept a param -- `dbfile', using ProjectOverview table of
-   * database to do further jobs. */
+   * database to do more configs. */
   gcc_assert (plugin_info->argc == 1
 	      && strcmp (plugin_info->argv[0].key, "dbfile") == 0);
-  strcpy (path, plugin_info->argv[0].value);
+  /* Due to gcc internal architecture, control_panel.db_file is initialized
+   * here. */
+  control_panel.db_file = dyn_string_new (PATH_MAX + 1);
+  dyn_string_copy_cstr (control_panel.db_file, plugin_info->argv[0].value);
 
   register_callback ("symdb", PLUGIN_START_UNIT, &symdb_unit_init, NULL);
   register_callback ("symdb", PLUGIN_FINISH_UNIT, &symdb_unit_tini, NULL);
@@ -1440,7 +1554,7 @@ plugin_init (struct plugin_name_args *plugin_info,
   register_callback ("symdb", PLUGIN_C_TOKEN, &symdb_c_token, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_DECL, &symdb_extern_decl, NULL);
   register_callback ("symdb", PLUGIN_CALL_FUNCTION, &symdb_call_func, NULL);
-  register_callback ("symdb", PLUGIN_ENUM_SPECIFIER, &symdb_enum_spec, NULL);
+  register_callback ("symdb", PLUGIN_ENUMERATOR, &symdb_enumerator, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_FUNC_OLD_PARAM,
 		     &symdb_extern_func_old_param, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_FUNC, &symdb_extern_func, NULL);
@@ -1452,6 +1566,7 @@ plugin_init (struct plugin_name_args *plugin_info,
   cb->macro_start_expand = cb_macro_start;
   cb->macro_end_expand = cb_macro_end;
   cb->start_directive = cb_start_directive;
+  cb->end_directive = cb_end_directive;
   /* Note: cb->file_change callback is delayed to install in symdb_unit_init
    * for there's an inner hook -- cb_file_change of gcc/c-family/c-opts.c. */
   return 0;

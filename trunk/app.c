@@ -117,10 +117,12 @@ recursive_dependence (const char *fid, dyn_string_t result)
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
     {
-      dyn_string_append_cstr (result, table[i]);
-      dyn_string_append_cstr (result, ", ");
-      if (strstr (dyn_string_buf (result), table[i]) != NULL)
+      dyn_string_copy_cstr (dep.str, " ");
+      dyn_string_append_cstr (dep.str, table[i]);
+      dyn_string_append_cstr (dep.str, ",");
+      if (strstr (dyn_string_buf (result), dyn_string_buf (dep.str)) != NULL)
 	continue;
+      dyn_string_append (result, dep.str);
       recursive_dependence (table[i], result);
     }
   sqlite3_free_table (table);
@@ -132,9 +134,9 @@ dep_search_deplist (const char *root_fn, dyn_string_t list)
   const char *fid = dep_get_fid (root_fn);
   if (fid != NULL)
     {
-      dyn_string_append_cstr (list, "fileID in (");
+      dyn_string_append_cstr (list, "fileID in ( ");
       dyn_string_append_cstr (list, fid);
-      dyn_string_append_cstr (list, ", ");
+      dyn_string_append_cstr (list, ",");
       recursive_dependence (fid, list);
       dyn_string_append_cstr (list, "-1)");
     }

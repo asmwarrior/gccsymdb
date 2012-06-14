@@ -4,7 +4,7 @@ if [ "$1" = "clean" ]; then
 	exit 0;
 fi
 
-GCC_ROOT=/home/zyf/src/gcc-4.6.2/
+GCC_ROOT=/home/zyf/gcc/
 MY_ROOT=/home/zyf/root/
 PATCH_ROOT=/home/zyf/src/symdb.gcc/
 test_it ()

@@ -1,7 +1,7 @@
-Index: gcc-4.6.2/gcc/plugin.def
+Index: gcc-4.6.3/gcc/plugin.def
 ===================================================================
---- gcc-4.6.2.orig/gcc/plugin.def	2012-05-24 14:56:27.470726411 +0800
-+++ gcc-4.6.2/gcc/plugin.def	2012-05-24 16:13:07.571652415 +0800
+--- gcc-4.6.3.orig/gcc/plugin.def	2012-06-13 09:26:38.644083182 +0800
++++ gcc-4.6.3/gcc/plugin.def	2012-06-13 09:31:30.997180164 +0800
 @@ -89,6 +89,34 @@
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
@@ -31,16 +31,16 @@ Index: gcc-4.6.2/gcc/plugin.def
 +/* A function is called. */
 +DEFEVENT (PLUGIN_CALL_FUNCTION)
 +
-+/* Called when an enum specifier is parsed. */
-+DEFEVENT (PLUGIN_ENUM_SPECIFIER)
++/* Called when an enumerator is parsed. */
++DEFEVENT (PLUGIN_ENUMERATOR)
 +
  /* After the hard-coded events above, plugins can dynamically allocate events
     at run time.
     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
-Index: gcc-4.6.2/gcc/c-family/c-lex.c
+Index: gcc-4.6.3/gcc/c-family/c-lex.c
 ===================================================================
---- gcc-4.6.2.orig/gcc/c-family/c-lex.c	2012-05-24 14:56:27.464999992 +0800
-+++ gcc-4.6.2/gcc/c-family/c-lex.c	2012-05-24 16:13:07.574121890 +0800
+--- gcc-4.6.3.orig/gcc/c-family/c-lex.c	2012-06-13 09:26:38.642085865 +0800
++++ gcc-4.6.3/gcc/c-family/c-lex.c	2012-06-13 09:31:31.010041682 +0800
 @@ -36,6 +36,7 @@
  #include "splay-tree.h"
  #include "debug.h"
@@ -73,10 +73,10 @@ Index: gcc-4.6.2/gcc/c-family/c-lex.c
  
    return type;
  }
-Index: gcc-4.6.2/gcc/c-parser.c
+Index: gcc-4.6.3/gcc/c-parser.c
 ===================================================================
---- gcc-4.6.2.orig/gcc/c-parser.c	2012-05-24 14:56:27.470726411 +0800
-+++ gcc-4.6.2/gcc/c-parser.c	2012-05-24 16:13:07.581411593 +0800
+--- gcc-4.6.3.orig/gcc/c-parser.c	2012-06-13 09:26:38.645295074 +0800
++++ gcc-4.6.3/gcc/c-parser.c	2012-06-13 09:31:31.026245074 +0800
 @@ -121,45 +121,6 @@
     C++).  It would then be possible to share more of the C and C++
     lexer code, if desired.  */
@@ -183,7 +183,7 @@ Index: gcc-4.6.2/gcc/c-parser.c
  	    }
  	  token = c_parser_peek_token (parser);
  	  enum_id = token->value;
-+      invoke_plugin_callbacks (PLUGIN_ENUM_SPECIFIER, enum_id);
++      invoke_plugin_callbacks (PLUGIN_ENUMERATOR, enum_id);
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
@@ -195,10 +195,10 @@ Index: gcc-4.6.2/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-Index: gcc-4.6.2/gcc/plugin.c
+Index: gcc-4.6.3/gcc/plugin.c
 ===================================================================
---- gcc-4.6.2.orig/gcc/plugin.c	2012-05-24 14:56:27.469640797 +0800
-+++ gcc-4.6.2/gcc/plugin.c	2012-05-24 16:13:07.582419026 +0800
+--- gcc-4.6.3.orig/gcc/plugin.c	2012-06-13 09:26:38.644083182 +0800
++++ gcc-4.6.3/gcc/plugin.c	2012-06-13 09:31:31.030313665 +0800
 @@ -438,6 +438,15 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
@@ -211,7 +211,7 @@ Index: gcc-4.6.2/gcc/plugin.c
 +      case PLUGIN_EXTERN_VAR:
 +      case PLUGIN_EXTERN_DECLSPECS:
 +      case PLUGIN_CALL_FUNCTION:
-+      case PLUGIN_ENUM_SPECIFIER:
++      case PLUGIN_ENUMERATOR:
          {
            struct callback_info *new_callback;
            if (!callback)
@@ -227,14 +227,14 @@ Index: gcc-4.6.2/gcc/plugin.c
 +      case PLUGIN_EXTERN_VAR:
 +      case PLUGIN_EXTERN_DECLSPECS:
 +      case PLUGIN_CALL_FUNCTION:
-+      case PLUGIN_ENUM_SPECIFIER:
++      case PLUGIN_ENUMERATOR:
          {
            /* Iterate over every callback registered with this event and
               call it.  */
-Index: gcc-4.6.2/gcc/doc/plugins.texi
+Index: gcc-4.6.3/gcc/doc/plugins.texi
 ===================================================================
---- gcc-4.6.2.orig/gcc/doc/plugins.texi	2012-05-24 14:56:27.468648970 +0800
-+++ gcc-4.6.2/gcc/doc/plugins.texi	2012-05-24 16:13:07.583388593 +0800
+--- gcc-4.6.3.orig/gcc/doc/plugins.texi	2012-06-13 09:26:38.643123486 +0800
++++ gcc-4.6.3/gcc/doc/plugins.texi	2012-06-13 09:31:31.042616745 +0800
 @@ -183,6 +183,23 @@
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
@@ -254,15 +254,15 @@ Index: gcc-4.6.2/gcc/doc/plugins.texi
 +  PLUGIN_EXTERN_DECLSPECS,
 +  /* A function is called. */
 +  PLUGIN_CALL_FUNCTION,
-+  /* An enum specifier is parsed. */
-+  PLUGIN_ENUM_SPECIFIER,
++  /* An enumerator is parsed. */
++  PLUGIN_ENUMERATOR,
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
-Index: gcc-4.6.2/gcc/c-family/c-common.h
+Index: gcc-4.6.3/gcc/c-family/c-common.h
 ===================================================================
---- gcc-4.6.2.orig/gcc/c-family/c-common.h	2012-05-24 14:56:27.466683681 +0800
-+++ gcc-4.6.2/gcc/c-family/c-common.h	2012-05-24 16:13:07.585339298 +0800
+--- gcc-4.6.3.orig/gcc/c-family/c-common.h	2012-06-13 09:26:38.643123486 +0800
++++ gcc-4.6.3/gcc/c-family/c-common.h	2012-06-13 09:31:31.044132943 +0800
 @@ -25,6 +25,7 @@
  #include "splay-tree.h"
  #include "cpplib.h"
@@ -271,7 +271,7 @@ Index: gcc-4.6.2/gcc/c-family/c-common.h
  
  /* In order for the format checking to accept the C frontend
     diagnostic framework extensions, you must include this file before
-@@ -1007,4 +1008,43 @@
+@@ -1008,4 +1009,43 @@
  extern tree c_omp_remap_decl (tree, bool);
  extern void record_types_used_by_current_var_decl (tree);
  

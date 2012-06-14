@@ -2,44 +2,59 @@
 #define MUL_DEFINITION \
 	int i; \
 	int j; \
-	int foo(
+	int main(
 MUL_DEFINITION void) {
 }
 
-#define a(p) x
-#define b y
-#define c
-#define d(p) z
-#define e(p) w
+int base;
+int cancel;
+#define base(p) foo()
+#define null(p)
 
-// cascaded.
-#define ma a
-int ma(int);
-#define mb b
-int mb;
-#define mc a(int)
-int mc;
-#define md d(int)
-int md(int);
+int foo(void)
+{
+#define cancel(p) foo()
+	cancel = 1;
+#define cancel_inmacro(p) base + 1
+	cancel_inmacro(1);
 
-// cascaded + cancel.
-#define na e = 1
-int na;
-int ma = 1;
+#define cascaded_head base
+	cascaded_head(2);
+#define cascaded_head2 base(2)
+	cascaded_head2;
+#define cascaded_tail null(4) 3 + base
+	cascaded_tail(2);
+#define cascaded_tail2 null(4) 3 + base(2)
+	cascaded_tail2;
+#define cascaded_func_head(p) base
+	cascaded_func_head(2)(2);
+#define cascaded_func_tail(p) base + 3 + base
+	cascaded_func_tail(2)(2);
 
-// three-layer cascaded.
-#define oa ma(int)
-int oa;
-#define ob mb
-int ob;
-#define oc md(int)
-int oc;
+	// cascaded + cancel.
+	cascaded_head;
+	cascaded_tail;
+	cascaded_func_head(2);
+	cascaded_func_tail(2);
 
-// some disturbers.
-#define pa c ma(int)
-int pa;
-#define pb c mb
-int pb;
-#define pc c md(int)
-int pc;
+	// 3-level cascaded.
+#define c3_head cascaded_head
+	c3_head(2);
+#define c3_tail null(4) cascaded_tail
+	c3_tail(2);
+
+#define paste(x, y) x ## y
+	paste(ba, se)(1);
+
+	// macro expansion in directive clause.
+#define cond(p) 1
+#define cascaded_cond cond
+#if cascaded_cond(1) == 1
+#endif
+
+	// macro expansion in macro args.
+#define args(x, y) 1
+	args(base, cascaded_head(1));
+	return 0;
+}
 //*/

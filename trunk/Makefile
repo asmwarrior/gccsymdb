@@ -1,6 +1,6 @@
 .PHONY: default clean format db
 
-GCC_SRC=/home/zyf/src/gcc-4.6.2/
+GCC_SRC=/home/zyf/gcc/
 MY_ROOT=/home/zyf/root/
 SYMDB_ROOT=/home/zyf/src/symdb.gcc/
 
