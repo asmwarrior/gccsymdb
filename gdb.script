@@ -8,9 +8,9 @@ set logging overwrite
 set logging file ~/src/symdb.gcc/log.gdb
 set logging off
 cd ~/src/symdb.gcc/
-target exec /home/zyf/src/gcc-4.6.2/host-i686-pc-linux-gnu/gcc/xgcc
-file /home/zyf/src/gcc-4.6.2/host-i686-pc-linux-gnu/gcc/xgcc
-set args -B/home/zyf/src/gcc-4.6.2/host-i686-pc-linux-gnu/gcc/ a.c --sysroot=/home/zyf/src/symdb.gcc//test -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
+target exec /home/zyf/gcc/host-i686-pc-linux-gnu/gcc/xgcc
+file /home/zyf/gcc/host-i686-pc-linux-gnu/gcc/xgcc
+set args -B/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/ a.c --sysroot=/home/zyf/src/symdb.gcc//test -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
 b main
 r
 set follow-fork-mode child
@@ -18,10 +18,28 @@ c
 adv compile_file
 end
 
-define ci
-set $zzzz5 = 0
-while $zzzz5 < cache.itokens.base.num
-	printf "%d, %s\n", cache.itokens.base.vec[$zzzz5].file_offset, cache.itokens.base.vec[$zzzz5].value.s
-	set $zzzz5 = $zzzz5 + 1
+define gccmo
+set $zzzz = $arg0.value.macro
+printf ">>>>macro<<<<\n"
+p *$arg0
+p *$zzzz
+printf ">>>>param<<<<\n"
+set $zzzzi = 0
+while $zzzzi < $zzzz.paramc
+	p *$zzzz.params[$zzzzi]
+	set $zzzzi = $zzzzi + 1
 end
+printf ">>>>content<<<<\n"
+set $zzzzi = 0
+while $zzzzi < $zzzz.count
+	set $zzzztmp = $zzzz.exp.tokens[$zzzzi]
+	p $zzzztmp
+	if $zzzztmp.type == CPP_NAME
+		printf "((((%s))))\n", $zzzztmp.val.node.node.ident.str
+	end
+	set $zzzzi = $zzzzi + 1
+end
+end
+document gccmo
+When break in cb_macro_start, `gccmo node'.
 end

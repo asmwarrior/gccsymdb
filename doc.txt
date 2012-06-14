@@ -117,10 +117,10 @@ store the third line to database.
         ...
     };
 The syntax is correct. `gs' will return two results, one is DEF_TYPEDEF,
-another is DEF_STRUCT, however `helper.vim' doesn't distingush them. In
-gcc-4.6.2, search `cpp_reader' will see the case, by the way, my script will
-search definition from current file and its dependence, then all files, so in
-libcpp/internal.h searching `cpp_reader' will return a result.
+another is DEF_STRUCT. In gcc-4.6.2, search `cpp_reader' will see the case, by
+the way, `helper.vim' will search definition from current file and its
+dependence, then all files, so in libcpp/internal.h searching `cpp_reader'
+will return one result.
 
     #define X a
     #include "afile"
@@ -138,7 +138,7 @@ gcc/tree.def and definite symbol `DEFTREECODE' several times.
     #endif
 Sometime `x' is returned two results.
 glibc-2.13/include/shlib-compat.h:compat_symbol is the case. The reason is
-generally every file is compiled two times in glibc internal
+every file is compiled two times in glibc internal
     gcc .. -DSHARED .. -o x.os
     gcc .. -o x.o
 It causes the strange case.
@@ -166,12 +166,11 @@ mpc-0.9
 gcc-4.6.3 (x86):
     *) ./configure --prefix=/home/zyf/root/ --with-mpc=/home/zyf/root/
     --with-gmp=/home/zyf/root/ --with-mpfr=/home/zyf/root/
-    --enable-stage1-languages=c++
     *) # After quilt my patches.
     *) make STAGE1_CFLAGS="-ggdb" all-stage1
     *) # prepare database.
     *) make STAGE2_CFLAGS="-fplugin=/home/zyf/src/symdb.gcc/symdb.so
-    -fplugin-arg-symdb-dbfile=/home/zyf/src/gcc-4.6.2/gccsym.db" all-stage2
+    -fplugin-arg-symdb-dbfile=/home/zyf/src/gcc-4.6.3/gccsym.db" all-stage2
     *) # rearrange database.
 glibc-2.13 (mips):
     *) Change glibc.src/Makeconfig: `override CFLAGS = '.
@@ -223,6 +222,7 @@ in fact, gcc doesn't complain the last line. After prefetch two tokens `Z' and
 expansion and return `Z' and `=' as COMMON_TOKEN not EXPANDED_TOKEN. However
 it makes my code flow become more complex, I place a bool mo.cancel to solve
 it.
+
 Calling sequence (Note, cb_macro_start and cb_macro_end are always matched
 even macro expansion is canceled):
     cb_macro_start(Z)
@@ -230,6 +230,8 @@ even macro expansion is canceled):
     cb_macro_end(Z, prev = NULL)
     symdb_cpp_token('Z')
     symdb_cpp_token('=')
+
+By the way, my plugin only cares about 1-level macro cancel.
 // }])>
 
 // GCC Cascaded Macro Expansion <([{
@@ -242,6 +244,7 @@ Consider the case
 
 The case is special due to the expansion process of X and Y is converted to
 the expansion process of a fun-like macro finally.
+
 To the fourth line, the sequence is
     cb_macro_start(Y)
     cb_macro_start(Z)
@@ -249,17 +252,31 @@ To the fourth line, the sequence is
     cb_macro_end(Y, prev = NULL)
 # Y macro is popped from pfile.context.
     cb_end_arg(Z)
-# enter_macro_context(Z) end. Z macro is pushed to pfile.context.
+# enter_macro_context(Z) >> replace_args. Z macro is pushed to pfile.context.
     symdb_cpp_token(a)
     cb_macro_end(Z, prev = NULL)
+
 To the fifth line, the sequence is
     cb_macro_start(X)
     cb_macro_start(Z)
     cb_end_arg(Z)
     cb_macro_end(Z)
     cb_macro_end(X)
+
 The fourth line is also breaking cb_macro_start/cb_macro_end pair rule. It
 makes my code a little complex. I place a field mo.cascaded to solve it.
+
+Note: macro cascaded means the tail of a macro expansion tokens is another
+funlike macro. So later macro definition is also belongs to macro cascade.
+    #define Y2 1 + Z
+
+To 3-level or higher cascaded cases, it's obvious all immediate macroes can't
+be funlike macro. Here only list the first sequence
+    cb_macro_start(Y)
+    cb_macro_start(Y2)
+    cb_macro_start(Y3)
+    cb_macro_start(Z)
+    ...
 // }])>
 
 // GCC Cancel + Cascaded <([{
@@ -271,33 +288,35 @@ Consider the case
     int X;
 
 When cancel encounters cascaded, thing will go even worse.
+
 To the fourth line, the sequence is
     cb_macro_start(Y)
     cb_macro_start(Z)
 # enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token
     cb_macro_end(Y, prev = NULL)
-# Y macro is popped from pfile.context. Howver, since the macro is canceled,
-# so `funlike_invocation_p >> _cpp_push_token_context' which pushes a NULL
-# macro context to pfile.context.
+# Y macro is popped from pfile.context.
+# Then Z is canceled, funlike_invocation_p >> _cpp_push_token_context which
+# pushes a context to pfile.context, its context.macro = NULL.
     cb_end_arg(cancel = true)
-    cb_macro_end(match-pair to cb_end_arg, prev != NULL)
-# So in my cb_macro_end, prev != NULL.
+# So in my cb_macro_end, prev != NULL, however its context.macro = NULL, a
+# strange case.
+    cb_macro_end(Z, match-pair to cb_end_arg, prev != NULL)
     symdb_cpp_token(`Z' is returned, which is the result of Y macro)
-# enter_macro_context(Z) end. Note now, NULL macro context has been pushed to
-# pfile.context.
     cb_macro_end(prev = NULL)
+# context.macro = NULL is poped.
     symdb_cpp_token(=)
+
 To the fifth line, the sequence is
     cb_macro_start(X)
     cb_macro_start(Z)
     cb_end_arg(cancel = true)
-    cb_macro_end(X, match-pair to cb_end_arg)
+    cb_macro_end(Z, match-pair to cb_end_arg)
     symdb_cpp_token(Z)
     symdb_cpp_token(=)
     symdb_cpp_token(1)
-    cb_macro_end
-To the fourth line, two cb_macro_start are called and three cb_macro_end are
-called.
+    cb_macro_end(X)
+
+To the fourth line, two cb_macro_start and three cb_macro_end are called.
 // }])>
 
 // Patch Overview <([{

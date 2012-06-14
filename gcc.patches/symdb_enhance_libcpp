@@ -1,7 +1,7 @@
-Index: gcc-4.6.2/libcpp/include/cpplib.h
+Index: gcc-4.6.3/libcpp/include/cpplib.h
 ===================================================================
---- gcc-4.6.2.orig/libcpp/include/cpplib.h	2012-04-03 13:50:53.978161140 +0800
-+++ gcc-4.6.2/libcpp/include/cpplib.h	2012-05-24 14:31:12.581823397 +0800
+--- gcc-4.6.3.orig/libcpp/include/cpplib.h	2012-06-12 09:50:26.262927584 +0800
++++ gcc-4.6.3/libcpp/include/cpplib.h	2012-06-13 09:29:53.777415999 +0800
 @@ -208,10 +208,10 @@
         node;
  };
@@ -15,7 +15,7 @@ Index: gcc-4.6.2/libcpp/include/cpplib.h
    ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
    unsigned short flags;		/* flags - see above */
  
-@@ -493,6 +493,24 @@
+@@ -493,6 +493,21 @@
       be expanded.  */
    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
  
@@ -29,21 +29,18 @@ Index: gcc-4.6.2/libcpp/include/cpplib.h
 +  void (*macro_end_arg) (cpp_reader *, bool cancel);
 +  /* The pair is called when cpp directive (starting from `#', such as
 +   * `#define', `#endif' etc) is encountered and reaches end. */
-+  void (*start_directive) (cpp_reader *, const cpp_token*);
++  void (*start_directive) (cpp_reader *);
 +  void (*end_directive) (cpp_reader *);
-+  /* The more powerful function getting token than cpp_get_token. Here, name
-+   * directive_token maybe makes you confused, it's named from
-+   * libcpp/lex.c:_cpp_lex_direct, there isn't relationship between
-+   * directive_token and {start, end}_directive above. */
-+  void (*directive_token) (cpp_reader *, const cpp_token*);
++  /* The more powerful function getting token than cpp_get_token. */
++  void (*lex_token) (cpp_reader *, const cpp_token*);
 +
    /* Called to emit a diagnostic.  This callback receives the
       translated message.  */
    bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
-Index: gcc-4.6.2/libcpp/lex.c
+Index: gcc-4.6.3/libcpp/lex.c
 ===================================================================
---- gcc-4.6.2.orig/libcpp/lex.c	2012-04-03 13:50:53.976753852 +0800
-+++ gcc-4.6.2/libcpp/lex.c	2012-05-24 14:34:25.714657801 +0800
+--- gcc-4.6.3.orig/libcpp/lex.c	2012-06-12 09:50:26.262927584 +0800
++++ gcc-4.6.3/libcpp/lex.c	2012-06-13 09:30:17.509113536 +0800
 @@ -51,7 +51,8 @@
  #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
  #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
@@ -116,15 +113,15 @@ Index: gcc-4.6.2/libcpp/lex.c
    buffer->next_line = s + 1;
  }
  
-@@ -1835,6 +1838,8 @@
- 		 handles the directive as normal.  */
- 	      && pfile->state.parsing_args != 1)
- 	    {
-+	      if (pfile->cb.start_directive)
-+		pfile->cb.start_directive (pfile, result);
- 	      if (_cpp_handle_directive (pfile, result->flags & PREV_WHITE))
- 		{
- 		  if (pfile->directive_result.type == CPP_PADDING)
+@@ -1824,6 +1827,8 @@
+ 	}
+       else
+ 	result = _cpp_lex_direct (pfile);
++    if (pfile->cb.lex_token)
++      pfile->cb.lex_token (pfile, result);
+ 
+       if (result->flags & BOL)
+ 	{
 @@ -1981,6 +1986,17 @@
        _cpp_process_line_notes (pfile, false);
        result->src_loc = pfile->line_table->highest_line;
@@ -143,33 +140,35 @@ Index: gcc-4.6.2/libcpp/lex.c
    c = *buffer->cur++;
  
    LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
-@@ -2290,6 +2306,8 @@
-       break;
+Index: gcc-4.6.3/libcpp/macro.c
+===================================================================
+--- gcc-4.6.3.orig/libcpp/macro.c	2012-06-12 09:50:26.262927584 +0800
++++ gcc-4.6.3/libcpp/macro.c	2012-06-12 15:13:26.623118539 +0800
+@@ -855,6 +855,8 @@
+ 	  pfile->keep_tokens++;
+ 	  pfile->state.parsing_args = 1;
+ 	  buff = funlike_invocation_p (pfile, node, &pragma_buff);
++	  if (pfile->cb.macro_end_arg)
++	    pfile->cb.macro_end_arg (pfile, buff == NULL);
+ 	  pfile->state.parsing_args = 0;
+ 	  pfile->keep_tokens--;
+ 	  pfile->state.prevent_expansion--;
+@@ -1170,6 +1172,7 @@
+   capacity = 256;
+   arg->expanded = XNEWVEC (const cpp_token *, capacity);
+ 
++  pfile->state.context_for_expand_arg++;
+   push_ptoken_context (pfile, NULL, NULL, arg->first, arg->count + 1);
+   for (;;)
+     {
+@@ -1191,6 +1194,7 @@
      }
  
-+  if (pfile->cb.directive_token)
-+    pfile->cb.directive_token (pfile, result);
-   return result;
+   _cpp_pop_context (pfile);
++  pfile->state.context_for_expand_arg--;
+ 
+   CPP_WTRADITIONAL (pfile) = saved_warn_trad;
  }
- 
-Index: gcc-4.6.2/libcpp/macro.c
-===================================================================
---- gcc-4.6.2.orig/libcpp/macro.c	2012-04-03 13:50:53.976753852 +0800
-+++ gcc-4.6.2/libcpp/macro.c	2012-05-24 14:37:12.658632333 +0800
-@@ -869,9 +869,13 @@
- 	      if (pragma_buff)
- 		_cpp_release_buff (pfile, pragma_buff);
- 
-+	      if (pfile->cb.macro_end_arg)
-+		pfile->cb.macro_end_arg (pfile, true);
- 	      return 0;
- 	    }
- 
-+	  if (pfile->cb.macro_end_arg)
-+	    pfile->cb.macro_end_arg (pfile, false);
- 	  if (macro->paramc > 0)
- 	    replace_args (pfile, node, macro, (macro_arg *) buff->base);
- 	  _cpp_release_buff (pfile, buff);
 @@ -1256,6 +1260,8 @@
        else
  	{
@@ -195,24 +194,45 @@ Index: gcc-4.6.2/libcpp/macro.c
  	  if (ret)
   	    {
  	      if (pfile->state.in_directive || ret == 2)
-Index: gcc-4.6.2/libcpp/directives.c
+Index: gcc-4.6.3/libcpp/directives.c
 ===================================================================
---- gcc-4.6.2.orig/libcpp/directives.c	2012-04-03 13:50:53.976753852 +0800
-+++ gcc-4.6.2/libcpp/directives.c	2012-04-03 13:51:16.424351219 +0800
-@@ -492,6 +492,8 @@
-   else if (skip == 0)
-     _cpp_backup_tokens (pfile, 1);
+--- gcc-4.6.3.orig/libcpp/directives.c	2012-06-12 09:50:26.261895069 +0800
++++ gcc-4.6.3/libcpp/directives.c	2012-06-12 09:50:29.312642164 +0800
+@@ -275,6 +275,9 @@
  
+   /* Some handlers need the position of the # for diagnostics.  */
+   pfile->directive_line = pfile->line_table->highest_line;
++
++  if (pfile->cb.start_directive)
++    pfile->cb.start_directive (pfile);
+ }
+ 
+ /* Called when leaving a directive, _Pragma or command-line directive.  */
+@@ -309,6 +312,9 @@
+   pfile->state.in_expression = 0;
+   pfile->state.angled_headers = 0;
+   pfile->directive = 0;
++
 +  if (pfile->cb.end_directive)
 +    pfile->cb.end_directive (pfile);
-   end_directive (pfile, skip);
-   if (was_parsing_args && !pfile->state.in_deferred_pragma)
-     {
-Index: gcc-4.6.2/libcpp/internal.h
+ }
+ 
+ /* Prepare to handle the directive in pfile->directive.  */
+Index: gcc-4.6.3/libcpp/internal.h
 ===================================================================
---- gcc-4.6.2.orig/libcpp/internal.h	2012-04-03 13:50:53.978161140 +0800
-+++ gcc-4.6.2/libcpp/internal.h	2012-04-03 13:51:16.425544300 +0800
-@@ -243,6 +243,11 @@
+--- gcc-4.6.3.orig/libcpp/internal.h	2012-06-12 09:50:26.262927584 +0800
++++ gcc-4.6.3/libcpp/internal.h	2012-06-12 15:09:43.980924191 +0800
+@@ -221,6 +221,9 @@
+ 
+   /* Nonzero if the deferred pragma being handled allows macro expansion.  */
+   unsigned char pragma_allow_expansion;
++
++  /* Nonzero if expand_args uses pfile.context chain to expand arg macro. */
++  unsigned char context_for_expand_arg;
+ };
+ 
+ /* Special nodes - identifiers with predefined significance.  */
+@@ -243,6 +246,11 @@
       intervening space, 0 represents a note that has already been handled,
       and anything else is invalid.  */
    unsigned int type;

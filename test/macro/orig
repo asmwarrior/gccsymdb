@@ -6,7 +6,7 @@ CREATE TABLE chFile (
 	mtime bigint,
 	sysHeader boolean
 );
-INSERT INTO "chFile" VALUES(1,'test/macro/a.c',1325350860,'false');
+INSERT INTO "chFile" VALUES(1,'test/macro/a.c',1325350860,'f');
 CREATE INDEX FileName on chFile (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -25,34 +25,37 @@ CREATE TABLE Definition (
 	position integer
 );
 INSERT INTO "Definition" VALUES(1,'MUL_DEFINITION',3,12);
-INSERT INTO "Definition" VALUES(2,'i',1,59);
-INSERT INTO "Definition" VALUES(3,'j',1,59);
-INSERT INTO "Definition" VALUES(4,'foo',2,59);
-INSERT INTO "Definition" VALUES(5,'a',3,93);
-INSERT INTO "Definition" VALUES(6,'b',3,108);
-INSERT INTO "Definition" VALUES(7,'c',3,120);
-INSERT INTO "Definition" VALUES(8,'d',3,130);
-INSERT INTO "Definition" VALUES(9,'e',3,145);
-INSERT INTO "Definition" VALUES(10,'ma',3,174);
-INSERT INTO "Definition" VALUES(11,'x',1,183);
-INSERT INTO "Definition" VALUES(12,'mb',3,200);
-INSERT INTO "Definition" VALUES(13,'y',1,209);
-INSERT INTO "Definition" VALUES(14,'mc',3,221);
-INSERT INTO "Definition" VALUES(15,'x',1,235);
-INSERT INTO "Definition" VALUES(16,'md',3,247);
-INSERT INTO "Definition" VALUES(17,'na',3,301);
-INSERT INTO "Definition" VALUES(18,'e',1,314);
-INSERT INTO "Definition" VALUES(19,'a',1,322);
-INSERT INTO "Definition" VALUES(20,'oa',3,364);
-INSERT INTO "Definition" VALUES(21,'x',1,379);
-INSERT INTO "Definition" VALUES(22,'ob',3,391);
-INSERT INTO "Definition" VALUES(23,'y',1,401);
-INSERT INTO "Definition" VALUES(24,'oc',3,413);
-INSERT INTO "Definition" VALUES(25,'pa',3,461);
-INSERT INTO "Definition" VALUES(26,'x',1,478);
-INSERT INTO "Definition" VALUES(27,'pb',3,490);
-INSERT INTO "Definition" VALUES(28,'y',1,502);
-INSERT INTO "Definition" VALUES(29,'pc',3,514);
+INSERT INTO "Definition" VALUES(2,'i',1,60);
+INSERT INTO "Definition" VALUES(3,'j',1,60);
+INSERT INTO "Definition" VALUES(4,'main',2,60);
+INSERT INTO "Definition" VALUES(5,'base',1,90);
+INSERT INTO "Definition" VALUES(6,'cancel',1,100);
+INSERT INTO "Definition" VALUES(7,'base',3,116);
+INSERT INTO "Definition" VALUES(8,'null',3,138);
+INSERT INTO "Definition" VALUES(9,'foo',2,151);
+INSERT INTO "Definition" VALUES(10,'cancel',3,171);
+INSERT INTO "Definition" VALUES(11,'cancel_inmacro',3,208);
+INSERT INTO "Definition" VALUES(12,'cascaded_head',3,264);
+INSERT INTO "Definition" VALUES(13,'foo',9,284);
+INSERT INTO "Definition" VALUES(14,'cascaded_head2',3,310);
+INSERT INTO "Definition" VALUES(15,'foo',9,334);
+INSERT INTO "Definition" VALUES(16,'cascaded_tail',3,358);
+INSERT INTO "Definition" VALUES(17,'foo',9,390);
+INSERT INTO "Definition" VALUES(18,'cascaded_tail2',3,416);
+INSERT INTO "Definition" VALUES(19,'foo',9,452);
+INSERT INTO "Definition" VALUES(20,'cascaded_func_head',3,476);
+INSERT INTO "Definition" VALUES(21,'foo',9,504);
+INSERT INTO "Definition" VALUES(22,'cascaded_func_tail',3,538);
+INSERT INTO "Definition" VALUES(23,'foo',9,577);
+INSERT INTO "Definition" VALUES(24,'c3_head',3,738);
+INSERT INTO "Definition" VALUES(25,'foo',9,761);
+INSERT INTO "Definition" VALUES(26,'c3_tail',3,781);
+INSERT INTO "Definition" VALUES(27,'foo',9,812);
+INSERT INTO "Definition" VALUES(28,'paste',3,833);
+INSERT INTO "Definition" VALUES(29,'foo',9,853);
+INSERT INTO "Definition" VALUES(30,'cond',3,921);
+INSERT INTO "Definition" VALUES(31,'cascaded_cond',3,939);
+INSERT INTO "Definition" VALUES(32,'args',3,1035);
 CREATE INDEX DefName on Definition (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -61,6 +64,15 @@ CREATE TABLE DefinitionRelationship (
 	caller bigint,
 	callee bigint
 );
+INSERT INTO "DefinitionRelationship" VALUES(9,13);
+INSERT INTO "DefinitionRelationship" VALUES(9,15);
+INSERT INTO "DefinitionRelationship" VALUES(9,17);
+INSERT INTO "DefinitionRelationship" VALUES(9,19);
+INSERT INTO "DefinitionRelationship" VALUES(9,21);
+INSERT INTO "DefinitionRelationship" VALUES(9,23);
+INSERT INTO "DefinitionRelationship" VALUES(9,25);
+INSERT INTO "DefinitionRelationship" VALUES(9,27);
+INSERT INTO "DefinitionRelationship" VALUES(9,29);
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -69,5 +81,5 @@ CREATE TABLE FileDefinition (
 	startDefID bigint,
 	endDefID bigint
 );
-INSERT INTO "FileDefinition" VALUES(1,1,29);
+INSERT INTO "FileDefinition" VALUES(1,1,32);
 COMMIT;

@@ -6,7 +6,7 @@ CREATE TABLE chFile (
 	mtime bigint,
 	sysHeader boolean
 );
-INSERT INTO "chFile" VALUES(1,'test/basic/a.c',1325350860,'false');
+INSERT INTO "chFile" VALUES(1,'test/basic/a.c',1325350860,'f');
 CREATE INDEX FileName on chFile (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -28,21 +28,22 @@ INSERT INTO "Definition" VALUES(1,'M',3,12);
 INSERT INTO "Definition" VALUES(2,'td',4,29);
 INSERT INTO "Definition" VALUES(3,'tdfunp',4,48);
 INSERT INTO "Definition" VALUES(4,'arr',1,73);
-INSERT INTO "Definition" VALUES(5,'funpvar',1,91);
-INSERT INTO "Definition" VALUES(6,'p',1,118);
-INSERT INTO "Definition" VALUES(7,'muldef',1,197);
-INSERT INTO "Definition" VALUES(8,'muldef',1,209);
-INSERT INTO "Definition" VALUES(9,'abc',5,225);
-INSERT INTO "Definition" VALUES(10,'v1',1,250);
-INSERT INTO "Definition" VALUES(11,'v2',1,265);
-INSERT INTO "Definition" VALUES(12,'enumx',8,280);
-INSERT INTO "Definition" VALUES(13,'enumy',8,292);
-INSERT INTO "Definition" VALUES(14,'def',5,332);
-INSERT INTO "Definition" VALUES(15,'tp',1,376);
-INSERT INTO "Definition" VALUES(16,'oldfun',2,386);
-INSERT INTO "Definition" VALUES(17,'foo',2,419);
-INSERT INTO "Definition" VALUES(18,'main',2,453);
-INSERT INTO "Definition" VALUES(19,'foo',9,582);
+INSERT INTO "Definition" VALUES(5,'funparrvar',1,91);
+INSERT INTO "Definition" VALUES(6,'funpvar',1,122);
+INSERT INTO "Definition" VALUES(7,'p',1,143);
+INSERT INTO "Definition" VALUES(8,'muldef',1,222);
+INSERT INTO "Definition" VALUES(9,'muldef',1,234);
+INSERT INTO "Definition" VALUES(10,'abc',5,250);
+INSERT INTO "Definition" VALUES(11,'v1',1,275);
+INSERT INTO "Definition" VALUES(12,'v2',1,290);
+INSERT INTO "Definition" VALUES(13,'enumx',8,305);
+INSERT INTO "Definition" VALUES(14,'enumy',8,317);
+INSERT INTO "Definition" VALUES(15,'def',5,357);
+INSERT INTO "Definition" VALUES(16,'tp',1,401);
+INSERT INTO "Definition" VALUES(17,'oldfun',2,411);
+INSERT INTO "Definition" VALUES(18,'foo',2,444);
+INSERT INTO "Definition" VALUES(19,'main',2,478);
+INSERT INTO "Definition" VALUES(20,'foo',9,622);
 CREATE INDEX DefName on Definition (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -51,7 +52,7 @@ CREATE TABLE DefinitionRelationship (
 	caller bigint,
 	callee bigint
 );
-INSERT INTO "DefinitionRelationship" VALUES(18,19);
+INSERT INTO "DefinitionRelationship" VALUES(19,20);
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -60,5 +61,5 @@ CREATE TABLE FileDefinition (
 	startDefID bigint,
 	endDefID bigint
 );
-INSERT INTO "FileDefinition" VALUES(1,1,19);
+INSERT INTO "FileDefinition" VALUES(1,1,20);
 COMMIT;
