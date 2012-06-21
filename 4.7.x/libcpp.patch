@@ -1,0 +1,147 @@
+Only in libcpp/: ChangeLog
+Only in libcpp/: Makefile.in
+Only in libcpp/: aclocal.m4
+Only in libcpp/: charset.c
+Only in libcpp/: config.in
+Only in libcpp/: configure
+Only in libcpp/: configure.ac
+Only in libcpp/: directives-only.c
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/directives.c libcpp/directives.c
+*** .pc/symdb_enhance_libcpp/libcpp/directives.c	Wed Jun 20 09:09:15 2012
+--- libcpp/directives.c	Wed Jun 20 09:20:28 2012
+*************** start_directive (cpp_reader *pfile)
+*** 275,280 ****
+--- 275,283 ----
+  
+    /* Some handlers need the position of the # for diagnostics.  */
+    pfile->directive_line = pfile->line_table->highest_line;
++ 
++   if (pfile->cb.start_directive)
++     pfile->cb.start_directive (pfile);
+  }
+  
+  /* Called when leaving a directive, _Pragma or command-line directive.  */
+*************** end_directive (cpp_reader *pfile, int sk
+*** 309,314 ****
+--- 312,320 ----
+    pfile->state.in_expression = 0;
+    pfile->state.angled_headers = 0;
+    pfile->directive = 0;
++ 
++   if (pfile->cb.end_directive)
++     pfile->cb.end_directive (pfile);
+  }
+  
+  /* Prepare to handle the directive in pfile->directive.  */
+Only in libcpp/: errors.c
+Only in libcpp/: expr.c
+Only in libcpp/: files.c
+Only in libcpp/: identifiers.c
+Only in libcpp/include: cpp-id-data.h
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/include/cpplib.h libcpp/include/cpplib.h
+*** .pc/symdb_enhance_libcpp/libcpp/include/cpplib.h	Wed Jun 20 09:09:15 2012
+--- libcpp/include/cpplib.h	Wed Jun 20 09:22:34 2012
+*************** struct cpp_callbacks
+*** 522,527 ****
+--- 522,542 ----
+       be expanded.  */
+    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
+  
++   /* macro_{start/end}_expand are called when gcc starts to expand macro, note
++    * if A macro includes B macro, the pair is called multiple times. */
++   void (*macro_start_expand) (cpp_reader *, const cpp_token *,
++ 		  const cpp_hashnode *);
++   void (*macro_end_expand) (cpp_reader *);
++   /* Called when a function-like macro stops collecting macro parameters,
++    * cancel = true, macro expansion is canceled. */
++   void (*macro_end_arg) (cpp_reader *, bool cancel);
++   /* The pair is called when cpp directive (starting from `#', such as
++    * `#define', `#endif' etc) is encountered and reaches end. */
++   void (*start_directive) (cpp_reader *);
++   void (*end_directive) (cpp_reader *);
++   /* The more powerful function getting token than cpp_get_token. */
++   void (*lex_token) (cpp_reader *, const cpp_token*);
++ 
+    /* Called to emit a diagnostic.  This callback receives the
+       translated message.  */
+    bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
+Only in libcpp/include: line-map.h
+Only in libcpp/include: mkdeps.h
+Only in libcpp/include: symtab.h
+Only in libcpp/: init.c
+Only in libcpp/: internal.h
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/lex.c libcpp/lex.c
+*** .pc/symdb_enhance_libcpp/libcpp/lex.c	Wed Jun 20 09:09:15 2012
+--- libcpp/lex.c	Wed Jun 20 09:20:28 2012
+*************** _cpp_lex_token (cpp_reader *pfile)
+*** 1875,1880 ****
+--- 1875,1882 ----
+  	}
+        else
+  	result = _cpp_lex_direct (pfile);
++     if (pfile->cb.lex_token)
++       pfile->cb.lex_token (pfile, result);
+  
+        if (result->flags & BOL)
+  	{
+Only in libcpp/: line-map.c
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/macro.c libcpp/macro.c
+*** .pc/symdb_enhance_libcpp/libcpp/macro.c	Wed Jun 20 09:09:15 2012
+--- libcpp/macro.c	Wed Jun 20 09:20:28 2012
+*************** enter_macro_context (cpp_reader *pfile, 
+*** 1015,1020 ****
+--- 1015,1022 ----
+  	  pfile->state.parsing_args = 1;
+  	  buff = funlike_invocation_p (pfile, node, &pragma_buff,
+  				       &num_args);
++ 	  if (pfile->cb.macro_end_arg)
++ 	    pfile->cb.macro_end_arg (pfile, buff == NULL);
+  	  pfile->state.parsing_args = 0;
+  	  pfile->keep_tokens--;
+  	  pfile->state.prevent_expansion--;
+*************** cpp_get_token_1 (cpp_reader *pfile, sour
+*** 2263,2268 ****
+--- 2265,2272 ----
+  	  if (pfile->context->c.macro)
+  	    ++num_expanded_macros_counter;
+  	  _cpp_pop_context (pfile);
++ 	  if (pfile->cb.macro_end_expand)
++ 	    pfile->cb.macro_end_expand (pfile);
+  	  if (pfile->state.in_directive)
+  	    continue;
+  	  result = &pfile->avoid_paste;
+*************** cpp_get_token_1 (cpp_reader *pfile, sour
+*** 2321,2328 ****
+  		}
+  	    }
+  	  else
+! 	    ret = enter_macro_context (pfile, node, result, 
+! 				       virt_loc);
+  	  if (ret)
+   	    {
+  	      if (pfile->state.in_directive || ret == 2)
+--- 2325,2338 ----
+  		}
+  	    }
+  	  else
+!  	    {
+! 	      if (pfile->cb.macro_start_expand)
+! 		pfile->cb.macro_start_expand (pfile, result, node);
+! 	  ret = enter_macro_context (pfile, node, result, virt_loc);
+!     if (ret == 0 && pfile->cb.macro_end_expand)
+!       /* macro expansion is canceled. */
+!       pfile->cb.macro_end_expand (pfile);
+! 	    }
+  	  if (ret)
+   	    {
+  	      if (pfile->state.in_directive || ret == 2)
+Only in libcpp/: macro.c.rej
+Only in libcpp/: makeucnid.c
+Only in libcpp/: mkdeps.c
+Only in libcpp/: pch.c
+Only in libcpp/: po
+Only in libcpp/: symtab.c
+Only in libcpp/: system.h
+Only in libcpp/: traditional.c
+Only in libcpp/: ucnid.h
+Only in libcpp/: ucnid.tab

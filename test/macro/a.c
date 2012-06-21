@@ -22,6 +22,8 @@ int foo(void)
 	cascaded_head(2);
 #define cascaded_head2 base(2)
 	cascaded_head2;
+#define cascaded_middle 3 + base + 3
+	cascaded_middle;
 #define cascaded_tail null(4) 3 + base
 	cascaded_tail(2);
 #define cascaded_tail2 null(4) 3 + base(2)

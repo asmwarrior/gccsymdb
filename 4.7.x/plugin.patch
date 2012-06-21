@@ -1,0 +1,1088 @@
+Only in gcc/: ABOUT-GCC-NLS
+Only in gcc/: BASE-VER
+Only in gcc/: COPYING
+Only in gcc/: COPYING.LIB
+Only in gcc/: COPYING3
+Only in gcc/: COPYING3.LIB
+Only in gcc/: ChangeLog
+Only in gcc/: ChangeLog-1997
+Only in gcc/: ChangeLog-1998
+Only in gcc/: ChangeLog-1999
+Only in gcc/: ChangeLog-2000
+Only in gcc/: ChangeLog-2001
+Only in gcc/: ChangeLog-2002
+Only in gcc/: ChangeLog-2003
+Only in gcc/: ChangeLog-2004
+Only in gcc/: ChangeLog-2005
+Only in gcc/: ChangeLog-2006
+Only in gcc/: ChangeLog-2007
+Only in gcc/: ChangeLog-2008
+Only in gcc/: ChangeLog-2009
+Only in gcc/: ChangeLog-2010
+Only in gcc/: ChangeLog-2011
+Only in gcc/: ChangeLog.dataflow
+Only in gcc/: ChangeLog.graphite
+Only in gcc/: ChangeLog.lib
+Only in gcc/: ChangeLog.ptr
+Only in gcc/: ChangeLog.tree-ssa
+Only in gcc/: ChangeLog.tuples
+Only in gcc/: DATESTAMP
+Only in gcc/: DEV-PHASE
+Only in gcc/: FSFChangeLog
+Only in gcc/: FSFChangeLog.10
+Only in gcc/: FSFChangeLog.11
+Only in gcc/: LANGUAGES
+Only in gcc/: Makefile.in
+Only in gcc/: ONEWS
+Only in gcc/: README.Portability
+Only in gcc/: acinclude.m4
+Only in gcc/: aclocal.m4
+Only in gcc/: ada
+Only in gcc/: addresses.h
+Only in gcc/: alias.c
+Only in gcc/: alias.h
+Only in gcc/: alloc-pool.c
+Only in gcc/: alloc-pool.h
+Only in gcc/: attribs.c
+Only in gcc/: auto-inc-dec.c
+Only in gcc/: basic-block.h
+Only in gcc/: bb-reorder.c
+Only in gcc/: bb-reorder.h
+Only in gcc/: bitmap.c
+Only in gcc/: bitmap.h
+Only in gcc/: bt-load.c
+Only in gcc/: builtin-attrs.def
+Only in gcc/: builtin-types.def
+Only in gcc/: builtins.c
+Only in gcc/: builtins.def
+Only in gcc/: builtins.h
+Only in gcc/: c-aux-info.c
+Only in gcc/: c-config-lang.in
+Only in gcc/: c-convert.c
+Only in gcc/: c-decl.c
+Only in gcc/: c-errors.c
+Only in gcc/c-family: ChangeLog
+Only in gcc/c-family: c-ada-spec.c
+Only in gcc/c-family: c-ada-spec.h
+Only in gcc/c-family: c-common.c
+Only in gcc/c-family: c-common.def
+diff -cpr .pc/symdb_enhance_plugin/gcc/c-family/c-common.h gcc/c-family/c-common.h
+*** .pc/symdb_enhance_plugin/gcc/c-family/c-common.h	Wed Jun 20 09:09:15 2012
+--- gcc/c-family/c-common.h	Wed Jun 20 09:43:23 2012
+*************** along with GCC; see the file COPYING3.  
+*** 25,30 ****
+--- 25,31 ----
+  #include "splay-tree.h"
+  #include "cpplib.h"
+  #include "ggc.h"
++ #include "c-pragma.h"
+  
+  /* In order for the format checking to accept the C frontend
+     diagnostic framework extensions, you must include this file before
+*************** extern bool c_omp_sharing_predetermined 
+*** 1056,1061 ****
+--- 1057,1101 ----
+  extern tree c_omp_remap_decl (tree, bool);
+  extern void record_types_used_by_current_var_decl (tree);
+  
++ /* The following local token type is used.  */
++ 
++ /* A keyword.  */
++ #define CPP_KEYWORD ((enum cpp_ttype) (N_TTYPES + 1))
++ 
++ /* More information about the type of a CPP_NAME token.  */
++ typedef enum c_id_kind {
++   /* An ordinary identifier.  */
++   C_ID_ID,
++   /* An identifier declared as a typedef name.  */
++   C_ID_TYPENAME,
++   /* An identifier declared as an Objective-C class name.  */
++   C_ID_CLASSNAME,
++   /* An address space identifier.  */
++   C_ID_ADDRSPACE,
++   /* Not an identifier.  */
++   C_ID_NONE
++ } c_id_kind;
++ 
++ /* A single C token after string literal concatenation and conversion
++    of preprocessing tokens to tokens.  */
++ typedef struct GTY (()) c_token {
++   /* The kind of token.  */
++   ENUM_BITFIELD (cpp_ttype) type : 8;
++   /* If this token is a CPP_NAME, this value indicates whether also
++      declared as some kind of type.  Otherwise, it is C_ID_NONE.  */
++   ENUM_BITFIELD (c_id_kind) id_kind : 8;
++   /* If this token is a keyword, this value indicates which keyword.
++      Otherwise, this value is RID_MAX.  */
++   ENUM_BITFIELD (rid) keyword : 8;
++   /* If this token is a CPP_PRAGMA, this indicates the pragma that
++      was seen.  Otherwise it is PRAGMA_NONE.  */
++   ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
++   /* The value associated with this token, if any.  */
++   tree value;
++   /* The location at which this token was found.  */
++   location_t location;
++ } c_token;
++ 
+  /* Return next tree in the chain for chain_next walking of tree nodes.  */
+  static inline tree
+  c_tree_chain_next (tree t)
+Only in gcc/c-family: c-cppbuiltin.c
+Only in gcc/c-family: c-dump.c
+Only in gcc/c-family: c-format.c
+Only in gcc/c-family: c-format.h
+Only in gcc/c-family: c-gimplify.c
+diff -cpr .pc/symdb_enhance_plugin/gcc/c-family/c-lex.c gcc/c-family/c-lex.c
+*** .pc/symdb_enhance_plugin/gcc/c-family/c-lex.c	Wed Jun 20 09:09:15 2012
+--- gcc/c-family/c-lex.c	Wed Jun 20 09:43:02 2012
+*************** along with GCC; see the file COPYING3.  
+*** 36,41 ****
+--- 36,42 ----
+  #include "splay-tree.h"
+  #include "debug.h"
+  #include "target.h"
++ #include "plugin.h"
+  
+  /* We may keep statistics about how long which files took to compile.  */
+  static int header_time, body_time;
+*************** c_lex_with_flags (tree *value, location_
+*** 382,387 ****
+--- 383,389 ----
+  	    case CPP_STRING32:
+  	    case CPP_UTF8STRING:
+  	      type = lex_string (tok, value, true, true);
++ 		  tok = NULL;
+  	      break;
+  
+  	    case CPP_NAME:
+*************** c_lex_with_flags (tree *value, location_
+*** 483,488 ****
+--- 485,491 ----
+  	{
+  	  type = lex_string (tok, value, false,
+  			     (lex_flags & C_LEX_STRING_NO_TRANSLATE) == 0);
++ 	  tok = NULL;
+  	  break;
+  	}
+        *value = build_string (tok->val.str.len, (const char *) tok->val.str.text);
+*************** c_lex_with_flags (tree *value, location_
+*** 517,522 ****
+--- 520,526 ----
+      }
+  
+    timevar_pop (TV_CPP);
++   invoke_plugin_callbacks (PLUGIN_CPP_TOKEN, tok);
+  
+    return type;
+  }
+Only in gcc/c-family: c-objc.h
+Only in gcc/c-family: c-omp.c
+Only in gcc/c-family: c-opts.c
+Only in gcc/c-family: c-pch.c
+Only in gcc/c-family: c-ppoutput.c
+Only in gcc/c-family: c-pragma.c
+Only in gcc/c-family: c-pragma.h
+Only in gcc/c-family: c-pretty-print.c
+Only in gcc/c-family: c-pretty-print.h
+Only in gcc/c-family: c-semantics.c
+Only in gcc/c-family: c-target-def.h
+Only in gcc/c-family: c-target.def
+Only in gcc/c-family: c-target.h
+Only in gcc/c-family: c.opt
+Only in gcc/c-family: stub-objc.c
+Only in gcc/: c-lang.c
+Only in gcc/: c-lang.h
+Only in gcc/: c-objc-common.c
+Only in gcc/: c-objc-common.h
+diff -cpr .pc/symdb_enhance_plugin/gcc/c-parser.c gcc/c-parser.c
+*** .pc/symdb_enhance_plugin/gcc/c-parser.c	Wed Jun 20 09:09:15 2012
+--- gcc/c-parser.c	Wed Jun 20 09:35:20 2012
+*************** c_parse_init (void)
+*** 121,165 ****
+     C++).  It would then be possible to share more of the C and C++
+     lexer code, if desired.  */
+  
+- /* The following local token type is used.  */
+- 
+- /* A keyword.  */
+- #define CPP_KEYWORD ((enum cpp_ttype) (N_TTYPES + 1))
+- 
+- /* More information about the type of a CPP_NAME token.  */
+- typedef enum c_id_kind {
+-   /* An ordinary identifier.  */
+-   C_ID_ID,
+-   /* An identifier declared as a typedef name.  */
+-   C_ID_TYPENAME,
+-   /* An identifier declared as an Objective-C class name.  */
+-   C_ID_CLASSNAME,
+-   /* An address space identifier.  */
+-   C_ID_ADDRSPACE,
+-   /* Not an identifier.  */
+-   C_ID_NONE
+- } c_id_kind;
+- 
+- /* A single C token after string literal concatenation and conversion
+-    of preprocessing tokens to tokens.  */
+- typedef struct GTY (()) c_token {
+-   /* The kind of token.  */
+-   ENUM_BITFIELD (cpp_ttype) type : 8;
+-   /* If this token is a CPP_NAME, this value indicates whether also
+-      declared as some kind of type.  Otherwise, it is C_ID_NONE.  */
+-   ENUM_BITFIELD (c_id_kind) id_kind : 8;
+-   /* If this token is a keyword, this value indicates which keyword.
+-      Otherwise, this value is RID_MAX.  */
+-   ENUM_BITFIELD (rid) keyword : 8;
+-   /* If this token is a CPP_PRAGMA, this indicates the pragma that
+-      was seen.  Otherwise it is PRAGMA_NONE.  */
+-   ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
+-   /* The location at which this token was found.  */
+-   location_t location;
+-   /* The value associated with this token, if any.  */
+-   tree value;
+- } c_token;
+- 
+  /* A parser structure recording information about the state and
+     context of parsing.  Includes lexer information with up to two
+     tokens of look-ahead; more are not needed for C.  */
+--- 121,126 ----
+*************** c_lex_one_token (c_parser *parser, c_tok
+*** 388,393 ****
+--- 349,355 ----
+        break;
+      }
+    timevar_pop (TV_LEX);
++   invoke_plugin_callbacks (PLUGIN_C_TOKEN, token);
+  }
+  
+  /* Return a pointer to the next token from PARSER, reading it in if
+*************** c_parser_external_declaration (c_parser 
+*** 1360,1365 ****
+--- 1322,1328 ----
+  	 an @interface or @protocol with prefix attributes).  We can
+  	 only tell which after parsing the declaration specifiers, if
+  	 any, and the first declarator.  */
++       invoke_plugin_callbacks (PLUGIN_EXTERN_DECL, NULL);
+        c_parser_declaration_or_fndef (parser, true, true, true, false, true, NULL);
+        break;
+      }
+*************** c_parser_declaration_or_fndef (c_parser 
+*** 1488,1493 ****
+--- 1451,1461 ----
+        return;
+      }
+    finish_declspecs (specs);
++   {
++     void* pair[2]; pair[0] = specs; pair[1] = (void*) parser->tokens_avail;
++     if (!nested)
++       invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, pair);
++   }
+    if (c_parser_next_token_is (parser, CPP_SEMICOLON))
+      {
+        if (empty_ok)
+*************** c_parser_declaration_or_fndef (c_parser 
+*** 1622,1627 ****
+--- 1590,1600 ----
+  	{
+  	  tree asm_name = NULL_TREE;
+  	  tree postfix_attrs = NULL_TREE;
++ 	  {
++ 	    void* pair[2]; pair[0] = specs; pair[1] = declarator;
++         if (!nested)
++           invoke_plugin_callbacks (PLUGIN_EXTERN_VAR, pair);
++ 	  }
+  	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
+  	    {
+  	      diagnosed_no_specs = true;
+*************** c_parser_declaration_or_fndef (c_parser 
+*** 1748,1758 ****
+--- 1721,1735 ----
+  	 declarator with a nonempty identifier list in a definition;
+  	 and postfix attributes have never been accepted here in
+  	 function definitions either.  */
++       if (!nested)
++         invoke_plugin_callbacks (PLUGIN_EXTERN_FUNC_OLD_PARAM, NULL);
+        while (c_parser_next_token_is_not (parser, CPP_EOF)
+  	     && c_parser_next_token_is_not (parser, CPP_OPEN_BRACE))
+  	c_parser_declaration_or_fndef (parser, false, false, false,
+  				       true, false, NULL);
+        store_parm_decls ();
++       if (!nested)
++         invoke_plugin_callbacks (PLUGIN_EXTERN_FUNC, declarator);
+        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
+  	= c_parser_peek_token (parser)->location;
+        fnbody = c_parser_compound_statement (parser);
+*************** c_parser_enum_specifier (c_parser *parse
+*** 2266,2271 ****
+--- 2243,2249 ----
+  	    }
+  	  token = c_parser_peek_token (parser);
+  	  enum_id = token->value;
++       invoke_plugin_callbacks (PLUGIN_ENUMERATOR, enum_id);
+  	  /* Set the location in case we create a decl now.  */
+  	  c_parser_set_source_position_from_token (token);
+  	  decl_loc = value_loc = token->location;
+*************** c_parser_postfix_expression_after_primar
+*** 6870,6875 ****
+--- 6848,6854 ----
+  	  break;
+  	case CPP_OPEN_PAREN:
+  	  /* Function call.  */
++       invoke_plugin_callbacks (PLUGIN_CALL_FUNCTION, expr.value);
+  	  c_parser_consume_token (parser);
+  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
+  	    exprlist = NULL;
+Only in gcc/: c-tree.h
+Only in gcc/: c-typeck.c
+Only in gcc/: caller-save.c
+Only in gcc/: calls.c
+Only in gcc/: cfg.c
+Only in gcc/: cfganal.c
+Only in gcc/: cfgbuild.c
+Only in gcc/: cfgcleanup.c
+Only in gcc/: cfgexpand.c
+Only in gcc/: cfghooks.c
+Only in gcc/: cfghooks.h
+Only in gcc/: cfglayout.c
+Only in gcc/: cfglayout.h
+Only in gcc/: cfgloop.c
+Only in gcc/: cfgloop.h
+Only in gcc/: cfgloopanal.c
+Only in gcc/: cfgloopmanip.c
+Only in gcc/: cfgrtl.c
+Only in gcc/: cgraph.c
+Only in gcc/: cgraph.h
+Only in gcc/: cgraphbuild.c
+Only in gcc/: cgraphunit.c
+Only in gcc/: cif-code.def
+Only in gcc/: collect2-aix.c
+Only in gcc/: collect2-aix.h
+Only in gcc/: collect2.c
+Only in gcc/: collect2.h
+Only in gcc/: combine-stack-adj.c
+Only in gcc/: combine.c
+Only in gcc/: common
+Only in gcc/: common.opt
+Only in gcc/: compare-elim.c
+Only in gcc/: conditions.h
+Only in gcc/: config
+Only in gcc/: config.build
+Only in gcc/: config.gcc
+Only in gcc/: config.host
+Only in gcc/: config.in
+Only in gcc/: configure
+Only in gcc/: configure.ac
+Only in gcc/: convert.c
+Only in gcc/: convert.h
+Only in gcc/: coretypes.h
+Only in gcc/: coverage.c
+Only in gcc/: coverage.h
+Only in gcc/: cp
+Only in gcc/: cppbuiltin.c
+Only in gcc/: cppbuiltin.h
+Only in gcc/: cppdefault.c
+Only in gcc/: cppdefault.h
+Only in gcc/: cppspec.c
+Only in gcc/: cprop.c
+Only in gcc/: cse.c
+Only in gcc/: cselib.c
+Only in gcc/: cselib.h
+Only in gcc/: cstamp-h.in
+Only in gcc/: data-streamer-in.c
+Only in gcc/: data-streamer-out.c
+Only in gcc/: data-streamer.c
+Only in gcc/: data-streamer.h
+Only in gcc/: dbgcnt.c
+Only in gcc/: dbgcnt.def
+Only in gcc/: dbgcnt.h
+Only in gcc/: dbxout.c
+Only in gcc/: dbxout.h
+Only in gcc/: dce.c
+Only in gcc/: dce.h
+Only in gcc/: ddg.c
+Only in gcc/: ddg.h
+Only in gcc/: debug.c
+Only in gcc/: debug.h
+Only in gcc/: defaults.h
+Only in gcc/: df-core.c
+Only in gcc/: df-problems.c
+Only in gcc/: df-scan.c
+Only in gcc/: df.h
+Only in gcc/: dfp.c
+Only in gcc/: dfp.h
+Only in gcc/: diagnostic-core.h
+Only in gcc/: diagnostic.c
+Only in gcc/: diagnostic.def
+Only in gcc/: diagnostic.h
+Only in gcc/doc: aot-compile.1
+Only in gcc/doc: arm-neon-intrinsics.texi
+Only in gcc/doc: bugreport.texi
+Only in gcc/doc: cfg.texi
+Only in gcc/doc: collect2.texi
+Only in gcc/doc: compat.texi
+Only in gcc/doc: configfiles.texi
+Only in gcc/doc: configterms.texi
+Only in gcc/doc: contrib.texi
+Only in gcc/doc: contribute.texi
+Only in gcc/doc: cpp.1
+Only in gcc/doc: cpp.info
+Only in gcc/doc: cpp.texi
+Only in gcc/doc: cppenv.texi
+Only in gcc/doc: cppinternals.info
+Only in gcc/doc: cppinternals.texi
+Only in gcc/doc: cppopts.texi
+Only in gcc/doc: extend.texi
+Only in gcc/doc: fragments.texi
+Only in gcc/doc: frontends.texi
+Only in gcc/doc: fsf-funding.7
+Only in gcc/doc: g++.1
+Only in gcc/doc: gc-analyze.1
+Only in gcc/doc: gcc.1
+Only in gcc/doc: gcc.info
+Only in gcc/doc: gcc.texi
+Only in gcc/doc: gccinstall.info
+Only in gcc/doc: gccint.info
+Only in gcc/doc: gccint.texi
+Only in gcc/doc: gcj-dbtool.1
+Only in gcc/doc: gcj.1
+Only in gcc/doc: gcj.info
+Only in gcc/doc: gcov.1
+Only in gcc/doc: gcov.texi
+Only in gcc/doc: generic.texi
+Only in gcc/doc: gfdl.7
+Only in gcc/doc: gfortran.1
+Only in gcc/doc: gij.1
+Only in gcc/doc: gimple.texi
+Only in gcc/doc: gnu.texi
+Only in gcc/doc: gpl.7
+Only in gcc/doc: grmic.1
+Only in gcc/doc: gty.texi
+Only in gcc/doc: headerdirs.texi
+Only in gcc/doc: hostconfig.texi
+Only in gcc/doc: implement-c.texi
+Only in gcc/doc: implement-cxx.texi
+Only in gcc/doc: include
+Only in gcc/doc: install-old.texi
+Only in gcc/doc: install.texi
+Only in gcc/doc: install.texi2html
+Only in gcc/doc: interface.texi
+Only in gcc/doc: invoke.texi
+Only in gcc/doc: jcf-dump.1
+Only in gcc/doc: jv-convert.1
+Only in gcc/doc: languages.texi
+Only in gcc/doc: libgcc.texi
+Only in gcc/doc: loop.texi
+Only in gcc/doc: lto.texi
+Only in gcc/doc: makefile.texi
+Only in gcc/doc: md.texi
+Only in gcc/doc: objc.texi
+Only in gcc/doc: options.texi
+Only in gcc/doc: passes.texi
+diff -cpr .pc/symdb_enhance_plugin/gcc/doc/plugins.texi gcc/doc/plugins.texi
+*** .pc/symdb_enhance_plugin/gcc/doc/plugins.texi	Wed Jun 20 09:09:15 2012
+--- gcc/doc/plugins.texi	Wed Jun 20 09:38:13 2012
+*************** enum plugin_event
+*** 184,189 ****
+--- 184,206 ----
+    PLUGIN_EARLY_GIMPLE_PASSES_END,
+    /* Called when a pass is first instantiated.  */
+    PLUGIN_NEW_PASS,
++   PLUGIN_CPP_TOKEN,                /* Called when GCC gets a cpp token. */
++   PLUGIN_C_TOKEN,                  /* Called when GCC gets a c token. */
++   /* An extern declaration (file-scope) is encounted. */
++   PLUGIN_EXTERN_DECL,
++   /* Cooperate PLUGIN_EXTERN_FUNC to parse a function with old-style parameter
++    * declaration. */
++   PLUGIN_EXTERN_FUNC_OLD_PARAM,
++   /* An extern function definition is parsed. */
++   PLUGIN_EXTERN_FUNC,
++   /* An extern variable definition is parsed. */
++   PLUGIN_EXTERN_VAR,
++   /* An extern declaration specifier definition is parsed. */
++   PLUGIN_EXTERN_DECLSPECS,
++   /* A function is called. */
++   PLUGIN_CALL_FUNCTION,
++   /* An enumerator is parsed. */
++   PLUGIN_ENUMERATOR,
+  
+    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
+                                     array.  */
+Only in gcc/doc: portability.texi
+Only in gcc/doc: rebuild-gcj-db.1
+Only in gcc/doc: rtl.texi
+Only in gcc/doc: service.texi
+Only in gcc/doc: sourcebuild.texi
+Only in gcc/doc: standards.texi
+Only in gcc/doc: tm.texi
+Only in gcc/doc: tm.texi.in
+Only in gcc/doc: tree-ssa.texi
+Only in gcc/doc: trouble.texi
+Only in gcc/: dojump.c
+Only in gcc/: dominance.c
+Only in gcc/: domwalk.c
+Only in gcc/: domwalk.h
+Only in gcc/: double-int.c
+Only in gcc/: double-int.h
+Only in gcc/: dse.c
+Only in gcc/: dse.h
+Only in gcc/: dwarf2asm.c
+Only in gcc/: dwarf2asm.h
+Only in gcc/: dwarf2cfi.c
+Only in gcc/: dwarf2out.c
+Only in gcc/: dwarf2out.h
+Only in gcc/: ebitmap.c
+Only in gcc/: ebitmap.h
+Only in gcc/: emit-rtl.c
+Only in gcc/: emit-rtl.h
+Only in gcc/: errors.c
+Only in gcc/: errors.h
+Only in gcc/: et-forest.c
+Only in gcc/: et-forest.h
+Only in gcc/: except.c
+Only in gcc/: except.h
+Only in gcc/: exec-tool.in
+Only in gcc/: explow.c
+Only in gcc/: expmed.c
+Only in gcc/: expmed.h
+Only in gcc/: expr.c
+Only in gcc/: expr.h
+Only in gcc/: final.c
+Only in gcc/: fixed-value.c
+Only in gcc/: fixed-value.h
+Only in gcc/: flag-types.h
+Only in gcc/: flags.h
+Only in gcc/: fold-const.c
+Only in gcc/: fortran
+Only in gcc/: fp-test.c
+Only in gcc/: function.c
+Only in gcc/: function.h
+Only in gcc/: fwprop.c
+Only in gcc/: gcc-ar.c
+Only in gcc/: gcc-plugin.h
+Only in gcc/: gcc.c
+Only in gcc/: gcc.h
+Only in gcc/: gccspec.c
+Only in gcc/: gcov-dump.c
+Only in gcc/: gcov-io.c
+Only in gcc/: gcov-io.h
+Only in gcc/: gcov-iov.c
+Only in gcc/: gcov.c
+Only in gcc/: gcse.c
+Only in gcc/: gcse.h
+Only in gcc/: gdbinit.in
+Only in gcc/: genattr-common.c
+Only in gcc/: genattr.c
+Only in gcc/: genattrtab.c
+Only in gcc/: genautomata.c
+Only in gcc/: gencheck.c
+Only in gcc/: genchecksum.c
+Only in gcc/: gencodes.c
+Only in gcc/: genconditions.c
+Only in gcc/: genconfig.c
+Only in gcc/: genconstants.c
+Only in gcc/: genemit.c
+Only in gcc/: genenums.c
+Only in gcc/: genextract.c
+Only in gcc/: genflags.c
+Only in gcc/: gengenrtl.c
+Only in gcc/: gengtype-lex.c
+Only in gcc/: gengtype-lex.l
+Only in gcc/: gengtype-parse.c
+Only in gcc/: gengtype-state.c
+Only in gcc/: gengtype.c
+Only in gcc/: gengtype.h
+Only in gcc/: genhooks.c
+Only in gcc/: genmddeps.c
+Only in gcc/: genmodes.c
+Only in gcc/: genmultilib
+Only in gcc/: genopinit.c
+Only in gcc/: genoutput.c
+Only in gcc/: genpeep.c
+Only in gcc/: genpreds.c
+Only in gcc/: genrecog.c
+Only in gcc/: gensupport.c
+Only in gcc/: gensupport.h
+Only in gcc/: ggc-common.c
+Only in gcc/: ggc-internal.h
+Only in gcc/: ggc-none.c
+Only in gcc/: ggc-page.c
+Only in gcc/: ggc-zone.c
+Only in gcc/: ggc.h
+Only in gcc/: gimple-fold.c
+Only in gcc/: gimple-fold.h
+Only in gcc/: gimple-iterator.c
+Only in gcc/: gimple-low.c
+Only in gcc/: gimple-pretty-print.c
+Only in gcc/: gimple-pretty-print.h
+Only in gcc/: gimple-streamer-in.c
+Only in gcc/: gimple-streamer-out.c
+Only in gcc/: gimple-streamer.h
+Only in gcc/: gimple.c
+Only in gcc/: gimple.def
+Only in gcc/: gimple.h
+Only in gcc/: gimplify.c
+Only in gcc/: ginclude
+Only in gcc/: glimits.h
+Only in gcc/: go
+Only in gcc/: godump.c
+Only in gcc/: graph.c
+Only in gcc/: graph.h
+Only in gcc/: graphds.c
+Only in gcc/: graphds.h
+Only in gcc/: graphite-blocking.c
+Only in gcc/: graphite-clast-to-gimple.c
+Only in gcc/: graphite-clast-to-gimple.h
+Only in gcc/: graphite-cloog-compat.h
+Only in gcc/: graphite-cloog-util.c
+Only in gcc/: graphite-cloog-util.h
+Only in gcc/: graphite-dependences.c
+Only in gcc/: graphite-dependences.h
+Only in gcc/: graphite-flattening.c
+Only in gcc/: graphite-interchange.c
+Only in gcc/: graphite-poly.c
+Only in gcc/: graphite-poly.h
+Only in gcc/: graphite-ppl.c
+Only in gcc/: graphite-ppl.h
+Only in gcc/: graphite-scop-detection.c
+Only in gcc/: graphite-scop-detection.h
+Only in gcc/: graphite-sese-to-poly.c
+Only in gcc/: graphite-sese-to-poly.h
+Only in gcc/: graphite.c
+Only in gcc/: gsstruct.def
+Only in gcc/: gstab.h
+Only in gcc/: gsyms.h
+Only in gcc/: gsyslimits.h
+Only in gcc/: gtm-builtins.def
+Only in gcc/: haifa-sched.c
+Only in gcc/: hard-reg-set.h
+Only in gcc/: highlev-plugin-common.h
+Only in gcc/: hooks.c
+Only in gcc/: hooks.h
+Only in gcc/: host-default.c
+Only in gcc/: hosthooks-def.h
+Only in gcc/: hosthooks.h
+Only in gcc/: hw-doloop.c
+Only in gcc/: hw-doloop.h
+Only in gcc/: hwint.c
+Only in gcc/: hwint.h
+Only in gcc/: ifcvt.c
+Only in gcc/: incpath.c
+Only in gcc/: incpath.h
+Only in gcc/: init-regs.c
+Only in gcc/: input.c
+Only in gcc/: input.h
+Only in gcc/: insn-addr.h
+Only in gcc/: insn-notes.def
+Only in gcc/: integrate.c
+Only in gcc/: integrate.h
+Only in gcc/: internal-fn.c
+Only in gcc/: internal-fn.def
+Only in gcc/: internal-fn.h
+Only in gcc/: intl.c
+Only in gcc/: intl.h
+Only in gcc/: ipa-cp.c
+Only in gcc/: ipa-inline-analysis.c
+Only in gcc/: ipa-inline-transform.c
+Only in gcc/: ipa-inline.c
+Only in gcc/: ipa-inline.h
+Only in gcc/: ipa-prop.c
+Only in gcc/: ipa-prop.h
+Only in gcc/: ipa-pure-const.c
+Only in gcc/: ipa-ref-inline.h
+Only in gcc/: ipa-ref.c
+Only in gcc/: ipa-ref.h
+Only in gcc/: ipa-reference.c
+Only in gcc/: ipa-reference.h
+Only in gcc/: ipa-split.c
+Only in gcc/: ipa-utils.c
+Only in gcc/: ipa-utils.h
+Only in gcc/: ipa.c
+Only in gcc/: ira-build.c
+Only in gcc/: ira-color.c
+Only in gcc/: ira-conflicts.c
+Only in gcc/: ira-costs.c
+Only in gcc/: ira-emit.c
+Only in gcc/: ira-int.h
+Only in gcc/: ira-lives.c
+Only in gcc/: ira.c
+Only in gcc/: ira.h
+Only in gcc/: java
+Only in gcc/: jump.c
+Only in gcc/: langhooks-def.h
+Only in gcc/: langhooks.c
+Only in gcc/: langhooks.h
+Only in gcc/: lcm.c
+Only in gcc/: libfuncs.h
+Only in gcc/: limitx.h
+Only in gcc/: limity.h
+Only in gcc/: lists.c
+Only in gcc/: loop-doloop.c
+Only in gcc/: loop-init.c
+Only in gcc/: loop-invariant.c
+Only in gcc/: loop-iv.c
+Only in gcc/: loop-unroll.c
+Only in gcc/: loop-unswitch.c
+Only in gcc/: lower-subreg.c
+Only in gcc/: lto
+Only in gcc/: lto-cgraph.c
+Only in gcc/: lto-compress.c
+Only in gcc/: lto-compress.h
+Only in gcc/: lto-opts.c
+Only in gcc/: lto-section-in.c
+Only in gcc/: lto-section-out.c
+Only in gcc/: lto-streamer-in.c
+Only in gcc/: lto-streamer-out.c
+Only in gcc/: lto-streamer.c
+Only in gcc/: lto-streamer.h
+Only in gcc/: lto-symtab.c
+Only in gcc/: lto-wrapper.c
+Only in gcc/: machmode.def
+Only in gcc/: machmode.h
+Only in gcc/: main.c
+Only in gcc/: matrix-reorg.c
+Only in gcc/: mcf.c
+Only in gcc/: mips-tdump.c
+Only in gcc/: mips-tfile.c
+Only in gcc/: mkconfig.sh
+Only in gcc/: mode-classes.def
+Only in gcc/: mode-switching.c
+Only in gcc/: modulo-sched.c
+Only in gcc/: objc
+Only in gcc/: objcp
+Only in gcc/: omega.c
+Only in gcc/: omega.h
+Only in gcc/: omp-builtins.def
+Only in gcc/: omp-low.c
+Only in gcc/: opt-functions.awk
+Only in gcc/: opt-gather.awk
+Only in gcc/: opt-include.awk
+Only in gcc/: opt-read.awk
+Only in gcc/: optabs.c
+Only in gcc/: optabs.h
+Only in gcc/: optc-gen.awk
+Only in gcc/: optc-save-gen.awk
+Only in gcc/: opth-gen.awk
+Only in gcc/: opts-common.c
+Only in gcc/: opts-diagnostic.h
+Only in gcc/: opts-global.c
+Only in gcc/: opts.c
+Only in gcc/: opts.h
+Only in gcc/: output.h
+Only in gcc/: params.c
+Only in gcc/: params.def
+Only in gcc/: params.h
+Only in gcc/: passes.c
+diff -cpr .pc/symdb_enhance_plugin/gcc/plugin.c gcc/plugin.c
+*** .pc/symdb_enhance_plugin/gcc/plugin.c	Wed Jun 20 09:09:15 2012
+--- gcc/plugin.c	Wed Jun 20 09:35:20 2012
+*************** register_callback (const char *plugin_na
+*** 439,444 ****
+--- 439,453 ----
+        case PLUGIN_EARLY_GIMPLE_PASSES_START:
+        case PLUGIN_EARLY_GIMPLE_PASSES_END:
+        case PLUGIN_NEW_PASS:
++       case PLUGIN_CPP_TOKEN:
++       case PLUGIN_C_TOKEN:
++       case PLUGIN_EXTERN_DECL:
++       case PLUGIN_EXTERN_FUNC_OLD_PARAM:
++       case PLUGIN_EXTERN_FUNC:
++       case PLUGIN_EXTERN_VAR:
++       case PLUGIN_EXTERN_DECLSPECS:
++       case PLUGIN_CALL_FUNCTION:
++       case PLUGIN_ENUMERATOR:
+          {
+            struct callback_info *new_callback;
+            if (!callback)
+*************** invoke_plugin_callbacks_full (int event,
+*** 516,521 ****
+--- 525,539 ----
+        case PLUGIN_EARLY_GIMPLE_PASSES_START:
+        case PLUGIN_EARLY_GIMPLE_PASSES_END:
+        case PLUGIN_NEW_PASS:
++       case PLUGIN_CPP_TOKEN:
++       case PLUGIN_C_TOKEN:
++       case PLUGIN_EXTERN_DECL:
++       case PLUGIN_EXTERN_FUNC_OLD_PARAM:
++       case PLUGIN_EXTERN_FUNC:
++       case PLUGIN_EXTERN_VAR:
++       case PLUGIN_EXTERN_DECLSPECS:
++       case PLUGIN_CALL_FUNCTION:
++       case PLUGIN_ENUMERATOR:
+          {
+            /* Iterate over every callback registered with this event and
+               call it.  */
+diff -cpr .pc/symdb_enhance_plugin/gcc/plugin.def gcc/plugin.def
+*** .pc/symdb_enhance_plugin/gcc/plugin.def	Wed Jun 20 09:09:15 2012
+--- gcc/plugin.def	Wed Jun 20 09:35:20 2012
+*************** DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
+*** 92,97 ****
+--- 92,125 ----
+  /* Called when a pass is first instantiated.  */
+  DEFEVENT (PLUGIN_NEW_PASS)
+  
++ /* Called when a cpp token is extracted.  */
++ DEFEVENT (PLUGIN_CPP_TOKEN)
++ 
++ /* Called when a c token is extracted.  */
++ DEFEVENT (PLUGIN_C_TOKEN)
++ 
++ /* An extern declaration (file-scope) is encounted. */
++ DEFEVENT (PLUGIN_EXTERN_DECL)
++ 
++ /* Cooperate PLUGIN_EXTERN_FUNC to parse a function with old-style parameter
++  * declaration. */
++ DEFEVENT (PLUGIN_EXTERN_FUNC_OLD_PARAM)
++ 
++ /* Called when an extern function definition is parsed. */
++ DEFEVENT (PLUGIN_EXTERN_FUNC)
++ 
++ /* Called when an extern variable definition is parsed. */
++ DEFEVENT (PLUGIN_EXTERN_VAR)
++ 
++ /* An extern declaration specifier definition is parsed. */
++ DEFEVENT (PLUGIN_EXTERN_DECLSPECS)
++ 
++ /* A function is called. */
++ DEFEVENT (PLUGIN_CALL_FUNCTION)
++ 
++ /* Called when an enumerator is parsed. */
++ DEFEVENT (PLUGIN_ENUMERATOR)
++ 
+  /* After the hard-coded events above, plugins can dynamically allocate events
+     at run time.
+     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
+Only in gcc/: plugin.h
+Only in gcc/: po
+Only in gcc/: pointer-set.c
+Only in gcc/: pointer-set.h
+Only in gcc/: postreload-gcse.c
+Only in gcc/: postreload.c
+Only in gcc/: predict.c
+Only in gcc/: predict.def
+Only in gcc/: predict.h
+Only in gcc/: prefix.c
+Only in gcc/: prefix.h
+Only in gcc/: pretty-print.c
+Only in gcc/: pretty-print.h
+Only in gcc/: print-rtl.c
+Only in gcc/: print-tree.c
+Only in gcc/: profile.c
+Only in gcc/: profile.h
+Only in gcc/: read-md.c
+Only in gcc/: read-md.h
+Only in gcc/: read-rtl.c
+Only in gcc/: real.c
+Only in gcc/: real.h
+Only in gcc/: realmpfr.c
+Only in gcc/: realmpfr.h
+Only in gcc/: recog.c
+Only in gcc/: recog.h
+Only in gcc/: ree.c
+Only in gcc/: reg-notes.def
+Only in gcc/: reg-stack.c
+Only in gcc/: regcprop.c
+Only in gcc/: reginfo.c
+Only in gcc/: regmove.c
+Only in gcc/: regrename.c
+Only in gcc/: regrename.h
+Only in gcc/: regs.h
+Only in gcc/: regset.h
+Only in gcc/: regstat.c
+Only in gcc/: reload.c
+Only in gcc/: reload.h
+Only in gcc/: reload1.c
+Only in gcc/: reorg.c
+Only in gcc/: resource.c
+Only in gcc/: resource.h
+Only in gcc/: rtl-error.c
+Only in gcc/: rtl-error.h
+Only in gcc/: rtl.c
+Only in gcc/: rtl.def
+Only in gcc/: rtl.h
+Only in gcc/: rtlanal.c
+Only in gcc/: rtlhooks-def.h
+Only in gcc/: rtlhooks.c
+Only in gcc/: sbitmap.c
+Only in gcc/: sbitmap.h
+Only in gcc/: sched-deps.c
+Only in gcc/: sched-ebb.c
+Only in gcc/: sched-int.h
+Only in gcc/: sched-rgn.c
+Only in gcc/: sched-vis.c
+Only in gcc/: sdbout.c
+Only in gcc/: sdbout.h
+Only in gcc/: sel-sched-dump.c
+Only in gcc/: sel-sched-dump.h
+Only in gcc/: sel-sched-ir.c
+Only in gcc/: sel-sched-ir.h
+Only in gcc/: sel-sched.c
+Only in gcc/: sel-sched.h
+Only in gcc/: sese.c
+Only in gcc/: sese.h
+Only in gcc/: simplify-rtx.c
+Only in gcc/: sparseset.c
+Only in gcc/: sparseset.h
+Only in gcc/: sreal.c
+Only in gcc/: sreal.h
+Only in gcc/: ssaexpand.h
+Only in gcc/: stab.def
+Only in gcc/: stack-ptr-mod.c
+Only in gcc/: statistics.c
+Only in gcc/: statistics.h
+Only in gcc/: stmt.c
+Only in gcc/: stor-layout.c
+Only in gcc/: store-motion.c
+Only in gcc/: streamer-hooks.c
+Only in gcc/: streamer-hooks.h
+Only in gcc/: stringpool.c
+Only in gcc/: sync-builtins.def
+Only in gcc/: system.h
+Only in gcc/: target-def.h
+Only in gcc/: target-globals.c
+Only in gcc/: target-globals.h
+Only in gcc/: target-hooks-macros.h
+Only in gcc/: target.def
+Only in gcc/: target.h
+Only in gcc/: targhooks.c
+Only in gcc/: targhooks.h
+Only in gcc/: testsuite
+Only in gcc/: timevar.c
+Only in gcc/: timevar.def
+Only in gcc/: timevar.h
+Only in gcc/: tlink.c
+Only in gcc/: toplev.c
+Only in gcc/: toplev.h
+Only in gcc/: tracer.c
+Only in gcc/: trans-mem.c
+Only in gcc/: trans-mem.h
+Only in gcc/: tree-affine.c
+Only in gcc/: tree-affine.h
+Only in gcc/: tree-browser.c
+Only in gcc/: tree-browser.def
+Only in gcc/: tree-call-cdce.c
+Only in gcc/: tree-cfg.c
+Only in gcc/: tree-cfgcleanup.c
+Only in gcc/: tree-chrec.c
+Only in gcc/: tree-chrec.h
+Only in gcc/: tree-complex.c
+Only in gcc/: tree-data-ref.c
+Only in gcc/: tree-data-ref.h
+Only in gcc/: tree-dfa.c
+Only in gcc/: tree-diagnostic.c
+Only in gcc/: tree-diagnostic.h
+Only in gcc/: tree-dump.c
+Only in gcc/: tree-dump.h
+Only in gcc/: tree-eh.c
+Only in gcc/: tree-emutls.c
+Only in gcc/: tree-flow-inline.h
+Only in gcc/: tree-flow.h
+Only in gcc/: tree-if-conv.c
+Only in gcc/: tree-inline.c
+Only in gcc/: tree-inline.h
+Only in gcc/: tree-into-ssa.c
+Only in gcc/: tree-iterator.c
+Only in gcc/: tree-iterator.h
+Only in gcc/: tree-loop-distribution.c
+Only in gcc/: tree-mudflap.c
+Only in gcc/: tree-mudflap.h
+Only in gcc/: tree-nested.c
+Only in gcc/: tree-nomudflap.c
+Only in gcc/: tree-nrv.c
+Only in gcc/: tree-object-size.c
+Only in gcc/: tree-optimize.c
+Only in gcc/: tree-outof-ssa.c
+Only in gcc/: tree-parloops.c
+Only in gcc/: tree-pass.h
+Only in gcc/: tree-phinodes.c
+Only in gcc/: tree-predcom.c
+Only in gcc/: tree-pretty-print.c
+Only in gcc/: tree-pretty-print.h
+Only in gcc/: tree-profile.c
+Only in gcc/: tree-scalar-evolution.c
+Only in gcc/: tree-scalar-evolution.h
+Only in gcc/: tree-sra.c
+Only in gcc/: tree-ssa-address.c
+Only in gcc/: tree-ssa-alias.c
+Only in gcc/: tree-ssa-alias.h
+Only in gcc/: tree-ssa-ccp.c
+Only in gcc/: tree-ssa-coalesce.c
+Only in gcc/: tree-ssa-copy.c
+Only in gcc/: tree-ssa-copyrename.c
+Only in gcc/: tree-ssa-dce.c
+Only in gcc/: tree-ssa-dom.c
+Only in gcc/: tree-ssa-dse.c
+Only in gcc/: tree-ssa-forwprop.c
+Only in gcc/: tree-ssa-ifcombine.c
+Only in gcc/: tree-ssa-live.c
+Only in gcc/: tree-ssa-live.h
+Only in gcc/: tree-ssa-loop-ch.c
+Only in gcc/: tree-ssa-loop-im.c
+Only in gcc/: tree-ssa-loop-ivcanon.c
+Only in gcc/: tree-ssa-loop-ivopts.c
+Only in gcc/: tree-ssa-loop-manip.c
+Only in gcc/: tree-ssa-loop-niter.c
+Only in gcc/: tree-ssa-loop-prefetch.c
+Only in gcc/: tree-ssa-loop-unswitch.c
+Only in gcc/: tree-ssa-loop.c
+Only in gcc/: tree-ssa-math-opts.c
+Only in gcc/: tree-ssa-operands.c
+Only in gcc/: tree-ssa-operands.h
+Only in gcc/: tree-ssa-phiopt.c
+Only in gcc/: tree-ssa-phiprop.c
+Only in gcc/: tree-ssa-pre.c
+Only in gcc/: tree-ssa-propagate.c
+Only in gcc/: tree-ssa-propagate.h
+Only in gcc/: tree-ssa-reassoc.c
+Only in gcc/: tree-ssa-sccvn.c
+Only in gcc/: tree-ssa-sccvn.h
+Only in gcc/: tree-ssa-sink.c
+Only in gcc/: tree-ssa-strlen.c
+Only in gcc/: tree-ssa-structalias.c
+Only in gcc/: tree-ssa-tail-merge.c
+Only in gcc/: tree-ssa-ter.c
+Only in gcc/: tree-ssa-threadedge.c
+Only in gcc/: tree-ssa-threadupdate.c
+Only in gcc/: tree-ssa-uncprop.c
+Only in gcc/: tree-ssa-uninit.c
+Only in gcc/: tree-ssa.c
+Only in gcc/: tree-ssanames.c
+Only in gcc/: tree-stdarg.c
+Only in gcc/: tree-stdarg.h
+Only in gcc/: tree-streamer-in.c
+Only in gcc/: tree-streamer-out.c
+Only in gcc/: tree-streamer.c
+Only in gcc/: tree-streamer.h
+Only in gcc/: tree-switch-conversion.c
+Only in gcc/: tree-tailcall.c
+Only in gcc/: tree-vect-data-refs.c
+Only in gcc/: tree-vect-generic.c
+Only in gcc/: tree-vect-loop-manip.c
+Only in gcc/: tree-vect-loop.c
+Only in gcc/: tree-vect-patterns.c
+Only in gcc/: tree-vect-slp.c
+Only in gcc/: tree-vect-stmts.c
+Only in gcc/: tree-vectorizer.c
+Only in gcc/: tree-vectorizer.h
+Only in gcc/: tree-vrp.c
+Only in gcc/: tree.c
+Only in gcc/: tree.def
+Only in gcc/: tree.h
+Only in gcc/: treestruct.def
+Only in gcc/: tsystem.h
+Only in gcc/: typeclass.h
+Only in gcc/: value-prof.c
+Only in gcc/: value-prof.h
+Only in gcc/: var-tracking.c
+Only in gcc/: varasm.c
+Only in gcc/: varpool.c
+Only in gcc/: vec.c
+Only in gcc/: vec.h
+Only in gcc/: vecir.h
+Only in gcc/: vecprim.h
+Only in gcc/: version.c
+Only in gcc/: version.h
+Only in gcc/: vmsdbg.h
+Only in gcc/: vmsdbgout.c
+Only in gcc/: web.c
+Only in gcc/: xcoff.h
+Only in gcc/: xcoffout.c
+Only in gcc/: xcoffout.h

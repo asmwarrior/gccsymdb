@@ -495,12 +495,12 @@ mo_maybe_cascaded (cpp_reader * pfile, bool func)
     {
       /* I places a lots of assert to make sure gcc internal data is compatible
        * with my plugin. */
-      if (context->macro == NULL)
+      if (context->c.macro == NULL)
 	{
 	  /* Three cases: 1) expand_args; 2) paste_all_tokens; 3)
 	   * enter_macro_context handles pragma. However, only paste_all_tokens
 	   * calls _cpp_push_token_context. */
-	  if (context->direct_p)
+	  if (context->tokens_kind == TOKENS_KIND_DIRECT)
 	    {
 	      /* And paste_all_tokens only push a token to the context. */
 	      gcc_assert (FIRST (context).token == LAST (context).token);
@@ -508,8 +508,8 @@ mo_maybe_cascaded (cpp_reader * pfile, bool func)
 	    }
 	  return false;
 	}
-      cpp_macro *macro = context->macro->value.macro;
-      if (!context->direct_p)
+      cpp_macro *macro = context->c.macro->value.macro;
+	  if (context->tokens_kind == TOKENS_KIND_INDIRECT)
 	{
 	  gcc_assert (macro->paramc != 0);
 	  /* replace_args. */
@@ -1150,8 +1150,8 @@ cb_file_change (cpp_reader * pfile, const struct line_map *map)
 {
   if (map != NULL)
     {
-      if (map->reason == LC_ENTER && map->included_from != -1)
-	file_push (map->to_file, map->sysp);
+      if (map->reason == LC_ENTER && map->d.ordinary.included_from != -1)
+	file_push (map->d.ordinary.to_file, map->d.ordinary.sysp);
       else if (map->reason == LC_LEAVE)
 	file_pop ();
     }

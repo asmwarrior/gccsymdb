@@ -19,27 +19,34 @@ adv compile_file
 end
 
 define gccmo
-set $zzzz = $arg0.value.macro
-printf ">>>>macro<<<<\n"
-p *$arg0
+set $zzzz = $arg0
 p *$zzzz
 printf ">>>>param<<<<\n"
 set $zzzzi = 0
 while $zzzzi < $zzzz.paramc
-	p *$zzzz.params[$zzzzi]
+	p $zzzz.params[$zzzzi].ident.str
 	set $zzzzi = $zzzzi + 1
 end
 printf ">>>>content<<<<\n"
 set $zzzzi = 0
 while $zzzzi < $zzzz.count
 	set $zzzztmp = $zzzz.exp.tokens[$zzzzi]
-	p $zzzztmp
-	if $zzzztmp.type == CPP_NAME
-		printf "((((%s))))\n", $zzzztmp.val.node.node.ident.str
+	if $zzzztmp.flags & (1 << 2)
+		printf "STRINGIFY_ARG, "
 	end
+	if $zzzztmp.flags & (1 << 3)
+		printf "PASTE_LEFT, "
+	end
+	if $zzzztmp.type == CPP_MACRO_ARG
+		printf "[%d], ", $zzzztmp.val.macro_arg.arg_no
+	end
+	if $zzzztmp.type == CPP_NAME
+		printf "(%s)", $zzzztmp.val.node.node.ident.str
+	end
+	p $zzzztmp.type
 	set $zzzzi = $zzzzi + 1
 end
 end
 document gccmo
-When break in cb_macro_start, `gccmo node'.
+Argument type is cpp_macro*. When in cb_macro_start, sample is `gccmo node.value.macro'.
 end

@@ -143,7 +143,7 @@ Index: gcc-4.6.3/libcpp/lex.c
 Index: gcc-4.6.3/libcpp/macro.c
 ===================================================================
 --- gcc-4.6.3.orig/libcpp/macro.c	2012-06-12 09:50:26.262927584 +0800
-+++ gcc-4.6.3/libcpp/macro.c	2012-06-12 15:13:26.623118539 +0800
++++ gcc-4.6.3/libcpp/macro.c	2012-06-18 15:46:58.999527662 +0800
 @@ -855,6 +855,8 @@
  	  pfile->keep_tokens++;
  	  pfile->state.parsing_args = 1;
@@ -153,23 +153,7 @@ Index: gcc-4.6.3/libcpp/macro.c
  	  pfile->state.parsing_args = 0;
  	  pfile->keep_tokens--;
  	  pfile->state.prevent_expansion--;
-@@ -1170,6 +1172,7 @@
-   capacity = 256;
-   arg->expanded = XNEWVEC (const cpp_token *, capacity);
- 
-+  pfile->state.context_for_expand_arg++;
-   push_ptoken_context (pfile, NULL, NULL, arg->first, arg->count + 1);
-   for (;;)
-     {
-@@ -1191,6 +1194,7 @@
-     }
- 
-   _cpp_pop_context (pfile);
-+  pfile->state.context_for_expand_arg--;
- 
-   CPP_WTRADITIONAL (pfile) = saved_warn_trad;
- }
-@@ -1256,6 +1260,8 @@
+@@ -1256,6 +1258,8 @@
        else
  	{
  	  _cpp_pop_context (pfile);
@@ -178,7 +162,7 @@ Index: gcc-4.6.3/libcpp/macro.c
  	  if (pfile->state.in_directive)
  	    continue;
  	  return &pfile->avoid_paste;
-@@ -1312,7 +1318,14 @@
+@@ -1312,7 +1316,14 @@
  		}
  	    }
  	  else
@@ -221,18 +205,8 @@ Index: gcc-4.6.3/libcpp/directives.c
 Index: gcc-4.6.3/libcpp/internal.h
 ===================================================================
 --- gcc-4.6.3.orig/libcpp/internal.h	2012-06-12 09:50:26.262927584 +0800
-+++ gcc-4.6.3/libcpp/internal.h	2012-06-12 15:09:43.980924191 +0800
-@@ -221,6 +221,9 @@
- 
-   /* Nonzero if the deferred pragma being handled allows macro expansion.  */
-   unsigned char pragma_allow_expansion;
-+
-+  /* Nonzero if expand_args uses pfile.context chain to expand arg macro. */
-+  unsigned char context_for_expand_arg;
- };
- 
- /* Special nodes - identifiers with predefined significance.  */
-@@ -243,6 +246,11 @@
++++ gcc-4.6.3/libcpp/internal.h	2012-06-18 15:47:19.385481606 +0800
+@@ -243,6 +243,11 @@
       intervening space, 0 represents a note that has already been handled,
       and anything else is invalid.  */
    unsigned int type;
