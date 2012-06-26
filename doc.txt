@@ -212,6 +212,72 @@ with `\' into a line, so the first 2 lines are combined, and `\' itself isn't
 cpp token.
 // }])>
 
+// Macro Expansion Overview, based on gcc-4.6.3 <([{
+The fold records gcc macro expansion internal flow and my implementation,
+generally when macro expansion occurs, new context is pushed into
+pfile.context and its context.macro != NULL, however later lines show there're
+other cases using pfile.context too and context.macro = NULL. Note we ignore
+pragma, conditional macro, error handling, traditional macro lines.
+Terminology:
+    1) paste case: `#define A x ## y'. To `x' token.flags & PASTE_LEFT.
+    2) stringify case: `#define A(x) #x'. To `x' token.flags & STRINGIFY_ARG.
+
+cpp_get_token:
+    _cpp_lex_token
+    if token.flags == PASTE_LEFT, paste_all_tokens. context.macro = NULL.
+    _cpp_pop_context, cb_macro_end is broadcasted.
+    cb_macro_start is broadcasted, enter_macro_context
+
+enter_macro_context:
+    If fun_like:
+        funlike_invocation_p (>> collect_args), and when macro cascaded, it
+            pushes a context.macro = NULL.
+        replace_args, see below.
+    If !fun_like:
+        _cpp_push_token_context, context.macro != NULL.
+
+// replace_args: tags paste tokens and handles stringify cases <([{
+Iterate macro tokens and handle CPP_MACRO_ARG.
+    stringify case: call stringify_arg.
+    paste case: do nothing.
+    macro case: call expand_arg which context.macro = NULL.
+Do replacement:
+    token literally copy from user token and continue.
+    otherwise CPP_MACRO_ARG, do later
+    1) insert padding token before the arg unless it's the first token.
+    `!(src[-1].flags & PASTE_LEFT)'.
+    2) copy arg result.
+    3) insert padding token after args. The token is pfile.avoid_paste
+    (CPP_PADDING). `if !(src->flags & PASTE_LEFT)'.
+Call push_ptoken_context, context.macro != NULL.
+
+So to case 1:
+    #define xglue(x, y) x y
+    `x', CPP_PADDING (post-padding), CPP_PADDING (pre-padding), `y',
+    CPP_PADDING (post-padding).
+So to case 2:
+    #define xglue(x, y) x ## y
+    `x', `y', CPP_PADDING (post-padding).
+    And `x' token.flags = PASTE_LEFT.
+// }])>
+
+// Context conclusion <([{
+cpp_get_token calls _cpp_pop_context.
+paste_all_tokens calls _cpp_push_token_context, context.macro = NULL.
+enter_macro_context calls _cpp_push_token_context if !funlike.
+funlike_invocation_p calls _cpp_push_token_context if macro cascaded.
+replace_args calls push_ptoken_context to contain macro result.
+expand_arg calls push_ptoken_context/_cpp_pop_context, context.macro = NULL.
+// }])>
+
+Keep it in mind when cb_macro_start is called, new macro context has NOT
+pushed, to cb_macro_end context has been poped. To my plugin, only the outest
+macro expansion is cared about, which means, to the callbacks, we should
+detect whether pfile.context.prev == NULL, however section <GCC cascaded macro
+expansion> shows there's a trap in it. Read replace_args carefully, it will
+help to understand mo_maybe_cascaded.
+// }])>
+
 // GCC Cancel Macro Expansion <([{
 Consider the case
     #define Z(a) a
@@ -248,9 +314,9 @@ the expansion process of a fun-like macro finally.
 To the fourth line, the sequence is
     cb_macro_start(Y)
     cb_macro_start(Z)
-# enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token
+# enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token, Y macro is
+# popped from pfile.context, so
     cb_macro_end(Y, prev = NULL)
-# Y macro is popped from pfile.context.
     cb_end_arg(Z)
 # enter_macro_context(Z) >> replace_args. Z macro is pushed to pfile.context.
     symdb_cpp_token(a)
@@ -261,7 +327,7 @@ To the fifth line, the sequence is
     cb_macro_start(Z)
     cb_end_arg(Z)
     cb_macro_end(Z)
-    cb_macro_end(X)
+    cb_macro_end(X, prev = NULL)
 
 The fourth line is also breaking cb_macro_start/cb_macro_end pair rule. It
 makes my code a little complex. I use mo_maybe_cascaded() to solve it.
@@ -269,6 +335,8 @@ makes my code a little complex. I use mo_maybe_cascaded() to solve it.
 Note: macro cascaded means the tail of a macro expansion tokens is another
 funlike macro. So later macro definition is also belongs to macro cascade.
     #define Y2 1 + Z
+But later isn't
+    #define Y2 1 + Z + 1
 
 To 3-level or higher cascaded cases, it's obvious all immediate macroes can't
 be funlike macro. Here only list the first sequence
@@ -279,7 +347,7 @@ be funlike macro. Here only list the first sequence
     ...
 // }])>
 
-// GCC Cancel + Cascaded <([{
+// GCC Cancel + Cascaded Macro Expansion <([{
 Consider the case
     #define Z(p) a
     #define Y Z
@@ -292,9 +360,9 @@ When cancel encounters cascaded, thing will go even worse.
 To the fourth line, the sequence is
     cb_macro_start(Y)
     cb_macro_start(Z)
-# enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token
+# enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token, Y macro is
+# popped from pfile.context, so
     cb_macro_end(Y, prev = NULL)
-# Y macro is popped from pfile.context.
 # Then Z is canceled, funlike_invocation_p >> _cpp_push_token_context which
 # pushes a context to pfile.context, its context.macro = NULL.
     cb_end_arg(cancel = true)
@@ -314,7 +382,7 @@ To the fifth line, the sequence is
     symdb_cpp_token(Z)
     symdb_cpp_token(=)
     symdb_cpp_token(1)
-    cb_macro_end(X)
+    cb_macro_end(X, prev = NULL)
 
 To the fourth line, two cb_macro_start and three cb_macro_end are called.
 // }])>
