@@ -1,4 +1,5 @@
-/* vim: foldmarker=<([{,}])> foldmethod=marker
+/* vim: foldmarker=<([{,}])> foldmethod=marker */
+/* Copyright, code convention, guide, #include <([{
  * Copyright (C) zyf.zeroos@gmail.com, released on GPL license. Go first from
  * doc.txt.
  *
@@ -14,6 +15,7 @@
  *   2) Class macro records macro data from gcc and dump them to
  *   cache.auxiliary, it's also in the charge of macro-cancel, macro-cascaded
  *   and macro-cascaded-cancel expansion cases, see doc.txt.
+ *
  *   3) Fold plugin-callbacks: implements new PLUGIN_XXXX event. Dump token
  *   data to class cache/macro, parse DEF_XXX when special event occurs. I
  *   list all possible syntax cases before every function, and use them
@@ -35,7 +37,6 @@
  *   2) file::dump_includee and cache::dump_cache.
  * */
 
-/* #include... <([{ */
 #include "gcc-plugin.h"
 #include "config.h"
 #include "system.h"
