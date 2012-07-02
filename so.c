@@ -1,5 +1,5 @@
-/* vim: foldmarker=<([{,}])> foldmethod=marker */
-/* Copyright, code convention, guide, #include <([{
+/* vim: foldmarker=<([{,}])> foldmethod=marker
+ * Copyright, code convention, guide, #include <([{
  * Copyright (C) zyf.zeroos@gmail.com, released on GPL license. Go first from
  * doc.txt.
  *
@@ -19,9 +19,7 @@
  *   3) Fold plugin-callbacks: implements new PLUGIN_XXXX event. Dump token
  *   data to class cache/macro, parse DEF_XXX when special event occurs. I
  *   list all possible syntax cases before every function, and use them
- *   reversely search user-definition from cache.itokens, the only exception
- *   is parsing `( declarator )' -- first strips paren pair forwardly then
- *   reversely get user-definition.
+ *   reversely search user-definition from cache.itokens.
  *   4) Fold cpp-callbacks: implements cpp_callback::XXXX, collects macro data
  *   for class macro, DEF_MACRO and file dependence.
  *   5) Class def: cooperate plugin-callbacks to parse definition in
@@ -547,12 +545,6 @@ mo_cascaded (void)
 }
 
 static void
-mo_reset_cascaded (void)
-{
-  mo.cascaded = false;
-}
-
-static void
 mo_maybe_cancel (bool cancel)
 {
   mo.cancel = cancel;
@@ -956,6 +948,7 @@ demangle_type (db_token * token, int *cpp_type, int *c_type)
   *c_type = (flag & C_TYPE_MASK) >> C_TYPE_SHIFT;
 }
 
+/* To strip outer parens successfully, we need the head of cache.itokens. */
 static int
 def_strip_paren_declarator_outer (int index)
 {
@@ -987,6 +980,12 @@ def_strip_paren_declarator_inner (int index)
 	break;
     }
   return index - 1;
+}
+
+static int
+def_strip_paren_declarator_middle (int index)
+{
+  return def_strip_paren_declarator_inner (index);
 }
 
 static void
@@ -1097,7 +1096,6 @@ static void
 cb_end_arg (cpp_reader * pfile, bool cancel)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  mo_reset_cascaded ();
   mo_maybe_cancel (cancel);
   cb->macro_end_arg = NULL;
 }
@@ -1327,7 +1325,7 @@ symdb_extern_func_old_param (void *gcc_data, void *user_data)
  *   direct-declarator ( parameter-type-list )
  *   ( attributes[opt] declarator )
 *
-* We also includes outer-paren cases, see symdb_extern_var.
+* We also includes outer/inner-paren cases, see symdb_extern_var.
  */
 static void
 symdb_extern_func (void *gcc_data, void *user_data)
@@ -1364,7 +1362,7 @@ symdb_extern_func (void *gcc_data, void *user_data)
 *   pointer[opt] direct-declarator
 * direct-declarator:
 *   identifier
-*   ( attributes[opt] declarator ) << `int (v)' or `int ((v))'.
+*   ( attributes[opt] declarator )
 *   direct-declarator array-declarator
 *   direct-declarator ( parameter-type-list ) << function declaration.
 *   direct-declarator ( identifier-list[opt] ) << function call.
@@ -1379,9 +1377,10 @@ symdb_extern_func (void *gcc_data, void *user_data)
 *
 * Our callback hook makes sure there's not function-call case at all.
 *
-* Case `( attributes[opt] declarator )' is called outer-paren and inner-paren
-* cases, see test/paren_declarator/. So let's strip outer-paren pair forwardly
-* first, then parsing reversely.
+* Case `( attributes[opt] declarator )' is called paren cases, see
+* test/paren_declarator/a.c. There're three -- outer, middle and inner cases.
+* `int ((**(funtdpcomplex)[2][3]))(void));'
+* function pointer includes all of them, from left to right.
 */
 static void
 symdb_extern_var (void *gcc_data, void *user_data)
@@ -1392,7 +1391,7 @@ symdb_extern_var (void *gcc_data, void *user_data)
   db_token *token;
   int cpp_type, c_type;
   int index;
-  bool funpvar = false;
+  int fun = 0;
 
   if (ds->storage_class == csc_extern)
     /* User needn't the kind of definition at all. */
@@ -1403,9 +1402,16 @@ symdb_extern_var (void *gcc_data, void *user_data)
   if (da->kind == cdk_function)
     {
       if (da->declarator->kind != cdk_pointer)
-	/* We encountered a function declaration. */
-	goto done;
-      funpvar = true;
+	{
+	  gcc_assert (da->declarator->kind == cdk_id);
+	  /* We encountered a function declaration or `typedef int fun(void);'. */
+	  if (ds->storage_class == csc_typedef)
+	    fun = 1;
+	  else
+	    goto done;
+	}
+      else
+	fun = 2;
     }
 
   index = def_strip_paren_declarator_outer (1);
@@ -1413,12 +1419,18 @@ symdb_extern_var (void *gcc_data, void *user_data)
     {
       token = cache_get (index);
       demangle_type (token, &cpp_type, &c_type);
-      if (funpvar)
+      if (fun)
 	{
-	  funpvar = false;
 	  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
 	  index = cache_skip_match_pair (index, ')');
-	  index++;
+	  if (fun == 2)
+	    {
+	      token = cache_get (index);
+	      demangle_type (token, &cpp_type, &c_type);
+	      gcc_assert (cpp_type == CPP_CLOSE_PAREN);
+	      index = def_strip_paren_declarator_middle (index);
+	    }
+	  fun = 0;
 	}
       else if (cpp_type == CPP_CLOSE_SQUARE)
 	index = cache_skip_match_pair (index, ']');
@@ -1426,7 +1438,6 @@ symdb_extern_var (void *gcc_data, void *user_data)
 	{
 	  index = def_strip_paren_declarator_inner (index);
 	  if (ds->storage_class == csc_typedef)
-	    /* We encountered a typedef. */
 	    def_append_chk (index, DEF_TYPEDEF);
 	  else
 	    def_append_chk (index, DEF_VAR);
@@ -1541,6 +1552,7 @@ plugin_tini (void *gcc_data, void *user_data)
   cb->macro_start_expand = NULL;
   cb->macro_end_expand = NULL;
   cb->start_directive = NULL;
+  cb->end_directive = NULL;
 
   unregister_callback ("symdb", PLUGIN_START_UNIT);
   unregister_callback ("symdb", PLUGIN_FINISH_UNIT);

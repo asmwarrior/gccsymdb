@@ -25,25 +25,26 @@ CREATE TABLE Definition (
 	position integer
 );
 INSERT INTO "Definition" VALUES(1,'M',3,12);
-INSERT INTO "Definition" VALUES(2,'td',4,29);
-INSERT INTO "Definition" VALUES(3,'tdfunp',4,48);
-INSERT INTO "Definition" VALUES(4,'arr',1,73);
-INSERT INTO "Definition" VALUES(5,'funparrvar',1,91);
-INSERT INTO "Definition" VALUES(6,'funpvar',1,122);
-INSERT INTO "Definition" VALUES(7,'p',1,143);
-INSERT INTO "Definition" VALUES(8,'muldef',1,222);
-INSERT INTO "Definition" VALUES(9,'muldef',1,234);
-INSERT INTO "Definition" VALUES(10,'abc',5,250);
-INSERT INTO "Definition" VALUES(11,'v1',1,275);
-INSERT INTO "Definition" VALUES(12,'v2',1,290);
-INSERT INTO "Definition" VALUES(13,'enumx',8,305);
-INSERT INTO "Definition" VALUES(14,'enumy',8,317);
-INSERT INTO "Definition" VALUES(15,'def',5,357);
-INSERT INTO "Definition" VALUES(16,'tp',1,401);
-INSERT INTO "Definition" VALUES(17,'oldfun',2,411);
-INSERT INTO "Definition" VALUES(18,'foo',2,444);
-INSERT INTO "Definition" VALUES(19,'main',2,478);
-INSERT INTO "Definition" VALUES(20,'foo',9,622);
+INSERT INTO "Definition" VALUES(2,'funtd',4,30);
+INSERT INTO "Definition" VALUES(3,'funtdp',4,77);
+INSERT INTO "Definition" VALUES(4,'funpvar',1,98);
+INSERT INTO "Definition" VALUES(5,'itd',4,126);
+INSERT INTO "Definition" VALUES(6,'funtdpcomplex',4,146);
+INSERT INTO "Definition" VALUES(7,'arr',1,178);
+INSERT INTO "Definition" VALUES(8,'p',1,194);
+INSERT INTO "Definition" VALUES(9,'muldef',1,273);
+INSERT INTO "Definition" VALUES(10,'muldef',1,285);
+INSERT INTO "Definition" VALUES(11,'abc',5,301);
+INSERT INTO "Definition" VALUES(12,'v1',1,326);
+INSERT INTO "Definition" VALUES(13,'v2',1,341);
+INSERT INTO "Definition" VALUES(14,'enumx',8,356);
+INSERT INTO "Definition" VALUES(15,'enumy',8,368);
+INSERT INTO "Definition" VALUES(16,'def',5,408);
+INSERT INTO "Definition" VALUES(17,'tp',1,452);
+INSERT INTO "Definition" VALUES(18,'oldfun',2,462);
+INSERT INTO "Definition" VALUES(19,'foo',2,495);
+INSERT INTO "Definition" VALUES(20,'main',2,529);
+INSERT INTO "Definition" VALUES(21,'foo',9,664);
 CREATE INDEX DefName on Definition (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -52,7 +53,7 @@ CREATE TABLE DefinitionRelationship (
 	caller bigint,
 	callee bigint
 );
-INSERT INTO "DefinitionRelationship" VALUES(19,20);
+INSERT INTO "DefinitionRelationship" VALUES(20,21);
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -61,5 +62,5 @@ CREATE TABLE FileDefinition (
 	startDefID bigint,
 	endDefID bigint
 );
-INSERT INTO "FileDefinition" VALUES(1,1,20);
+INSERT INTO "FileDefinition" VALUES(1,1,21);
 COMMIT;
