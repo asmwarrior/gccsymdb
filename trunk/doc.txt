@@ -338,6 +338,15 @@ funlike macro. So later macro definition is also belongs to macro cascade.
 But later isn't
     #define Y2 1 + Z + 1
 
+Macro cascade also makes effect on collecting expanded tokens and macro
+tokens.
+	#define Y3(a) 1 + Z
+	Y3(1)(2)
+1) expanded tokens: `Y3', `('. `1', `)'.
+2) macro tokens: `1', `+'.
+3) expanded tokens: `(', `2', `)'.
+4) macro tokens: `2'.
+
 To 3-level or higher cascaded cases, it's obvious all immediate macroes can't
 be funlike macro. Here only list the first sequence
     cb_macro_start(Y)

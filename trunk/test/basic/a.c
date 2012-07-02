@@ -1,11 +1,13 @@
 //*
 #define M a
 
-typedef int td;
-typedef int (**tdfunp[2][3])(void);
-int arr[3][2];
-int (**funparrvar[2][3])(void);
+typedef int *funtd(void);
+int *fundecl(void);
+typedef int (*funtdp)(void);
 int (*funpvar)(void);
+typedef int itd;
+typedef int (**funtdpcomplex[2][3])(void);
+int arr[3][2];
 int *p, * __attribute__((aligned))* const*foofoo(void);
 extern int exi, exj;
 ;
@@ -38,7 +40,7 @@ int main(void)
 	int (*innerfunpvar[2][3])(void);
 	typedef int (*innertdfun)(void);
 	__builtin_trap();
-	(*funparrvar[0][1])();
+	(*funpvar)();
 	funpvar();
 	return foo();
 }

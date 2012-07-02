@@ -1,6 +1,6 @@
 //*
 typedef int (td);
-typedef int ((*(tdfunp)[2][3])(void));
+typedef int (((*(tdfunp)[2][3]))(void));
 int* (p) = 0, (foo)(void);
 int ((arr)[3][2]);
 int ((*(funpvar)[2][3])(void));
