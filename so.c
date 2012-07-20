@@ -24,7 +24,8 @@
  *   for class macro, DEF_MACRO and file dependence.
  *   5) Class def: cooperate plugin-callbacks to parse definition in
  *   cache.itokens and is in charge of Definition fold of init.sql.
- *   6) Class file: is in charge of File fold and FileDepedence of init.sql.
+ *   6) Class file: is in charge of File fold and FileDefinition table of
+ *   init.sql.
  *
  * GDB Guide:
  *   1) To support debug, I place a class `bug' in common fold, to use it,
@@ -169,8 +170,7 @@ bug_trap_token (int off)
     asm volatile ("int $3");
 }
 
-/* Is used by user to initialize. */
-static void __attribute__ ((unused)) bug_init (char *fn, int off)
+static void __attribute__ ((used)) bug_init (char *fn, int off)
 {
   strcpy (bug.file_name, fn);
   bug.file_offset = off;
@@ -232,7 +232,7 @@ get_mtime (const char *file)
 }
 
 /* debug purpose. */
-static void __attribute__ ((unused)) dump_includee (void)
+static void __attribute__ ((used)) dump_includee (void)
 {
   int nrow, ncolumn;
   char *error_msg, **table;
@@ -594,7 +594,7 @@ static struct
 } cache;
 
 /* debug purpose. */
-static void __attribute__ ((unused)) dump_cache (void)
+static void __attribute__ ((used)) dump_cache (void)
 {
   int ix;
   db_token *p;
@@ -1574,7 +1574,10 @@ plugin_init (struct plugin_name_args *plugin_info,
 {
   /* When `-E' is passed, symdb_unit_init is skipped. */
   if (flag_preprocess_only)
-    return 0;
+    {
+      printf ("`-E' or `-save-temps' aren't supported by symdb.so.");
+      return -1;
+    }
   /* We only accept a param -- `dbfile', using ProjectOverview table of
    * database to do more configs. */
   gcc_assert (plugin_info->argc == 1
