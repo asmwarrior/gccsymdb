@@ -334,8 +334,10 @@ initdb (const char *path)
   dyn_string_append_cstr (gbuf, "/gccsym.db ''");
   system (dyn_string_buf (gbuf));
   char *str = lrealpath (path);
-  dyn_string_copy_cstr (gbuf,
-			"echo \"update ProjectOverview set projectRootPath = '");
+  dyn_string_copy_cstr (gbuf, "echo \"update ProjectOverview set ");
+  dyn_string_append_cstr (gbuf, "gccVersion = '<@a@>', ");
+  dyn_string_append_cstr (gbuf, "pluginVersion = 'svn-<@b@>', ");
+  dyn_string_append_cstr (gbuf, "projectRootPath = '");
   dyn_string_append_cstr (gbuf, str);
   dyn_string_append_cstr (gbuf, "/';\" | sqlite3 -batch ");
   dyn_string_append_cstr (gbuf, path);

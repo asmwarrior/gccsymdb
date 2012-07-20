@@ -52,7 +52,7 @@ source) and skip `#ifdef/#if'.
 
 // User Manual <([{
 Note: Using my plugin on correct code, buggy code maybe cause my plugin
-infinite-loop.
+infinite-loop or crashed.
 
 Prepare stage (patch on gcc-4.6.3):
 1) cp gcc.patches/* gcc.src/patches
