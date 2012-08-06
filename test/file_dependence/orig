@@ -28,7 +28,7 @@ CREATE TABLE Definition (
 	id integer primary key autoincrement,
 	name text,
 	flag integer,
-	position integer
+	fileoffset integer
 );
 CREATE INDEX DefName on Definition (name);
 COMMIT;

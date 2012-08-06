@@ -28,7 +28,8 @@ create table Definition (
 	id integer primary key autoincrement,
 	name text,
 	flag integer,
-	fileoffset integer
+	xline integer,
+	xcolumn integer
 );
 
 -- Not only function-definition and its callee functions, in the future, the table can be used as other similar relationship.
@@ -49,7 +50,7 @@ create view Helper as
 select * from
 (
 select
-	f.id as fileID, f.name as fileName, fileoffset, d.id as defID, d.name as defName, flag
+	f.id as fileID, f.name as fileName, xline, xcolumn, d.id as defID, d.name as defName, flag
 from
 	chFile f, Definition as d, FileDefinition fd
 where

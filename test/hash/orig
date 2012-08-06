@@ -22,7 +22,7 @@ CREATE TABLE Definition (
 	id integer primary key autoincrement,
 	name text,
 	flag integer,
-	position integer
+	fileoffset integer
 );
 INSERT INTO "Definition" VALUES(1,'i',1,25);
 CREATE INDEX DefName on Definition (name);

@@ -22,7 +22,7 @@ CREATE TABLE Definition (
 	id integer primary key autoincrement,
 	name text,
 	flag integer,
-	position integer
+	fileoffset integer
 );
 INSERT INTO "Definition" VALUES(1,'td',4,17);
 INSERT INTO "Definition" VALUES(2,'tdfunp',4,39);

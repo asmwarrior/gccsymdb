@@ -1,4 +1,5 @@
 /* vim: foldmarker=<([{,}])> foldmethod=marker
+ * Copyright, code convention, guide, #include <([{
  * Copyright (C) zyf.zeroos@gmail.com, released on GPL license. Go first from
  * doc.txt.
  *
@@ -14,36 +15,34 @@
  *   2) Class macro records macro data from gcc and dump them to
  *   cache.auxiliary, it's also in the charge of macro-cancel, macro-cascaded
  *   and macro-cascaded-cancel expansion cases, see doc.txt.
+ *
  *   3) Fold plugin-callbacks: implements new PLUGIN_XXXX event. Dump token
  *   data to class cache/macro, parse DEF_XXX when special event occurs. I
  *   list all possible syntax cases before every function, and use them
- *   reversely search user-definition from cache.itokens, the only exception
- *   is parsing `( declarator )' -- first strips paren pair forwardly then
- *   reversely get user-definition.
+ *   reversely search user-definition from cache.itokens.
  *   4) Fold cpp-callbacks: implements cpp_callback::XXXX, collects macro data
  *   for class macro, DEF_MACRO and file dependence.
  *   5) Class def: cooperate plugin-callbacks to parse definition in
  *   cache.itokens and is in charge of Definition fold of init.sql.
- *   6) Class file: is in charge of File fold and FileDepedence of init.sql.
+ *   6) Class file: is in charge of File fold and FileDefinition table of
+ *   init.sql.
  *
  * GDB Guide:
  *   1) To support debug, I place a class `bug' in common fold, to use it,
  *     gdb -x gdb.script
  *     gdb> dlc
- *     gdb> call bug_init("filename", offset)
+ *     gdb> call bug_init("filename", line, column)
  *   only leader expanded token and common token can be break.
  *   2) file::dump_includee and cache::dump_cache.
  * */
 
-/* #include... <([{ */
 #include "gcc-plugin.h"
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
 #include "tm.h"
 #include "tree.h"
-#include "gcc/c-tree.h"
-#include "c-family/c-common.h"
+#include "gcc/c/c-tree.h"
 #include "input.h"
 #include "dyn-string.h"
 #include <sys/stat.h>
@@ -51,6 +50,8 @@
 #include "libcpp/include/cpplib.h"
 #include "libcpp/internal.h"
 #include <sqlite3.h>
+#include "gcc/c/c-parser.c"
+#include "gcc/input.h"
 /* }])> */
 
 /* common <([{ */
@@ -148,7 +149,8 @@ control_panel_tini (void)
 static struct
 {
   char file_name[PATH_MAX + 1];
-  int file_offset;
+  int line;
+  int column;
   int file_id;
 } bug =
 {
@@ -164,17 +166,17 @@ bug_trap_file (const char *fn, int fid)
 
 static int file_get_current_fid (void);
 static void
-bug_trap_token (int off)
+bug_trap_token (int line, int column)
 {
-  if (file_get_current_fid () == bug.file_id && off == bug.file_offset)
+  if (file_get_current_fid () == bug.file_id && line == bug.line && column == bug.column)
     asm volatile ("int $3");
 }
 
-/* Is used by user to initialize. */
-static void __attribute__ ((unused)) bug_init (char *fn, int off)
+static void __attribute__ ((used)) bug_init (char *fn, int line, int column)
 {
   strcpy (bug.file_name, fn);
-  bug.file_offset = off;
+  bug.line = line;
+  bug.column = column;
   bug.file_id = 0;
 }
 
@@ -203,8 +205,6 @@ typedef struct
 DEF_VEC_O (scope);
 DEF_VEC_ALLOC_O (scope, heap);
 
-DEF_VEC_I (int);
-DEF_VEC_ALLOC_I (int, heap);
 static struct
 {
   VEC (scope, heap) * scopes;	/* for FileDefinition table. */
@@ -233,7 +233,7 @@ get_mtime (const char *file)
 }
 
 /* debug purpose. */
-static void __attribute__ ((unused)) dump_includee (void)
+static void __attribute__ ((used)) dump_includee (void)
 {
   int nrow, ncolumn;
   char *error_msg, **table;
@@ -430,12 +430,10 @@ static struct
   /* expanded_count field is updated for debug only. */
   int expanded_count;
   int macro_count;
-  bool cancel;
-  bool cascaded;
   bool valid;
 } mo =
 {
-0, 0, false, false, false};
+0, 0, false};
 
 static void
 mo_append_expanded_token (void)
@@ -465,7 +463,6 @@ static void
 mo_leave (void)
 {
   mo.expanded_count = mo.macro_count = 0;
-  mo.cancel = mo.cascaded = false;
   gcc_assert (mo.valid == true);
   mo.valid = false;
 }
@@ -484,85 +481,6 @@ mo_isvalid (void)
   return mo.valid;
 }
 
-static bool
-mo_maybe_cascaded (cpp_reader * pfile, bool func)
-{
-  cpp_context *context = pfile->context;
-  gcc_assert (context->prev != NULL);
-  if (!func)
-    return false;
-  do
-    {
-      /* I places a lots of assert to make sure gcc internal data is compatible
-       * with my plugin. */
-      if (context->c.macro == NULL)
-	{
-	  /* Three cases: 1) expand_args; 2) paste_all_tokens; 3)
-	   * enter_macro_context handles pragma. However, only paste_all_tokens
-	   * calls _cpp_push_token_context. */
-	  if (context->tokens_kind == TOKENS_KIND_DIRECT)
-	    {
-	      /* And paste_all_tokens only push a token to the context. */
-	      gcc_assert (FIRST (context).token == LAST (context).token);
-	      continue;
-	    }
-	  return false;
-	}
-      cpp_macro *macro = context->c.macro->value.macro;
-	  if (context->tokens_kind == TOKENS_KIND_INDIRECT)
-	{
-	  gcc_assert (macro->paramc != 0);
-	  /* replace_args. */
-	  if (FIRST (context).ptoken + 1 == LAST (context).ptoken &&
-	      *FIRST (context).ptoken == &pfile->avoid_paste)
-	    /* The case is macro argument is the tail of macro content. */
-	    continue;
-	  if (FIRST (context).ptoken == LAST (context).ptoken)
-	    continue;
-	}
-      else
-	{
-	  gcc_assert (macro->paramc == 0);
-	  /* The macro isn't funlike. */
-	  if (FIRST (context).token == LAST (context).token)
-	    continue;
-	}
-      return false;
-    }
-  while ((context = context->prev) && context->prev != NULL);
-  mo.cascaded = func;
-  return true;
-}
-
-static bool
-mo_cascaded (void)
-{
-  if (mo.cascaded)
-    {
-      mo.cascaded = false;
-      return true;
-    }
-  return false;
-}
-
-static void
-mo_reset_cascaded (void)
-{
-  mo.cascaded = false;
-}
-
-static void
-mo_maybe_cancel (bool cancel)
-{
-  mo.cancel = cancel;
-}
-
-static bool
-mo_cancel (void)
-{
-  return mo.cancel;
-}
-
 /* }])> */
 
 /* cache <([{ */
@@ -578,7 +496,8 @@ typedef struct
 {
   enum symdb_flag flag;
   dyn_string_t value;
-  int file_offset;
+  int line;
+  int column;
 } db_token;
 DEF_VEC_O (db_token);
 DEF_VEC_ALLOC_O (db_token, heap);
@@ -601,21 +520,21 @@ static struct
 } cache;
 
 /* debug purpose. */
-static void __attribute__ ((unused)) dump_cache (void)
+static void __attribute__ ((used)) dump_cache (void)
 {
   int ix;
   db_token *p;
   printf ("cache.itokens ----------------\n");
   FOR_EACH_VEC_ELT (db_token, cache.itokens, ix, p)
   {
-    printf ("[%d]: %s, %d\n", ix, dyn_string_buf (p->value), p->file_offset);
+    printf ("[%d]: %s, %d-%d\n", ix, dyn_string_buf (p->value), p->line, p->column);
   }
   printf ("cache.auxiliary ----------------\n");
   let *p2;
   FOR_EACH_VEC_ELT (let, cache.auxiliary, ix, p2)
   {
-    printf ("[%d]: (%s:%d), %d, %d\n", ix, dyn_string_buf (p2->leader.value),
-	    p2->leader.file_offset, p2->start, p2->length);
+    printf ("[%d]: (%s:%d-%d), %d, %d\n", ix, dyn_string_buf (p2->leader.value),
+	    p2->leader.line, p2->leader.column, p2->start, p2->length);
   }
   printf ("\n");
 }
@@ -723,19 +642,12 @@ cache_tag_let (cpp_token_p token)
   /* Here, the length is initialized as 0x1fffffff for tag all following cache.itokens
    * belong to the macro. */
   p->length = 0x1fffffff;
-  p->leader.file_offset = token->file_offset;
+	expanded_location el = expand_location (token->src_loc);
+  p->leader.line = el.line;
+  p->leader.column = el.column;
   gcc_assert (token->type == CPP_NAME);
   p->leader.flag = CPP_NAME | C_TYPE_MASK;
   print_token (token, p->leader.value);
-}
-
-static void
-cache_cancel_last_let (void)
-{
-  gcc_assert (VEC_length (let, cache.auxiliary) != 0);
-  let *p = VEC_last (let, cache.auxiliary);
-  dyn_string_delete (p->leader.value);
-  VEC_pop (let, cache.auxiliary);
 }
 
 static void
@@ -751,7 +663,9 @@ cache_append_itoken_cpp_stage (cpp_token_p token)
   db_token *p = VEC_safe_push (db_token, heap, cache.itokens, NULL);
   p->value = dyn_string_new (32);
   p->flag = token->type | C_TYPE_MASK;
-  p->file_offset = token->file_offset;
+	expanded_location el = expand_location (token->src_loc);
+  p->line = el.line;
+  p->column = el.column;
   print_token (token, p->value);
   cache.last_cpp_token = p;
 }
@@ -889,28 +803,30 @@ static struct
 } def;
 
 static long long
-insert_def (enum definition_flag flag, dyn_string_t str, int offset)
+insert_def (enum definition_flag flag, dyn_string_t str, int line, int column)
 {
   int fid = file_get_current_fid ();
   long long defid;
   db_error (sqlite3_bind_int (def.helper, 1, fid));
-  db_error (sqlite3_bind_int (def.helper, 2, offset));
+  db_error (sqlite3_bind_int (def.helper, 2, line));
+  db_error (sqlite3_bind_int (def.helper, 3, column));
   db_error (sqlite3_bind_text
-	    (def.helper, 3, dyn_string_buf (str),
+	    (def.helper, 4, dyn_string_buf (str),
 	     dyn_string_length (str), SQLITE_STATIC));
-  db_error (sqlite3_bind_int (def.helper, 4, flag));
+  db_error (sqlite3_bind_int (def.helper, 5, flag));
   if (sqlite3_step (def.helper) != SQLITE_ROW)
     {
       db_error (sqlite3_bind_text
 		(def.insert_def, 1, dyn_string_buf (str),
 		 dyn_string_length (str), SQLITE_STATIC));
       db_error (sqlite3_bind_int (def.insert_def, 2, flag));
-      db_error (sqlite3_bind_int (def.insert_def, 3, offset));
+      db_error (sqlite3_bind_int (def.insert_def, 3, line));
+      db_error (sqlite3_bind_int (def.insert_def, 4, column));
       execute_sql (def.insert_def);
       defid = sqlite3_last_insert_rowid (db);
     }
   else
-    defid = sqlite3_column_int64 (def.helper, 2);
+    defid = sqlite3_column_int64 (def.helper, 1);
   revalidate_sql (def.helper);
   return defid;
 }
@@ -931,9 +847,9 @@ insert_defrel (long long callee)
 }
 
 static void
-def_append (enum definition_flag flag, dyn_string_t str, int offset)
+def_append (enum definition_flag flag, dyn_string_t str, int line, int column)
 {
-  long long defid = insert_def (flag, str, offset);
+  long long defid = insert_def (flag, str, line, column);
   if (flag == DEF_FUNC)
     def.caller_id = defid;
   else if (flag == DEF_CALLED_FUNC)
@@ -955,6 +871,7 @@ demangle_type (db_token * token, int *cpp_type, int *c_type)
   *c_type = (flag & C_TYPE_MASK) >> C_TYPE_SHIFT;
 }
 
+/* To strip outer parens successfully, we need the head of cache.itokens. */
 static int
 def_strip_paren_declarator_outer (int index)
 {
@@ -988,6 +905,12 @@ def_strip_paren_declarator_inner (int index)
   return index - 1;
 }
 
+static int
+def_strip_paren_declarator_middle (int index)
+{
+  return def_strip_paren_declarator_inner (index);
+}
+
 static void
 def_append_chk (int index, enum definition_flag flag)
 {
@@ -1001,7 +924,7 @@ def_append_chk (int index, enum definition_flag flag)
   token = cache_itoken_to_chtoken (index);
   demangle_type (token, &cpp_type, &c_type);
   gcc_assert (is_uid (cpp_type, c_type));
-  def_append (flag, str, token->file_offset);
+  def_append (flag, str, token->line, token->column);
 }
 
 static void
@@ -1009,11 +932,11 @@ def_init (void)
 {
   /* Search fileDefinition view not Definition table. */
   db_error (sqlite3_prepare_v2 (db,
-				"select fileID, position, defID, defName, flag from Helper "
-				"where fileID = ? and position = ? and defName = ? and flag = ?;",
+				"select defID from Helper "
+				"where fileID = ? and xline = ? and xcolumn = ? and defName = ? and flag = ?;",
 				-1, &def.helper, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into Definition values (NULL, ?, ?, ?);",
+				"insert into Definition values (NULL, ?, ?, ?, ?);",
 				-1, &def.insert_def, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from DefinitionRelationship where caller = ? and callee = ?;",
@@ -1063,7 +986,8 @@ cb_lex_token (cpp_reader * pfile, cpp_token_p token)
 	}
       if (define_helper.macro_tristate == 2)
 	{
-	  def_append (DEF_MACRO, gbuf, token->file_offset);
+	expanded_location el = expand_location (token->src_loc);
+	  def_append (DEF_MACRO, gbuf, el.line, el.column);
 	  define_helper.macro_tristate = 0;
 	}
       cb->lex_token = NULL;
@@ -1079,67 +1003,44 @@ cb_start_directive (cpp_reader * pfile)
   /* We don't care about macro expansion in directive, it's reset back in
    * cb_end_directive. */
   cb->macro_start_expand = NULL;
-  cb->macro_end_expand = NULL;
 }
 
 static void cb_macro_start (cpp_reader *, cpp_token_p, const cpp_hashnode *);
-static void cb_macro_end (cpp_reader *);
 static void
 cb_end_directive (cpp_reader * pfile)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  cb->lex_token = NULL;
   cb->macro_start_expand = cb_macro_start;
-  cb->macro_end_expand = cb_macro_end;
 }
 
-static void
-cb_end_arg (cpp_reader * pfile, bool cancel)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  mo_reset_cascaded ();
-  mo_maybe_cancel (cancel);
-  cb->macro_end_arg = NULL;
-}
-
+static void cb_macro_end (cpp_reader *, bool);
 static void
 cb_macro_start (cpp_reader * pfile, cpp_token_p token,
 		const cpp_hashnode * node)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  bool fun_like = false;
-  if (!(node->flags & NODE_BUILTIN))
-    fun_like = node->value.macro->fun_like;
-  if (pfile->context->prev == NULL)
+  cb->lex_token = cb_lex_token;
+  cb->macro_end_expand = cb_macro_end;
+  if (pfile->context->prev == NULL && !mo_isvalid ())
     {
-      bug_trap_token (token->file_offset);
+	expanded_location el = expand_location (token->src_loc);
+      bug_trap_token (el.line, el.column);
       mo_enter ();
       cache_tag_let (token);
-    reinit:
-      if (fun_like)
-	{
-	  cb->macro_end_arg = cb_end_arg;
-	  cb->lex_token = cb_lex_token;
-	}
-    }
-  else
-    {
-      if (mo_maybe_cascaded (pfile, fun_like))
-	goto reinit;
     }
 }
 
 static void
-cb_macro_end (cpp_reader * pfile)
+cb_macro_end (cpp_reader * pfile, bool in_expansion)
 {
-  if (pfile->context->prev == NULL)
+  cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  if (!in_expansion)
     {
-      if (mo_cascaded ())
-	return;
-      if (mo_cancel ())
-	cache_cancel_last_let ();
-      else
-	cache_end_let ();
+      cache_end_let ();
       mo_leave ();
+      cb->lex_token = NULL;
+	  cb->macro_end_expand = NULL;
     }
 }
 
@@ -1239,7 +1140,8 @@ symdb_cpp_token (void *gcc_data, void *user_data)
       in_pragma = true;
       return;
     }
-  bug_trap_token (token->file_offset);
+	expanded_location el = expand_location (token->src_loc);
+      bug_trap_token (el.line, el.column);
   cache_append_itoken_cpp_stage (token);
   if (mo_isvalid ())
     mo_append_macro_token ();
@@ -1326,7 +1228,7 @@ symdb_extern_func_old_param (void *gcc_data, void *user_data)
  *   direct-declarator ( parameter-type-list )
  *   ( attributes[opt] declarator )
 *
-* We also includes outer-paren cases, see symdb_extern_var.
+* We also includes outer/inner-paren cases, see symdb_extern_var.
  */
 static void
 symdb_extern_func (void *gcc_data, void *user_data)
@@ -1363,7 +1265,7 @@ symdb_extern_func (void *gcc_data, void *user_data)
 *   pointer[opt] direct-declarator
 * direct-declarator:
 *   identifier
-*   ( attributes[opt] declarator ) << `int (v)' or `int ((v))'.
+*   ( attributes[opt] declarator )
 *   direct-declarator array-declarator
 *   direct-declarator ( parameter-type-list ) << function declaration.
 *   direct-declarator ( identifier-list[opt] ) << function call.
@@ -1378,9 +1280,10 @@ symdb_extern_func (void *gcc_data, void *user_data)
 *
 * Our callback hook makes sure there's not function-call case at all.
 *
-* Case `( attributes[opt] declarator )' is called outer-paren and inner-paren
-* cases, see test/paren_declarator/. So let's strip outer-paren pair forwardly
-* first, then parsing reversely.
+* Case `( attributes[opt] declarator )' is called paren cases, see
+* test/paren_declarator/a.c. There're three -- outer, middle and inner cases.
+* `int ((**(funtdpcomplex)[2][3]))(void));'
+* function pointer includes all of them, from left to right.
 */
 static void
 symdb_extern_var (void *gcc_data, void *user_data)
@@ -1391,7 +1294,7 @@ symdb_extern_var (void *gcc_data, void *user_data)
   db_token *token;
   int cpp_type, c_type;
   int index;
-  bool funpvar = false;
+  int fun = 0;
 
   if (ds->storage_class == csc_extern)
     /* User needn't the kind of definition at all. */
@@ -1402,9 +1305,16 @@ symdb_extern_var (void *gcc_data, void *user_data)
   if (da->kind == cdk_function)
     {
       if (da->declarator->kind != cdk_pointer)
-	/* We encountered a function declaration. */
-	goto done;
-      funpvar = true;
+	{
+	  gcc_assert (da->declarator->kind == cdk_id);
+	  /* We encountered a function declaration or `typedef int fun(void);'. */
+	  if (ds->storage_class == csc_typedef)
+	    fun = 1;
+	  else
+	    goto done;
+	}
+      else
+	fun = 2;
     }
 
   index = def_strip_paren_declarator_outer (1);
@@ -1412,12 +1322,18 @@ symdb_extern_var (void *gcc_data, void *user_data)
     {
       token = cache_get (index);
       demangle_type (token, &cpp_type, &c_type);
-      if (funpvar)
+      if (fun)
 	{
-	  funpvar = false;
 	  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
 	  index = cache_skip_match_pair (index, ')');
-	  index++;
+	  if (fun == 2)
+	    {
+	      token = cache_get (index);
+	      demangle_type (token, &cpp_type, &c_type);
+	      gcc_assert (cpp_type == CPP_CLOSE_PAREN);
+	      index = def_strip_paren_declarator_middle (index);
+	    }
+	  fun = 0;
 	}
       else if (cpp_type == CPP_CLOSE_SQUARE)
 	index = cache_skip_match_pair (index, ']');
@@ -1425,7 +1341,6 @@ symdb_extern_var (void *gcc_data, void *user_data)
 	{
 	  index = def_strip_paren_declarator_inner (index);
 	  if (ds->storage_class == csc_typedef)
-	    /* We encountered a typedef. */
 	    def_append_chk (index, DEF_TYPEDEF);
 	  else
 	    def_append_chk (index, DEF_VAR);
@@ -1540,6 +1455,7 @@ plugin_tini (void *gcc_data, void *user_data)
   cb->macro_start_expand = NULL;
   cb->macro_end_expand = NULL;
   cb->start_directive = NULL;
+  cb->end_directive = NULL;
 
   unregister_callback ("symdb", PLUGIN_START_UNIT);
   unregister_callback ("symdb", PLUGIN_FINISH_UNIT);
@@ -1561,7 +1477,10 @@ plugin_init (struct plugin_name_args *plugin_info,
 {
   /* When `-E' is passed, symdb_unit_init is skipped. */
   if (flag_preprocess_only)
-    return 0;
+    {
+      printf ("`-E' or `-save-temps' aren't supported by symdb.so.");
+      return -1;
+    }
   /* We only accept a param -- `dbfile', using ProjectOverview table of
    * database to do more configs. */
   gcc_assert (plugin_info->argc == 1
@@ -1588,7 +1507,6 @@ plugin_init (struct plugin_name_args *plugin_info,
 
   cpp_callbacks *cb = cpp_get_callbacks (parse_in);
   cb->macro_start_expand = cb_macro_start;
-  cb->macro_end_expand = cb_macro_end;
   cb->start_directive = cb_start_directive;
   cb->end_directive = cb_end_directive;
   /* Note: cb->file_change callback is delayed to install in symdb_unit_init

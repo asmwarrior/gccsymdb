@@ -68,7 +68,7 @@ usage (void)
 {
   printf ("Usage:\n");
   printf ("    gs def/caller/callee filename definition\n");
-  printf ("    gs addsym/rmsym filename definition fileoffset\n");
+  printf ("    gs addsym/rmsym filename definition line column\n");
   printf ("    gs initdb prjpath\n");
   printf ("    gs vacuumdb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
@@ -177,7 +177,7 @@ def (const char *root_fn, const char *def)
 
   dep_search_deplist (root_fn, list);
   dyn_string_copy_cstr (gbuf,
-			"select fileName, fileoffset, flag from Helper where defName = '");
+			"select fileName, xline, xcolumn, flag from Helper where defName = '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "' and flag != ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_FUNC));
@@ -187,8 +187,8 @@ def (const char *root_fn, const char *def)
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
-    printf ("%s %s %s\n", table[i * ncolumn + 0], table[i * ncolumn + 1],
-	    def_flags[atoi (table[i * ncolumn + 2])].str);
+    printf ("%s %s %s %s\n", table[i * ncolumn + 0], table[i * ncolumn + 1], table[i * ncolumn + 2],
+	    def_flags[atoi (table[i * ncolumn + 3])].str);
   sqlite3_free_table (table);
 }
 
@@ -200,7 +200,7 @@ caller (const char *root_fn, const char *def)
 
   const char *fid = dep_get_fid (root_fn);
   dyn_string_copy_cstr (gbuf,
-			"select fileName, fileoffset, defName, flag from Helper where defID in (");
+			"select fileName, xline, xcolumn, defName, flag from Helper where defID in (");
   dyn_string_append_cstr (gbuf,
 			  "select callee from DefinitionRelationship where caller in (");
   dyn_string_append_cstr (gbuf, "select defID from Helper where defName = '");
@@ -216,9 +216,9 @@ caller (const char *root_fn, const char *def)
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
-    printf ("%s %s %s %s\n", table[i * ncolumn + 0],
-	    table[i * ncolumn + 1], table[i * ncolumn + 2],
-	    def_flags[atoi (table[i * ncolumn + 3])].str);
+    printf ("%s %s %s %s %s\n", table[i * ncolumn + 0],
+	    table[i * ncolumn + 1], table[i * ncolumn + 2], table[i * ncolumn + 3],
+	    def_flags[atoi (table[i * ncolumn + 4])].str);
   sqlite3_free_table (table);
 }
 
@@ -230,7 +230,7 @@ callee (const char *root_fn, const char *def)
 
   const char *fid = dep_get_fid (root_fn);
   dyn_string_copy_cstr (gbuf,
-			"select fileName, fileoffset, defName, flag from Helper where defID in (");
+			"select fileName, xline, xcolumn, defName, flag from Helper where defID in (");
   dyn_string_append_cstr (gbuf,
 			  "select caller from DefinitionRelationship where callee in (");
   dyn_string_append_cstr (gbuf, "select defID from Helper where defName = '");
@@ -246,14 +246,14 @@ callee (const char *root_fn, const char *def)
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
-    printf ("%s %s %s %s\n", table[i * ncolumn + 0],
-	    table[i * ncolumn + 1], table[i * ncolumn + 2],
-	    def_flags[atoi (table[i * ncolumn + 3])].str);
+    printf ("%s %s %s %s %s\n", table[i * ncolumn + 0],
+	    table[i * ncolumn + 1], table[i * ncolumn + 2], table[i * ncolumn + 3],
+	    def_flags[atoi (table[i * ncolumn + 4])].str);
   sqlite3_free_table (table);
 }
 
 static void
-addsym (const char *root_fn, const char *def, const char *fileoffset)
+addsym (const char *root_fn, const char *def, const char *line, const char *column)
 {
   const char *fid = dep_get_fid (root_fn);
   if (fid == NULL)
@@ -272,7 +272,9 @@ addsym (const char *root_fn, const char *def, const char *fileoffset)
   dyn_string_append_cstr (gbuf, "', ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
   dyn_string_append_cstr (gbuf, ", ");
-  dyn_string_append_cstr (gbuf, fileoffset);
+  dyn_string_append_cstr (gbuf, line);
+  dyn_string_append_cstr (gbuf, ", ");
+  dyn_string_append_cstr (gbuf, column);
   dyn_string_append_cstr (gbuf, ");");
   db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
   long long defid = sqlite3_last_insert_rowid (db);
@@ -287,7 +289,7 @@ addsym (const char *root_fn, const char *def, const char *fileoffset)
 }
 
 static void
-rmsym (const char *root_fn, const char *def, const char *fileoffset)
+rmsym (const char *root_fn, const char *def, const char *line, const char* column)
 {
   int nrow, ncolumn;
   char *error_msg, **table;
@@ -301,8 +303,10 @@ rmsym (const char *root_fn, const char *def, const char *fileoffset)
       dyn_string_append_cstr (gbuf, root_fn);
       dyn_string_append_cstr (gbuf, "'");
     }
-  dyn_string_append_cstr (gbuf, " and fileoffset = ");
-  dyn_string_append_cstr (gbuf, fileoffset);
+  dyn_string_append_cstr (gbuf, " and xline = ");
+  dyn_string_append_cstr (gbuf, line);
+  dyn_string_append_cstr (gbuf, " and xcolumn = ");
+  dyn_string_append_cstr (gbuf, column);
   dyn_string_append_cstr (gbuf, ";");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
@@ -391,10 +395,10 @@ main (int argc, char **argv)
       if (strcmp (argv[2], "--") == 0)
 	ret = usage ();
       else
-	addsym (argv[2], argv[3], argv[4]);
+	addsym (argv[2], argv[3], argv[4], argv[5]);
     }
   else if (strcmp (argv[1], "rmsym") == 0)
-    rmsym (argv[2], argv[3], argv[4]);
+    rmsym (argv[2], argv[3], argv[4], argv[5]);
   else
     ret = usage ();
   dep_tini ();
