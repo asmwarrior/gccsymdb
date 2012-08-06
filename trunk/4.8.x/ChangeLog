@@ -1,38 +1,41 @@
 ChangeLog
 -------------------------
 libcpp/
-2012-05-24  Yunfeng ZHANG <zyf.zeroos@gmail.com>
+2012-08-06  Yunfeng ZHANG <zyf.zeroos@gmail.com>
 
       * include/cpplib.h (struct cpp_callbacks): Add new callbacks.
-      macro_start_expand, macro_end_arg, macro_end_expand, start_directive,
-      end_directive, lex_token.
+      macro_start_expand, macro_end_expand, start_directive, end_directive,
+      lex_token.
       * directives.c (start_directive): Implement start_directive.
       (end_directive): Implement end_directive.
-      * macro.c (enter_macro_context): Implement macro_end_arg.
-      (cpp_get_token_1): Implement macro_start_expand and macro_end_expand.
+      * macro.c (enter_macro_context): Implement macro_start_expand.
+      (funlike_invocation_p): Implement macro_start_expand. Take a cpp_token
+      parameter.
+      (_cpp_pop_context): Implement macro_end_expand.
       * lex.c (_cpp_lex_token): Implement lex_token.
 
 gcc/
-2012-05-24  Yunfeng ZHANG <zyf.zeroos@gmail.com>
+2012-08-06  Yunfeng ZHANG <zyf.zeroos@gmail.com>
 
      * plugin.def: New plugin events, from new cpp/c token is arrived to new
      definition notification.
-     * c-parser.c: Move c_id_kind/c_token definitions to c-family/c-common.h.
+     * plugin.c (register_callback): Handle new plugin events.
+     (invoke_plugin_callbacks_full): Likewise.
+     * doc/plugins.texi: Document new plugin events.
+
+gcc/c/
+2012-08-06  Yunfeng ZHANG <zyf.zeroos@gmail.com>
+     * c-parser.c:
      (c_lex_one_token): Invoke PLUGIN_C_TOKEN callback.
      (c_parser_external_declaration): Invoke PLUGIN_EXTERN_DECL callback.
      (c_parser_declaration_or_fndef): Invoke PLUGIN_EXTERN_DECLSPECS,
      PLUGIN_EXTERN_VAR, PLUGIN_EXTERN_FUNC_OLD_PARAM, PLUGIN_EXTERN_FUNC
      callbacks.
-     (c_parser_enum_specifier): Invoke PLUGIN_ENUM_SPECIFIER callback.
+     (c_parser_enum_specifier): Invoke PLUGIN_ENUMERATOR callback.
      (c_parser_postfix_expression_after_primary): Invoke PLUGIN_CALL_FUNCTION
      callback.
-     * plugin.c (register_callback): Handle new plugin events.
-     (invoke_plugin_callbacks_full): Likewise.
-     * doc/plugins.texi: Document new plugin events.
 
 gcc/c-family/
-2012-05-24  Yunfeng ZHANG <zyf.zeroos@gmail.com>
+2012-08-06  Yunfeng ZHANG <zyf.zeroos@gmail.com>
      * c-lex.c: Include plugin.h.
      (c_lex_with_flags): Invoke PLUGIN_CPP_TOKEN callback.
-     * c-common.h: Include c-pragma.h. Move c_id_kind/c_token definitions from
-     c-parser.c.

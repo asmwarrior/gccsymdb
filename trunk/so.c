@@ -1009,8 +1009,8 @@ def_init (void)
 {
   /* Search fileDefinition view not Definition table. */
   db_error (sqlite3_prepare_v2 (db,
-				"select fileID, position, defID, defName, flag from Helper "
-				"where fileID = ? and position = ? and defName = ? and flag = ?;",
+				"select defID from Helper "
+				"where fileID = ? and fileoffset = ? and defName = ? and flag = ?;",
 				-1, &def.helper, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into Definition values (NULL, ?, ?, ?);",

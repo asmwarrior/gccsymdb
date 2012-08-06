@@ -144,7 +144,7 @@ every file is compiled two times in glibc internal
 It causes the strange case.
 
 Fortunately, I add two commands (not in cscope :)
-    gs addsym/rmsym filename definition position
+    gs addsym/rmsym filename definition fileoffset
 So you can remove the item you doesn't like by them. `gs addsym' is also
 useful since you can use it to append the symbols which are invisible from my
 plugin, such as `gs addsym arch/mips/kernel/vmlinux.lds jiffies 6601'.
@@ -443,7 +443,7 @@ definition.
 
 // Database (init.sql) <([{
 *) User should use the fields of ProjectOverview to control the plugin.
-*) User should use view Helper to search file, definition and position.
+*) User should use view Helper to search file, definition and fileoffset.
 *) Using `gs initdb/vacuumdb' to initialize database and arrange it.
 
 init.sql has been organized by vim fold feature. Meanwhile table chFile is

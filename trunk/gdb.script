@@ -15,7 +15,7 @@ b main
 r
 set follow-fork-mode child
 c
-adv compile_file
+adv do_compile
 end
 
 define gccmo

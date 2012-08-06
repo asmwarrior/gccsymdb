@@ -22,7 +22,7 @@ CREATE TABLE Definition (
 	id integer primary key autoincrement,
 	name text,
 	flag integer,
-	position integer
+	fileoffset integer
 );
 INSERT INTO "Definition" VALUES(1,'MUL_DEFINITION',3,12);
 INSERT INTO "Definition" VALUES(2,'i',1,60);
