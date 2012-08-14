@@ -396,6 +396,23 @@ To the fifth line, the sequence is
 To the fourth line, two cb_macro_start and three cb_macro_end are called.
 // }])>
 
+// Paste in Macro Expansion <([{
+The section is used to show some special context is pushed/poped along with
+normal macro expansion.
+    #define base(p) p
+    #define X(x, y) x ## y
+        X(ba, se)(1);
+    ----------
+    cb_macro_start(X)
+# paste case push a context, context.macro = NULL.
+    cb_macro_start(base)
+# enter_macro_context(Z) >> funlike_invocation_p >> cpp_get_token, similar to
+# cascaded case, but now two contexts are poped.
+    cb_macro_end(X context is poped)
+    cb_macro_end(paste case context, prev = NULL)
+    cb_macro_end(base context is poped, prev = NULL)
+// }])>
+
 // Patch Overview <([{
 // symdb_enhance_libcpp <([{
 Several new callbacks are appended into libpp/include/cpplib.h:cpp_callbacks:
