@@ -903,7 +903,7 @@ insert_def (enum definition_flag flag, dyn_string_t str, int offset)
       defid = sqlite3_last_insert_rowid (db);
     }
   else
-    defid = sqlite3_column_int64 (def.helper, 2);
+    defid = sqlite3_column_int64 (def.helper, 1);
   revalidate_sql (def.helper);
   return defid;
 }
@@ -1273,9 +1273,9 @@ symdb_call_func (void *gcc_data, void *user_data)
     return;
   if (TREE_CODE (decl) != FUNCTION_DECL)
     /* function-pointer, we don't care about it. */
-    return;
+    goto done;
   if (DECL_BUILT_IN (decl))
-    return;
+    goto done;
   token = cache_get (0);
   demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_OPEN_PAREN);
@@ -1284,6 +1284,8 @@ symdb_call_func (void *gcc_data, void *user_data)
   demangle_type (token, &cpp_type, &c_type);
   gcc_assert (is_uid (cpp_type, c_type));
   def_append_chk (index, DEF_CALLED_FUNC);
+
+done:
   cache_reset (0);
 }
 
@@ -1480,14 +1482,12 @@ symdb_declspecs (void *gcc_data, void *user_data)
   void **pair = (void **) gcc_data;
   const struct c_declspecs *ds = pair[0];
   int index = (int) pair[1];
-  tree node = ds->type;
-  enum tree_code code = TREE_CODE (node);
   enum definition_flag flag;
   db_token *token;
   int cpp_type, c_type;
 
   if (ds->typespec_kind == ctsk_typeof)
-    return;
+    goto done;
 
   while (true)
     {
@@ -1507,7 +1507,7 @@ symdb_declspecs (void *gcc_data, void *user_data)
   if (cpp_type != CPP_CLOSE_BRACE)
     goto done;
 
-  switch (code)
+  switch (TREE_CODE (ds->type))
     {
     case ENUMERAL_TYPE:
       flag = DEF_ENUM;
