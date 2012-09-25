@@ -48,6 +48,10 @@ section <Multiple-results ...>.
 8) My plugin is better than cscope in any cases, since I can catch definition
 after macro expansion (such as tell you where `sys_open' is defined in linux
 source) and skip `#ifdef/#if'.
+9) Tell you whether current position is skipped by `ifdef/if' directive clause
+block. About the feature, if you are IDE author, to `#if 0', database stores
+the scope from `if' to `0', not from `#' to `0' due to gcc callback
+architecture.
 // }])>
 
 // User Manual <([{
@@ -70,14 +74,14 @@ Compiling source by patched gcc (cd myplugin.src/):
 2) cp gs helper.vim init.sql target.src/ && cd target.src/
 3) ./gs initdb ./ # Initialize database. If you want to custom the plugin,
 update plugin-control-fields of database:ProjectOverview.
-4) Append `-fplugin=/path/to/symdb.so
--fplugin-arg-symdb-dbfile=/target.src/gccsym.db' to your CFLAGS.
-5) Since sqlite uses file-lock to synchronize database, so use `make -j1' to
-compile source.
-6) It will cost more time to compile your project, because my plugin need
+4) make STAGE2_CFLAGS="-fplugin=/home/zyf/src/symdb.gcc/symdb.so
+-fplugin-arg-symdb-dbfile=/home/zyf/gcc/gccsym.db" STAGE2_CONFIGURE_FLAGS=
+all-stage2
+5) It will cost more time to compile your project, because my plugin need
 compare whether a token has been inserted into database and multi-core can't
-help you -- see previous steps, do it overnight.
-7) ./gs vacuumdb ./ # Rearrange and defrag your database.
+help you -- sqlite doesn't support access database simultaneously, do it
+overnight.
+6) ./gs vacuumdb ./ # Rearrange and defrag your database.
 Of course, you can use some short-cuts to compile your projects without any
 modification.
     alias gcc='gccplugin -fplugin=symdb.so -fplugin-arg-symdb-dbfile=gccsym.db'
@@ -92,6 +96,7 @@ Working with new database:
 6) Using `CTRL-T' to jump back.
 7) Using `Gs def yoursymbol' to search a definition.
 8) Using `Gs callee yourfunction' to search function call relationship.
+8) Using `CTRL-X CTRL-Z' to judge whether current position is skipped.
 
 Vim quickref:
 Since my database stores the file-offset of every token, so
@@ -129,7 +134,7 @@ will return one result.
     #include "afile"
     #undef X
 Search `X' will return multiple results, gcc/tree.c includes several
-gcc/tree.def and definite symbol `DEFTREECODE' several times.
+gcc/tree.def and define symbol `DEFTREECODE' several times.
 
     #ifdef X
     int x;
@@ -354,6 +359,15 @@ be funlike macro. Here only list the first sequence
     cb_macro_start(Y3)
     cb_macro_start(Z)
     ...
+
+Another thing mentioned here is I've found there's a bug linking to the case,
+later code can make the plugin crashed.
+#define Z(a) a
+#define Y Z(
+Y1);
+I'm also sure in gcc-4.8.x, new function `in_macro_expansion_p' can solve it.
+It seems that the only solution to migrate the function from 4.8 to 4.6.3,
+also the priority of the job is very low due to nobody write code like this.
 // }])>
 
 // GCC Cancel + Cascaded Macro Expansion <([{

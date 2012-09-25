@@ -1,5 +1,4 @@
 -- vim: foldmarker=<([{,}])> foldmethod=marker
--- Synchronize helper.c:initdb() if the table is changed.
 create table ProjectOverview (
 	dbVersion text,
 	pluginVersion text,
@@ -42,6 +41,14 @@ create table FileDefinition (
 	fileID integer,
 	startDefID bigint,
 	endDefID bigint
+);
+
+-- The table stores the information of which lines are skipped by such like `ifdef/if'.
+create table IfdefScope (
+	fileID integer,
+	flag integer,
+	startOffset integer,
+	endOffset integer
 );
 
 -- Useful views <([{

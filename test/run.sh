@@ -19,6 +19,7 @@ test_it ()
 .du Definition
 .du DefinitionRelationship
 .du FileDefinition
+.du IfdefScope
 .qu
 EOF
 cat abc123 | ${MY_ROOT}/bin/sqlite3 gccsym.db && rm -f abc123)
@@ -27,6 +28,8 @@ diff $1/orig $1/new || exit 1
 }
 
 find . -\( -name '*.h' -or -name '*.c' -\) -exec touch -t 201201010101.00 {} \;
+test_it ifdef
+echo PASS ifdef
 test_it basic
 echo PASS basic
 test_it macro
