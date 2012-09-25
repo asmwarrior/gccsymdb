@@ -11,3 +11,5 @@ and cancel+cascaded.
 paren_declarator/: test outer-paren and inner-paren surrounding a declaration.
 
 cpptoken/: PLUGIN_CPP_TOKEN sometimes passes token = NULL, here is the case.
+
+ifdef/: test `ifdef/if' feature.

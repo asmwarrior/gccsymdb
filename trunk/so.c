@@ -26,6 +26,7 @@
  *   cache.itokens and is in charge of Definition fold of init.sql.
  *   6) Class file: is in charge of File fold and FileDefinition table of
  *   init.sql.
+ *   7) Class ifdef: is in charge of IfdefScope table of init.sql.
  *
  * GDB Guide:
  *   1) To support debug, I place a class `bug' in common fold, to use it,
@@ -354,6 +355,7 @@ flush_scopes (void)
 }
 
 static bool mo_isvalid (void);
+static void ifdef_push (void);
 static void
 file_push (const char *f, bool sys)
 {
@@ -367,11 +369,14 @@ file_push (const char *f, bool sys)
       insert_filedep (id);
     }
   VEC_safe_push (int, heap, file.includee, id);
+  ifdef_push ();
 }
 
+static void ifdef_pop (void);
 static void
 file_pop (void)
 {
+  ifdef_pop ();
   gcc_assert (!mo_isvalid ());
   flush_scopes ();
   VEC_pop (int, file.includee);
@@ -1034,8 +1039,100 @@ def_tini (void)
 
 /* }])> */
 
+/* ifdef <([{ */
+__extension__ enum ifdef_flag
+{
+  CLAUSE_ITSELF = 1,
+  SKIPPED,
+  NO_SKIPPED,
+};
+
+typedef struct
+{
+  long long start;
+  long long end;
+} ifdef_unit;
+DEF_VEC_O (ifdef_unit);
+DEF_VEC_ALLOC_O (ifdef_unit, heap);
+
+static struct
+{
+  VEC (ifdef_unit, heap) * units;
+
+  struct sqlite3_stmt *select_ifdefscope;
+  struct sqlite3_stmt *insert_ifdefscope;
+} ifdef;
+
+static void
+ifdef_append (enum ifdef_flag flag, int offset)
+{
+  ifdef_unit *unit = VEC_last (ifdef_unit, ifdef.units);
+  unit->end = offset;
+  int fileid = file_get_current_fid ();
+  db_error (sqlite3_bind_int (ifdef.select_ifdefscope, 1, fileid));
+  db_error (sqlite3_bind_int64 (ifdef.select_ifdefscope, 2, flag));
+  db_error (sqlite3_bind_int64 (ifdef.select_ifdefscope, 3, unit->start));
+  db_error (sqlite3_bind_int64 (ifdef.select_ifdefscope, 4, unit->end));
+  if (sqlite3_step (ifdef.select_ifdefscope) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 1, fileid));
+      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 2, flag));
+      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 3, unit->start));
+      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 4, unit->end));
+      execute_sql (ifdef.insert_ifdefscope);
+    }
+  revalidate_sql (ifdef.select_ifdefscope);
+  unit->start = offset;
+}
+
+static void
+ifdef_push (void)
+{
+  ifdef_unit *unit = VEC_safe_push (ifdef_unit, heap, ifdef.units, NULL);
+  unit->start = 0;
+  unit->end = -1;
+}
+
+static void
+ifdef_pop (void)
+{
+  ifdef_append (NO_SKIPPED, 0x10000000);
+  VEC_pop (ifdef_unit, ifdef.units);
+}
+
+static void
+ifdef_init (void)
+{
+  db_error (sqlite3_prepare_v2 (db,
+				"select rowid from IfdefScope "
+				"where fileID = ? and flag = ? "
+				"and startOffset = ? and endOffset = ?;",
+				-1, &ifdef.select_ifdefscope, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into IfdefScope values (?, ?, ?, ?);",
+				-1, &ifdef.insert_ifdefscope, 0));
+  ifdef.units = VEC_alloc (ifdef_unit, heap, 10);
+}
+
+static void
+ifdef_tini (void)
+{
+  VEC_free (ifdef_unit, heap, ifdef.units);
+  sqlite3_finalize (ifdef.insert_ifdefscope);
+  sqlite3_finalize (ifdef.select_ifdefscope);
+}
+
+/* }])> */
+
 /* cpp callbacks <([{ */
 /* The fold isn't class fold. */
+static struct
+{
+  int start_offset;
+  int end_offset;
+  bool valid;
+} ifdef_helper;
+
 static struct
 {
   int macro_tristate;
@@ -1044,10 +1141,6 @@ static struct
 static void
 cb_lex_token (cpp_reader * pfile, cpp_token_p token)
 {
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  /* Whether we're skipping by #ifdef/#if clause. */
-  if (pfile->state.skipping)
-    return;
   if (token->type == CPP_EOF)
     return;
   if (mo_isvalid ())
@@ -1055,18 +1148,39 @@ cb_lex_token (cpp_reader * pfile, cpp_token_p token)
   else
     {
       print_token (token, gbuf);
+
+      if (ifdef_helper.valid)
+	ifdef_helper.end_offset = token->file_offset + gbuf->length;
+      else if (strcmp (dyn_string_buf (gbuf), "ifdef") == 0
+	       || strcmp (dyn_string_buf (gbuf), "ifndef") == 0
+	       || strcmp (dyn_string_buf (gbuf), "if") == 0
+	       || strcmp (dyn_string_buf (gbuf), "else") == 0
+	       || strcmp (dyn_string_buf (gbuf), "elif") == 0
+	       || strcmp (dyn_string_buf (gbuf), "endif") == 0)
+	{
+	  ifdef_helper.valid = true;
+	  ifdef_helper.start_offset = token->file_offset;
+	  ifdef_append (pfile->state.skipping == 1 ? SKIPPED : NO_SKIPPED,
+			ifdef_helper.start_offset);
+	  if (strcmp (dyn_string_buf (gbuf), "else") == 0
+	      || strcmp (dyn_string_buf (gbuf), "endif") == 0)
+	    ifdef_helper.end_offset = token->file_offset + gbuf->length;
+	}
+
+      if (pfile->state.skipping == 1)
+	return;
+
       if (define_helper.macro_tristate == 1
 	  && strcmp (dyn_string_buf (gbuf), "define") == 0)
 	{
 	  define_helper.macro_tristate = 2;
 	  return;
 	}
-      if (define_helper.macro_tristate == 2)
+      else if (define_helper.macro_tristate == 2)
 	{
 	  def_append (DEF_MACRO, gbuf, token->file_offset);
 	  define_helper.macro_tristate = 0;
 	}
-      cb->lex_token = NULL;
     }
 }
 
@@ -1075,6 +1189,8 @@ cb_start_directive (cpp_reader * pfile)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
   define_helper.macro_tristate = 1;
+  ifdef_helper.start_offset = ifdef_helper.end_offset = -1;
+  ifdef_helper.valid = false;
   cb->lex_token = cb_lex_token;
   /* We don't care about macro expansion in directive, it's reset back in
    * cb_end_directive. */
@@ -1090,6 +1206,9 @@ cb_end_directive (cpp_reader * pfile)
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
   cb->macro_start_expand = cb_macro_start;
   cb->macro_end_expand = cb_macro_end;
+  cb->lex_token = NULL;
+  if (ifdef_helper.valid)
+    ifdef_append (CLAUSE_ITSELF, ifdef_helper.end_offset);
 }
 
 static void
@@ -1198,6 +1317,7 @@ symdb_unit_init (void *gcc_data, void *user_data)
 
   control_panel_init (main_input_filename);
   cache_init ();
+  ifdef_init ();
   file_init (main_input_filename);
   def_init ();
   gbuf = dyn_string_new (1024);
@@ -1210,6 +1330,7 @@ symdb_unit_tini (void *gcc_data, void *user_data)
   dyn_string_delete (gbuf);
   def_tini ();
   file_tini ();
+  ifdef_tini ();
   cache_tini ();
   control_panel_tini ();
 
@@ -1576,7 +1697,7 @@ plugin_init (struct plugin_name_args *plugin_info,
   if (flag_preprocess_only)
     {
       printf ("`-E' or `-save-temps' aren't supported by symdb.so.");
-      return -1;
+      return 0;
     }
   /* We only accept a param -- `dbfile', using ProjectOverview table of
    * database to do more configs. */

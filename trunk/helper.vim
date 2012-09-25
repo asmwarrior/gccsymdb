@@ -56,6 +56,15 @@ endfunction
 
 " }])>
 
+" GS_ifdef <([{
+function! s:GS_ifdef()
+call s:noInput()
+let s:i = col('.') + line2byte(line('.')) - 1
+let s:str = system('./gs ifdef ' . s:file_name . ' ' . s:i)
+echo s:str
+endfunction
+" }])>
+
 " GS_def <([{
 function! s:GS_def(from)
 if a:from != 1
@@ -129,6 +138,7 @@ endfunction
 nmap <C-]> :call <SID>GS_def(0)<CR>
 nmap <C-[> :call <SID>GS_called(0)<CR>
 nmap <C-T> :call <SID>GS_jumpback()<CR>
+nmap <C-X><C-Z> :call <SID>GS_ifdef()<CR>
 
 " Gs command of vim only supports def/callee subcommands, and filename is
 " always `--'.

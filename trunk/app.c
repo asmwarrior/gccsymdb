@@ -37,6 +37,13 @@ static struct
     [DEF_ENUM_MEMBER].str = "DEF_ENUM_MEMBER",
     [DEF_CALLED_FUNC].str = "DEF_CALLED_FUNC",};
 
+enum
+{
+  CLAUSE_ITSELF = 1,
+  SKIPPED,
+  NO_SKIPPED,
+};
+
 static struct sqlite3 *db;
 
 static long long
@@ -68,6 +75,7 @@ usage (void)
 {
   printf ("Usage:\n");
   printf ("    gs def/caller/callee filename definition\n");
+  printf ("    gs ifdef filename fileoffset\n");
   printf ("    gs addsym/rmsym filename definition fileoffset\n");
   printf ("    gs initdb prjpath\n");
   printf ("    gs vacuumdb prjpath\n");
@@ -355,6 +363,44 @@ vacuumdb (const char *path)
   system (dyn_string_buf (gbuf));
 }
 
+static void
+ifdef (const char *root_fn, const char *offset)
+{
+  int nrow, ncolumn;
+  char *error_msg, **table;
+
+  const char *fid = dep_get_fid (root_fn);
+  dyn_string_copy_cstr (gbuf, "select flag from IfdefScope where fileID = ");
+  dyn_string_append_cstr (gbuf, fid);
+  dyn_string_append_cstr (gbuf, " and startOffset <= ");
+  dyn_string_append_cstr (gbuf, offset);
+  dyn_string_append_cstr (gbuf, " and endOffset > ");
+  dyn_string_append_cstr (gbuf, offset);
+  dyn_string_append_cstr (gbuf, ";");
+  db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
+			       &nrow, &ncolumn, &error_msg));
+  int no_skipped = 0;
+  for (int i = 1; i <= nrow; i++)
+    {
+      switch (atoi (table[i * ncolumn]))
+	{
+	case CLAUSE_ITSELF:
+	  no_skipped++;
+	  break;
+	case SKIPPED:
+	  break;
+	case NO_SKIPPED:
+	  no_skipped++;
+	  break;
+	}
+    }
+  if (no_skipped)
+    printf ("no skipped");
+  else
+    printf ("skipped");
+  sqlite3_free_table (table);
+}
+
 /* }])> */
 
 int
@@ -386,6 +432,8 @@ main (int argc, char **argv)
     caller (argv[2], argv[3]);
   else if (strcmp (argv[1], "callee") == 0)
     callee (argv[2], argv[3]);
+  else if (strcmp (argv[1], "ifdef") == 0)
+    ifdef (argv[2], argv[3]);
   else if (strcmp (argv[1], "addsym") == 0)
     {
       if (strcmp (argv[2], "--") == 0)
