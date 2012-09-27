@@ -1,23 +1,5 @@
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
-CREATE TABLE chFile (
-	id integer primary key autoincrement,
-	name text,
-	mtime bigint,
-	sysHeader boolean
-);
-INSERT INTO "chFile" VALUES(1,'test/macro/a.c',1325350860,'f');
-CREATE INDEX FileName on chFile (name);
-COMMIT;
-PRAGMA foreign_keys=OFF;
-BEGIN TRANSACTION;
-CREATE TABLE FileDependence (
-	chFileID integer,
-	hID integer
-);
-COMMIT;
-PRAGMA foreign_keys=OFF;
-BEGIN TRANSACTION;
 CREATE TABLE Definition (
 	id integer primary key autoincrement,
 	name text,
@@ -83,18 +65,4 @@ CREATE TABLE FileDefinition (
 	endDefID bigint
 );
 INSERT INTO "FileDefinition" VALUES(1,1,33);
-COMMIT;
-PRAGMA foreign_keys=OFF;
-BEGIN TRANSACTION;
-CREATE TABLE IfdefScope (
-	fileID integer,
-	flag integer,
-	startOffset integer,
-	endOffset integer
-);
-INSERT INTO "IfdefScope" VALUES(1,3,0,1014);
-INSERT INTO "IfdefScope" VALUES(1,1,1014,1038);
-INSERT INTO "IfdefScope" VALUES(1,3,1038,1040);
-INSERT INTO "IfdefScope" VALUES(1,1,1040,1045);
-INSERT INTO "IfdefScope" VALUES(1,3,1045,268435456);
 COMMIT;
