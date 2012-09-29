@@ -26,7 +26,7 @@
  *   cache.itokens and is in charge of Definition fold of init.sql.
  *   6) Class file: is in charge of File fold and FileDefinition table of
  *   init.sql.
- *   7) Class ifdef: is in charge of IfdefScope table of init.sql.
+ *   7) Class ifdef: is in charge of Ifdef table of init.sql.
  *
  * GDB Guide:
  *   1) To support debug, I place a class `bug' in common fold, to use it,
@@ -1059,8 +1059,8 @@ static struct
 {
   VEC (ifdef_unit, heap) * units;
 
-  struct sqlite3_stmt *select_ifdefscope;
-  struct sqlite3_stmt *insert_ifdefscope;
+  struct sqlite3_stmt *select_ifdef;
+  struct sqlite3_stmt *insert_ifdef;
 } ifdef;
 
 static void
@@ -1069,19 +1069,19 @@ ifdef_append (enum ifdef_flag flag, int offset)
   ifdef_unit *unit = VEC_last (ifdef_unit, ifdef.units);
   unit->end = offset;
   int fileid = file_get_current_fid ();
-  db_error (sqlite3_bind_int (ifdef.select_ifdefscope, 1, fileid));
-  db_error (sqlite3_bind_int64 (ifdef.select_ifdefscope, 2, flag));
-  db_error (sqlite3_bind_int64 (ifdef.select_ifdefscope, 3, unit->start));
-  db_error (sqlite3_bind_int64 (ifdef.select_ifdefscope, 4, unit->end));
-  if (sqlite3_step (ifdef.select_ifdefscope) != SQLITE_ROW)
+  db_error (sqlite3_bind_int (ifdef.select_ifdef, 1, fileid));
+  db_error (sqlite3_bind_int64 (ifdef.select_ifdef, 2, flag));
+  db_error (sqlite3_bind_int64 (ifdef.select_ifdef, 3, unit->start));
+  db_error (sqlite3_bind_int64 (ifdef.select_ifdef, 4, unit->end));
+  if (sqlite3_step (ifdef.select_ifdef) != SQLITE_ROW)
     {
-      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 1, fileid));
-      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 2, flag));
-      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 3, unit->start));
-      db_error (sqlite3_bind_int (ifdef.insert_ifdefscope, 4, unit->end));
-      execute_sql (ifdef.insert_ifdefscope);
+      db_error (sqlite3_bind_int (ifdef.insert_ifdef, 1, fileid));
+      db_error (sqlite3_bind_int (ifdef.insert_ifdef, 2, flag));
+      db_error (sqlite3_bind_int (ifdef.insert_ifdef, 3, unit->start));
+      db_error (sqlite3_bind_int (ifdef.insert_ifdef, 4, unit->end));
+      execute_sql (ifdef.insert_ifdef);
     }
-  revalidate_sql (ifdef.select_ifdefscope);
+  revalidate_sql (ifdef.select_ifdef);
   unit->start = offset;
 }
 
@@ -1104,13 +1104,13 @@ static void
 ifdef_init (void)
 {
   db_error (sqlite3_prepare_v2 (db,
-				"select rowid from IfdefScope "
+				"select rowid from Ifdef "
 				"where fileID = ? and flag = ? "
 				"and startOffset = ? and endOffset = ?;",
-				-1, &ifdef.select_ifdefscope, 0));
+				-1, &ifdef.select_ifdef, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into IfdefScope values (?, ?, ?, ?);",
-				-1, &ifdef.insert_ifdefscope, 0));
+				"insert into Ifdef values (?, ?, ?, ?);",
+				-1, &ifdef.insert_ifdef, 0));
   ifdef.units = VEC_alloc (ifdef_unit, heap, 10);
 }
 
@@ -1118,8 +1118,56 @@ static void
 ifdef_tini (void)
 {
   VEC_free (ifdef_unit, heap, ifdef.units);
-  sqlite3_finalize (ifdef.insert_ifdefscope);
-  sqlite3_finalize (ifdef.select_ifdefscope);
+  sqlite3_finalize (ifdef.insert_ifdef);
+  sqlite3_finalize (ifdef.select_ifdef);
+}
+
+/* }])> */
+
+/* funp alias <([{ */
+static struct
+{
+  struct sqlite3_stmt *select_funpalias;
+  struct sqlite3_stmt *insert_funpalias;
+} funp_alias;
+
+void
+funp_alias_append (const char *mem_name, const char *fun_decl)
+{
+  db_error (sqlite3_bind_text
+	    (funp_alias.select_funpalias, 1, mem_name, -1, SQLITE_STATIC));
+  db_error (sqlite3_bind_text
+	    (funp_alias.select_funpalias, 2, fun_decl, -1, SQLITE_STATIC));
+  if (sqlite3_step (funp_alias.select_funpalias) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_text
+		(funp_alias.insert_funpalias, 1, mem_name, -1,
+		 SQLITE_STATIC));
+      db_error (sqlite3_bind_text
+		(funp_alias.insert_funpalias, 2, fun_decl, -1,
+		 SQLITE_STATIC));
+      execute_sql (funp_alias.insert_funpalias);
+    }
+  revalidate_sql (funp_alias.select_funpalias);
+}
+
+void
+funp_alias_init (void)
+{
+  db_error (sqlite3_prepare_v2 (db,
+				"select rowid from FunpAlias "
+				"where member = ? and funDecl = ?;",
+				-1, &funp_alias.select_funpalias, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into FunpAlias values (?, ?);",
+				-1, &funp_alias.insert_funpalias, 0));
+}
+
+void
+funp_alias_tini (void)
+{
+  sqlite3_finalize (funp_alias.insert_funpalias);
+  sqlite3_finalize (funp_alias.select_funpalias);
 }
 
 /* }])> */
@@ -1320,6 +1368,7 @@ symdb_unit_init (void *gcc_data, void *user_data)
   ifdef_init ();
   file_init (main_input_filename);
   def_init ();
+  funp_alias_init ();
   gbuf = dyn_string_new (1024);
 
 }
@@ -1328,6 +1377,7 @@ static void
 symdb_unit_tini (void *gcc_data, void *user_data)
 {
   dyn_string_delete (gbuf);
+  funp_alias_tini ();
   def_tini ();
   file_tini ();
   ifdef_tini ();
@@ -1374,6 +1424,33 @@ symdb_c_token (void *gcc_data, void *user_data)
   cache_append_itoken_c_stage (token);
 }
 
+static bool
+is_funcp (tree node)
+{
+  tree type = TREE_TYPE (node);
+  if (TREE_CODE (type) != POINTER_TYPE)
+    return false;
+  type = TREE_TYPE (type);
+  if (TREE_CODE (type) != FUNCTION_TYPE)
+    return false;
+  return true;
+}
+
+static tree
+get_funcp_member (tree var)
+{
+  if (TREE_CODE (var) != COMPONENT_REF)
+    return NULL;
+  gcc_assert (TREE_OPERAND_LENGTH (var) == 3);
+  tree member = TREE_OPERAND (var, 1);
+  if (!is_funcp (member))
+    return NULL;
+  gcc_assert (TREE_OPERAND (var, 2) == NULL);
+  gcc_assert (TREE_CODE (member) == FIELD_DECL);
+  gcc_assert (TREE_CODE_CLASS (TREE_CODE (member)) == tcc_declaration);
+  return member;
+}
+
 /*
  * postfix-expression:
  *   primary-expression
@@ -1392,10 +1469,13 @@ symdb_call_func (void *gcc_data, void *user_data)
   int index;
   if (block_list.call_func)
     return;
-  if (TREE_CODE (decl) != FUNCTION_DECL)
-    /* function-pointer, we don't care about it. */
-    goto done;
-  if (DECL_BUILT_IN (decl))
+  if (TREE_CODE (decl) == FUNCTION_DECL)
+    {
+      if (DECL_BUILT_IN (decl))
+	goto done;
+    }
+  else if (get_funcp_member (decl) == NULL)
+    /* Only simple function member pointer calling is supported. */
     goto done;
   token = cache_get (0);
   demangle_type (token, &cpp_type, &c_type);
@@ -1661,6 +1741,105 @@ symdb_extern_decl (void *gcc_data, void *user_data)
   block_list.call_func = true;
 }
 
+static void
+constructor_loop (tree node)
+{
+  if (TREE_CODE (TREE_TYPE (node)) != RECORD_TYPE
+      && TREE_CODE (TREE_TYPE (node)) != UNION_TYPE)
+    {
+      gcc_assert (TREE_CODE (TREE_TYPE (node)) == ARRAY_TYPE);
+      return;
+    }
+
+  int cnt;
+  tree index, value;
+  FOR_EACH_CONSTRUCTOR_ELT (CONSTRUCTOR_ELTS (node), cnt, index, value)
+  {
+    gcc_assert (TREE_CODE (index) == FIELD_DECL);
+    if (TREE_CODE (value) == ADDR_EXPR)
+      {
+	if (!is_funcp (value))
+	  continue;
+	gcc_assert (TREE_OPERAND_LENGTH (value) == 1);
+	tree arg0 = TREE_OPERAND (value, 0);
+	if (TREE_CODE (arg0) != FUNCTION_DECL)
+	  continue;
+	gcc_assert (TREE_CODE_CLASS (TREE_CODE (arg0)) == tcc_declaration);
+	gcc_assert (TREE_CODE_CLASS (TREE_CODE (index)) == tcc_declaration);
+	const char *a = IDENTIFIER_POINTER (DECL_NAME (index));
+	const char *b = IDENTIFIER_POINTER (DECL_NAME (arg0));
+	funp_alias_append (a, b);
+      }
+    else if (TREE_CODE (value) == CONSTRUCTOR)
+      constructor_loop (value);
+  }
+}
+
+static void
+modify_expr (tree node)
+{
+  if (!is_funcp (node))
+    return;
+  gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+  tree member = get_funcp_member (TREE_OPERAND (node, 0));
+  if (member == NULL)
+    return;
+  tree tmp = TREE_OPERAND (node, 1);
+  if (TREE_CODE (tmp) != ADDR_EXPR)
+    return;
+  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
+  tree funcdecl = TREE_OPERAND (tmp, 0);
+  if (TREE_CODE (funcdecl) != FUNCTION_DECL)
+    return;
+  gcc_assert (TREE_CODE_CLASS (TREE_CODE (funcdecl)) == tcc_declaration);
+  const char *a = IDENTIFIER_POINTER (DECL_NAME (member));
+  const char *b = IDENTIFIER_POINTER (DECL_NAME (funcdecl));
+  funp_alias_append (a, b);
+}
+
+/*
+ * The feature supports
+ * 1) var.member = fun-decl # Note, not var.member = a-fun-pointer.
+ * 2) var = { initializer-list } # as above, assign a member with fun-decl.
+ *
+ * 1)
+ * expression:
+ *   assignment-expression
+ *
+ * 2)
+ * initializer:
+ *   { initializer-list }
+ *   { initializer-list , }
+ * initializer-list:
+ *   designation[opt] initializer
+ *   initializer-list , designation[opt] initializer
+ * designation:
+ *   designator-list = 
+ * designator-list:
+ *   designator
+ *   designator-list designator
+ * designator:
+ *   . identifier
+ *
+ * And you struct-member can't be 2-level function pointer or array.
+ */
+static void
+symdb_funp_alias (void *gcc_data, void *user_data)
+{
+  tree node = (tree) gcc_data;
+  switch (TREE_CODE (node))
+    {
+    case CONSTRUCTOR:
+      constructor_loop (node);
+      break;
+    case MODIFY_EXPR:
+      modify_expr (node);
+      break;
+    default:
+      break;
+    }
+}
+
 /* }])> */
 
 int plugin_is_GPL_compatible;
@@ -1687,6 +1866,7 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_EXTERN_FUNC);
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
   unregister_callback ("symdb", PLUGIN_EXTERN_DECLSPECS);
+  unregister_callback ("symdb", PLUGIN_FUNP_ALIAS);
 }
 
 int
@@ -1722,6 +1902,7 @@ plugin_init (struct plugin_name_args *plugin_info,
   register_callback ("symdb", PLUGIN_EXTERN_VAR, &symdb_extern_var, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_DECLSPECS,
 		     &symdb_declspecs, NULL);
+  register_callback ("symdb", PLUGIN_FUNP_ALIAS, &symdb_funp_alias, NULL);
 
   cpp_callbacks *cb = cpp_get_callbacks (parse_in);
   cb->macro_start_expand = cb_macro_start;

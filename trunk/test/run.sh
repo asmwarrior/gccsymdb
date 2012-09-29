@@ -5,7 +5,7 @@ if [ "$1" = "clean" ]; then
 	exit 0;
 fi
 
-# test_it function <([{
+# dump_helper function <([{
 dump_helper ()
 {
 	if [ "$1" = "file" ]; then
@@ -13,7 +13,9 @@ dump_helper ()
 	elif [ "$1" = "def" ]; then
 		sed 's/uvwxyz/.du Definition\n.du DefinitionRelationship\n.du FileDefinition/' abc123 > 123abc
 	elif [ "$1" = "ifdef" ]; then
-		sed 's/uvwxyz/.du chFile\n.du IfdefScope/' abc123 > 123abc
+		sed 's/uvwxyz/.du chFile\n.du Ifdef/' abc123 > 123abc
+	elif [ "$1" = "falias" ]; then
+		sed 's/uvwxyz/.du FunpAlias\n.du Definition/' abc123 > 123abc
 	fi
 	mv 123abc abc123
 }
@@ -55,3 +57,5 @@ test_it hash def
 echo PASS hash
 test_it cpptoken def
 echo PASS cpptoken
+test_it funp_alias falias
+echo PASS funp_alias

@@ -1,8 +1,8 @@
-Index: gcc-4.6.3/gcc/plugin.def
+Index: gcc/gcc/plugin.def
 ===================================================================
---- gcc-4.6.3.orig/gcc/plugin.def	2012-06-18 15:53:11.650664884 +0800
-+++ gcc-4.6.3/gcc/plugin.def	2012-06-18 15:53:16.661632312 +0800
-@@ -89,6 +89,34 @@
+--- gcc.orig/gcc/plugin.def	2012-06-18 15:53:11.650664884 +0800
++++ gcc/gcc/plugin.def	2012-09-27 14:43:54.552385757 +0800
+@@ -89,6 +89,37 @@
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
  
@@ -34,13 +34,16 @@ Index: gcc-4.6.3/gcc/plugin.def
 +/* Called when an enumerator is parsed. */
 +DEFEVENT (PLUGIN_ENUMERATOR)
 +
++/* Function pointer is assigned. */
++DEFEVENT (PLUGIN_FUNP_ALIAS)
++
  /* After the hard-coded events above, plugins can dynamically allocate events
     at run time.
     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
-Index: gcc-4.6.3/gcc/c-family/c-lex.c
+Index: gcc/gcc/c-family/c-lex.c
 ===================================================================
---- gcc-4.6.3.orig/gcc/c-family/c-lex.c	2012-06-18 15:53:11.650664884 +0800
-+++ gcc-4.6.3/gcc/c-family/c-lex.c	2012-06-18 15:53:16.661632312 +0800
+--- gcc.orig/gcc/c-family/c-lex.c	2012-06-18 15:53:11.650664884 +0800
++++ gcc/gcc/c-family/c-lex.c	2012-06-18 15:53:16.661632312 +0800
 @@ -36,6 +36,7 @@
  #include "splay-tree.h"
  #include "debug.h"
@@ -73,10 +76,10 @@ Index: gcc-4.6.3/gcc/c-family/c-lex.c
  
    return type;
  }
-Index: gcc-4.6.3/gcc/c-parser.c
+Index: gcc/gcc/c-parser.c
 ===================================================================
---- gcc-4.6.3.orig/gcc/c-parser.c	2012-06-18 15:53:11.650664884 +0800
-+++ gcc-4.6.3/gcc/c-parser.c	2012-06-18 15:53:16.665473257 +0800
+--- gcc.orig/gcc/c-parser.c	2012-06-18 15:53:11.650664884 +0800
++++ gcc/gcc/c-parser.c	2012-09-27 14:52:23.560337365 +0800
 @@ -121,45 +121,6 @@
     C++).  It would then be possible to share more of the C and C++
     lexer code, if desired.  */
@@ -163,7 +166,16 @@ Index: gcc-4.6.3/gcc/c-parser.c
  	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
  	    {
  	      diagnosed_no_specs = true;
-@@ -1709,11 +1682,15 @@
+@@ -1618,6 +1591,8 @@
+ 	      init_loc = c_parser_peek_token (parser)->location;
+ 	      init = c_parser_initializer (parser);
+ 	      finish_init ();
++          if (!nested)
++        invoke_plugin_callbacks (PLUGIN_FUNP_ALIAS, init.value);
+ 	      if (d != error_mark_node)
+ 		{
+ 		  maybe_warn_string_init (TREE_TYPE (d), init);
+@@ -1709,11 +1684,15 @@
  	 declarator with a nonempty identifier list in a definition;
  	 and postfix attributes have never been accepted here in
  	 function definitions either.  */
@@ -179,7 +191,7 @@ Index: gcc-4.6.3/gcc/c-parser.c
        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
  	= c_parser_peek_token (parser)->location;
        fnbody = c_parser_compound_statement (parser);
-@@ -2211,6 +2188,7 @@
+@@ -2211,6 +2190,7 @@
  	    }
  	  token = c_parser_peek_token (parser);
  	  enum_id = token->value;
@@ -187,7 +199,7 @@ Index: gcc-4.6.3/gcc/c-parser.c
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
-@@ -6563,6 +6541,7 @@
+@@ -6563,6 +6543,7 @@
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -195,11 +207,19 @@ Index: gcc-4.6.3/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-Index: gcc-4.6.3/gcc/plugin.c
+@@ -6706,6 +6687,7 @@
+       expr.original_code = COMPOUND_EXPR;
+       expr.original_type = next.original_type;
+     }
++  invoke_plugin_callbacks (PLUGIN_FUNP_ALIAS, expr.value);
+   return expr;
+ }
+ 
+Index: gcc/gcc/plugin.c
 ===================================================================
---- gcc-4.6.3.orig/gcc/plugin.c	2012-06-18 15:53:11.650664884 +0800
-+++ gcc-4.6.3/gcc/plugin.c	2012-06-18 15:53:16.665473257 +0800
-@@ -438,6 +438,15 @@
+--- gcc.orig/gcc/plugin.c	2012-06-18 15:53:11.650664884 +0800
++++ gcc/gcc/plugin.c	2012-09-27 14:44:37.328459697 +0800
+@@ -438,6 +438,16 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -212,10 +232,11 @@ Index: gcc-4.6.3/gcc/plugin.c
 +      case PLUGIN_EXTERN_DECLSPECS:
 +      case PLUGIN_CALL_FUNCTION:
 +      case PLUGIN_ENUMERATOR:
++      case PLUGIN_FUNP_ALIAS:
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -514,6 +523,15 @@
+@@ -514,6 +524,16 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -228,14 +249,15 @@ Index: gcc-4.6.3/gcc/plugin.c
 +      case PLUGIN_EXTERN_DECLSPECS:
 +      case PLUGIN_CALL_FUNCTION:
 +      case PLUGIN_ENUMERATOR:
++      case PLUGIN_FUNP_ALIAS:
          {
            /* Iterate over every callback registered with this event and
               call it.  */
-Index: gcc-4.6.3/gcc/doc/plugins.texi
+Index: gcc/gcc/doc/plugins.texi
 ===================================================================
---- gcc-4.6.3.orig/gcc/doc/plugins.texi	2012-06-18 15:53:11.650664884 +0800
-+++ gcc-4.6.3/gcc/doc/plugins.texi	2012-06-18 15:53:16.665473257 +0800
-@@ -183,6 +183,23 @@
+--- gcc.orig/gcc/doc/plugins.texi	2012-06-18 15:53:11.650664884 +0800
++++ gcc/gcc/doc/plugins.texi	2012-09-27 14:42:51.448242637 +0800
+@@ -183,6 +183,25 @@
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
    PLUGIN_NEW_PASS,
@@ -256,13 +278,15 @@ Index: gcc-4.6.3/gcc/doc/plugins.texi
 +  PLUGIN_CALL_FUNCTION,
 +  /* An enumerator is parsed. */
 +  PLUGIN_ENUMERATOR,
++  /* Function pointer is assigned. */
++  PLUGIN_FUNP_ALIAS,
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
-Index: gcc-4.6.3/gcc/c-family/c-common.h
+Index: gcc/gcc/c-family/c-common.h
 ===================================================================
---- gcc-4.6.3.orig/gcc/c-family/c-common.h	2012-06-18 15:53:11.650664884 +0800
-+++ gcc-4.6.3/gcc/c-family/c-common.h	2012-06-18 15:53:16.667417437 +0800
+--- gcc.orig/gcc/c-family/c-common.h	2012-06-18 15:53:11.650664884 +0800
++++ gcc/gcc/c-family/c-common.h	2012-06-18 15:53:16.667417437 +0800
 @@ -25,6 +25,7 @@
  #include "splay-tree.h"
  #include "cpplib.h"

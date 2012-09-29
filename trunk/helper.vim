@@ -72,11 +72,20 @@ if a:from != 1
 endif
 
 " Call gs
-let s:str = system('./gs def ' . s:file_name . ' ' . s:symbol)
-if s:str == ''
-	let s:str = system('./gs def -- ' . s:symbol)
+if a:from == 1
+	let s:str = system('./gs falias member ' . s:symbol)
+	let s:alist = split(s:str, '\n')
+	let s:str = ''
+	for s:element in s:alist
+		let s:str = s:str . system('./gs def -- ' . s:element)
+	endfor
+else
+	let s:str = system('./gs def ' . s:file_name . ' ' . s:symbol)
 	if s:str == ''
-		return
+		let s:str = system('./gs def -- ' . s:symbol)
+		if s:str == ''
+			return
+		endif
 	endif
 endif
 
@@ -96,9 +105,18 @@ if a:from != 1
 endif
 
 " Call gs
-let s:str = system('./gs callee -- ' . s:symbol)
-if s:str == ''
-	return
+if a:from == 1
+	let s:str = system('./gs falias fundecl ' . s:symbol)
+	let s:alist = split(s:str, '\n')
+	let s:str = ''
+	for s:element in s:alist
+		let s:str = s:str . system('./gs callee -- ' . s:element)
+	endfor
+else
+	let s:str = system('./gs callee -- ' . s:symbol)
+	if s:str == ''
+		return
+	endif
 endif
 
 let s:i = s:showSelection()
@@ -116,6 +134,15 @@ call s:jumpBack()
 endfunction
 " }])>
 
+" GS_falias <([{
+function! s:GS_falias()
+let s:str = system('./gs falias member ' . s:symbol)
+echo s:str
+let s:str = system('./gs falias fundecl ' . s:symbol)
+echo s:str
+endfunction
+" }])>
+
 " GS_cmd <([{
 " Support only def/callee subcommand.
 function! s:GS_cmd(subcmd, symbol)
@@ -127,6 +154,12 @@ elseif a:subcmd == 'callee'
 	let s:file_name = '--'
 	let s:symbol = a:symbol
 	call s:GS_called(1)
+elseif a:subcmd == 'ifdef'
+	call s:GS_ifdef()
+elseif a:subcmd == 'falias'
+	let s:file_name = '--'
+	let s:symbol = a:symbol
+	call s:GS_falias()
 endif
 endfunction
 " }])>
@@ -138,8 +171,6 @@ endfunction
 nmap <C-]> :call <SID>GS_def(0)<CR>
 nmap <C-[> :call <SID>GS_called(0)<CR>
 nmap <C-T> :call <SID>GS_jumpback()<CR>
-nmap <C-X><C-Z> :call <SID>GS_ifdef()<CR>
 
-" Gs command of vim only supports def/callee subcommands, and filename is
-" always `--'.
+" To `Gs' command of vim, filename is always `--'.
 command! -nargs=* Gs  call <SID>GS_cmd(<f-args>)

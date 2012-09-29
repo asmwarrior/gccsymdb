@@ -1,0 +1,37 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunpAlias (
+	member text,
+	funDecl text
+);
+INSERT INTO "FunpAlias" VALUES('mem','foo');
+INSERT INTO "FunpAlias" VALUES('eme','oof');
+INSERT INTO "FunpAlias" VALUES('mem','foo_expr');
+INSERT INTO "FunpAlias" VALUES('eme','oof_expr');
+CREATE INDEX Alias on FunpAlias (member, funDecl);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	fileoffset integer
+);
+INSERT INTO "Definition" VALUES(1,'F',4,15);
+INSERT INTO "Definition" VALUES(2,'control',1,38);
+INSERT INTO "Definition" VALUES(3,'f',1,53);
+INSERT INTO "Definition" VALUES(4,'foo',2,61);
+INSERT INTO "Definition" VALUES(5,'oof',2,79);
+INSERT INTO "Definition" VALUES(6,'ofo',2,97);
+INSERT INTO "Definition" VALUES(7,'foo_expr',2,115);
+INSERT INTO "Definition" VALUES(8,'oof_expr',2,138);
+INSERT INTO "Definition" VALUES(9,'ofo_expr',2,161);
+INSERT INTO "Definition" VALUES(10,'u',1,207);
+INSERT INTO "Definition" VALUES(11,'def',5,237);
+INSERT INTO "Definition" VALUES(12,'abc',5,262);
+INSERT INTO "Definition" VALUES(13,'x',1,339);
+INSERT INTO "Definition" VALUES(14,'main',2,565);
+INSERT INTO "Definition" VALUES(15,'mem',9,633);
+CREATE INDEX DefName on Definition (name);
+COMMIT;

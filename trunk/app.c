@@ -77,6 +77,7 @@ usage (void)
   printf ("    gs def/caller/callee filename definition\n");
   printf ("    gs ifdef filename fileoffset\n");
   printf ("    gs addsym/rmsym filename definition fileoffset\n");
+  printf ("    gs falias member/fundecl symbol\n");
   printf ("    gs initdb prjpath\n");
   printf ("    gs vacuumdb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
@@ -370,7 +371,7 @@ ifdef (const char *root_fn, const char *offset)
   char *error_msg, **table;
 
   const char *fid = dep_get_fid (root_fn);
-  dyn_string_copy_cstr (gbuf, "select flag from IfdefScope where fileID = ");
+  dyn_string_copy_cstr (gbuf, "select flag from Ifdef where fileID = ");
   dyn_string_append_cstr (gbuf, fid);
   dyn_string_append_cstr (gbuf, " and startOffset <= ");
   dyn_string_append_cstr (gbuf, offset);
@@ -401,6 +402,33 @@ ifdef (const char *root_fn, const char *offset)
   sqlite3_free_table (table);
 }
 
+static void
+falias (const char *type, const char *symbol)
+{
+  int nrow, ncolumn;
+  char *error_msg, **table;
+
+  if (strcmp (type, "member") == 0)
+    {
+      dyn_string_copy_cstr (gbuf,
+			    "select fundecl from FunpAlias where member = '");
+    }
+  else if (strcmp (type, "fundecl") == 0)
+    {
+      dyn_string_copy_cstr (gbuf,
+			    "select member from FunpAlias where fundecl = '");
+    }
+  dyn_string_append_cstr (gbuf, symbol);
+  dyn_string_append_cstr (gbuf, "';");
+  db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
+			       &nrow, &ncolumn, &error_msg));
+  for (int i = 1; i <= nrow; i++)
+    {
+      printf ("%s\n", table[i]);
+    }
+  sqlite3_free_table (table);
+}
+
 /* }])> */
 
 int
@@ -409,6 +437,11 @@ main (int argc, char **argv)
   int ret = EXIT_SUCCESS;
   gbuf = dyn_string_new (1024);
   list = dyn_string_new (256);
+  if (argc == 1)
+    {
+      ret = usage ();
+      return -1;
+    }
   if (argc == 3 && strcmp (argv[1], "initdb") == 0)
     {
       initdb (argv[2]);
@@ -424,9 +457,7 @@ main (int argc, char **argv)
   db_error ((sqlite3_exec
 	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
   dep_init ();
-  if (argc < 4)
-    ret = usage ();
-  else if (strcmp (argv[1], "def") == 0)
+  if (strcmp (argv[1], "def") == 0)
     def (argv[2], argv[3]);
   else if (strcmp (argv[1], "caller") == 0)
     caller (argv[2], argv[3]);
@@ -443,8 +474,8 @@ main (int argc, char **argv)
     }
   else if (strcmp (argv[1], "rmsym") == 0)
     rmsym (argv[2], argv[3], argv[4]);
-  else
-    ret = usage ();
+  else if (strcmp (argv[1], "falias") == 0)
+    falias (argv[2], argv[3]);
   dep_tini ();
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);
