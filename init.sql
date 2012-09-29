@@ -44,11 +44,16 @@ create table FileDefinition (
 );
 
 -- The table stores the information of which lines are skipped by such like `ifdef/if'.
-create table IfdefScope (
+create table Ifdef (
 	fileID integer,
 	flag integer,
 	startOffset integer,
 	endOffset integer
+);
+
+create table FunpAlias (
+	member text,
+	funDecl text
 );
 
 -- Useful views <([{
@@ -69,6 +74,8 @@ where
 create index FileName on chFile (name);
 
 create index DefName on Definition (name);
+
+create index Alias on FunpAlias (member, funDecl); 
 -- }])>
 
 insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "/project/root/path/");
