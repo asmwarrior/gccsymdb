@@ -874,6 +874,7 @@ __extension__ enum definition_flag
   DEF_ENUM,
   DEF_ENUM_MEMBER,
   DEF_CALLED_FUNC,
+  DEF_CALLED_POINTER,
 };
 
 static struct
@@ -934,7 +935,7 @@ def_append (enum definition_flag flag, dyn_string_t str, int offset)
   long long defid = insert_def (flag, str, offset);
   if (flag == DEF_FUNC)
     def.caller_id = defid;
-  else if (flag == DEF_CALLED_FUNC)
+  else if (flag == DEF_CALLED_FUNC || flag == DEF_CALLED_POINTER)
     insert_defrel (defid);
   file_insert_defid (defid);
 }
@@ -1132,20 +1133,33 @@ static struct
 } funp_alias;
 
 void
-funp_alias_append (const char *mem_name, const char *fun_decl)
+funp_alias_append (const char *type_name, const char *mem_name,
+		   const char *fun_decl)
 {
+  // printf ("falias %s::%s = %s\n", type_name, mem_name, fun_decl);
+  int fileid = file_get_current_fid ();
+  int offset = cache_itoken_to_chtoken (0)->file_offset;
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 1, mem_name, -1, SQLITE_STATIC));
+	    (funp_alias.select_funpalias, 1, type_name, -1, SQLITE_STATIC));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 2, fun_decl, -1, SQLITE_STATIC));
+	    (funp_alias.select_funpalias, 2, mem_name, -1, SQLITE_STATIC));
+  db_error (sqlite3_bind_text
+	    (funp_alias.select_funpalias, 3, fun_decl, -1, SQLITE_STATIC));
+  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 4, fileid));
+  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 5, offset));
   if (sqlite3_step (funp_alias.select_funpalias) != SQLITE_ROW)
     {
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 1, mem_name, -1,
+		(funp_alias.insert_funpalias, 1, type_name, -1,
 		 SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 2, fun_decl, -1,
+		(funp_alias.insert_funpalias, 2, mem_name, -1,
 		 SQLITE_STATIC));
+      db_error (sqlite3_bind_text
+		(funp_alias.insert_funpalias, 3, fun_decl, -1,
+		 SQLITE_STATIC));
+      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 4, fileid));
+      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 5, offset));
       execute_sql (funp_alias.insert_funpalias);
     }
   revalidate_sql (funp_alias.select_funpalias);
@@ -1156,10 +1170,11 @@ funp_alias_init (void)
 {
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FunpAlias "
-				"where member = ? and funDecl = ?;",
+				"where typeName = ? and member = ? and funDecl = ?"
+				" and fileID = ? and offset = ?;",
 				-1, &funp_alias.select_funpalias, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into FunpAlias values (?, ?);",
+				"insert into FunpAlias values (?, ?, ?, ?, ?);",
 				-1, &funp_alias.insert_funpalias, 0));
 }
 
@@ -1370,7 +1385,6 @@ symdb_unit_init (void *gcc_data, void *user_data)
   def_init ();
   funp_alias_init ();
   gbuf = dyn_string_new (1024);
-
 }
 
 static void
@@ -1437,7 +1451,7 @@ is_funcp (tree node)
 }
 
 static tree
-get_funcp_member (tree var)
+get_funcp_member (tree var, tree * type)
 {
   if (TREE_CODE (var) != COMPONENT_REF)
     return NULL;
@@ -1448,6 +1462,8 @@ get_funcp_member (tree var)
   gcc_assert (TREE_OPERAND (var, 2) == NULL);
   gcc_assert (TREE_CODE (member) == FIELD_DECL);
   gcc_assert (TREE_CODE_CLASS (TREE_CODE (member)) == tcc_declaration);
+  if (type != NULL)
+    *type = TREE_TYPE (TREE_OPERAND (var, 0));
   return member;
 }
 
@@ -1467,6 +1483,7 @@ symdb_call_func (void *gcc_data, void *user_data)
   db_token *token;
   int cpp_type, c_type;
   int index;
+  bool pointer = false;
   if (block_list.call_func)
     return;
   if (TREE_CODE (decl) == FUNCTION_DECL)
@@ -1474,8 +1491,11 @@ symdb_call_func (void *gcc_data, void *user_data)
       if (DECL_BUILT_IN (decl))
 	goto done;
     }
-  else if (get_funcp_member (decl) == NULL)
-    /* Only simple function member pointer calling is supported. */
+  else if (get_funcp_member (decl, NULL) != NULL)
+    {
+      pointer = true;
+    }
+  else
     goto done;
   token = cache_get (0);
   demangle_type (token, &cpp_type, &c_type);
@@ -1484,7 +1504,7 @@ symdb_call_func (void *gcc_data, void *user_data)
   token = cache_get (index);
   demangle_type (token, &cpp_type, &c_type);
   gcc_assert (is_uid (cpp_type, c_type));
-  def_append_chk (index, DEF_CALLED_FUNC);
+  def_append_chk (index, pointer ? DEF_CALLED_POINTER : DEF_CALLED_FUNC);
 
 done:
   cache_reset (0);
@@ -1741,13 +1761,22 @@ symdb_extern_decl (void *gcc_data, void *user_data)
   block_list.call_func = true;
 }
 
+static const char *
+get_typename (tree type)
+{
+  const char *result = "";
+  if (TYPE_NAME (type) && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
+    result = IDENTIFIER_POINTER (TYPE_NAME (type));
+  return result;
+}
+
 static void
 constructor_loop (tree node)
 {
-  if (TREE_CODE (TREE_TYPE (node)) != RECORD_TYPE
-      && TREE_CODE (TREE_TYPE (node)) != UNION_TYPE)
+  tree type = TREE_TYPE (node);
+  if (TREE_CODE (type) != RECORD_TYPE && TREE_CODE (type) != UNION_TYPE)
     {
-      gcc_assert (TREE_CODE (TREE_TYPE (node)) == ARRAY_TYPE);
+      gcc_assert (TREE_CODE (type) == ARRAY_TYPE);
       return;
     }
 
@@ -1768,7 +1797,8 @@ constructor_loop (tree node)
 	gcc_assert (TREE_CODE_CLASS (TREE_CODE (index)) == tcc_declaration);
 	const char *a = IDENTIFIER_POINTER (DECL_NAME (index));
 	const char *b = IDENTIFIER_POINTER (DECL_NAME (arg0));
-	funp_alias_append (a, b);
+	const char *c = get_typename (type);
+	funp_alias_append (c, a, b);
       }
     else if (TREE_CODE (value) == CONSTRUCTOR)
       constructor_loop (value);
@@ -1781,7 +1811,8 @@ modify_expr (tree node)
   if (!is_funcp (node))
     return;
   gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
-  tree member = get_funcp_member (TREE_OPERAND (node, 0));
+  tree type;
+  tree member = get_funcp_member (TREE_OPERAND (node, 0), &type);
   if (member == NULL)
     return;
   tree tmp = TREE_OPERAND (node, 1);
@@ -1794,7 +1825,8 @@ modify_expr (tree node)
   gcc_assert (TREE_CODE_CLASS (TREE_CODE (funcdecl)) == tcc_declaration);
   const char *a = IDENTIFIER_POINTER (DECL_NAME (member));
   const char *b = IDENTIFIER_POINTER (DECL_NAME (funcdecl));
-  funp_alias_append (a, b);
+  const char *c = get_typename (type);
+  funp_alias_append (c, a, b);
 }
 
 /*

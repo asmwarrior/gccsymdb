@@ -23,6 +23,7 @@ static struct
     DEF_ENUM,
     DEF_ENUM_MEMBER,
     DEF_CALLED_FUNC,
+    DEF_CALLED_POINTER,
   } flag;
   const char *str;
 } def_flags[] =
@@ -35,7 +36,8 @@ static struct
     [DEF_UNION].str = "DEF_UNION",
     [DEF_ENUM].str = "DEF_ENUM",
     [DEF_ENUM_MEMBER].str = "DEF_ENUM_MEMBER",
-    [DEF_CALLED_FUNC].str = "DEF_CALLED_FUNC",};
+    [DEF_CALLED_FUNC].str = "DEF_CALLED_FUNC",
+    [DEF_CALLED_POINTER].str = "DEF_CALLED_POINTER",};
 
 enum
 {
@@ -411,21 +413,28 @@ falias (const char *type, const char *symbol)
   if (strcmp (type, "member") == 0)
     {
       dyn_string_copy_cstr (gbuf,
-			    "select fundecl from FunpAlias where member = '");
+			    "select name, offset, "
+			    " case when typeName = '' then '--' else typeName end, "
+			    " funDecl"
+			    " from FunpAlias, chFile "
+			    " where id = fileID and member = '");
     }
   else if (strcmp (type, "fundecl") == 0)
     {
       dyn_string_copy_cstr (gbuf,
-			    "select member from FunpAlias where fundecl = '");
+			    "select name, offset, "
+			    " case when typeName = '' then '--' else typeName end, "
+			    " member"
+			    " from FunpAlias, chFile "
+			    " where id = fileID and funDecl = '");
     }
   dyn_string_append_cstr (gbuf, symbol);
-  dyn_string_append_cstr (gbuf, "';");
+  dyn_string_append_cstr (gbuf, "' order by typeName;");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
-    {
-      printf ("%s\n", table[i]);
-    }
+    printf ("%s %s %s %s\n", table[i * ncolumn + 0], table[i * ncolumn + 1],
+	    table[i * ncolumn + 2], table[i * ncolumn + 3]);
   sqlite3_free_table (table);
 }
 

@@ -72,58 +72,45 @@ if a:from != 1
 endif
 
 " Call gs
-if a:from == 1
-	let s:str = system('./gs falias member ' . s:symbol)
-	let s:alist = split(s:str, '\n')
-	let s:str = ''
-	for s:element in s:alist
-		let s:str = s:str . system('./gs def -- ' . s:element)
-	endfor
-else
-	let s:str = system('./gs def ' . s:file_name . ' ' . s:symbol)
-	if s:str == ''
-		let s:str = system('./gs def -- ' . s:symbol)
-		if s:str == ''
-			return
-		endif
-	endif
+let s:str = system('./gs def ' . s:file_name . ' ' . s:symbol)
+if s:str == ''
+	let s:str = system('./gs def -- ' . s:symbol)
+endif
+if s:str == ''
+	return
 endif
 
 let s:i = s:showSelection()
 if s:i == -1
 	return
 endif
-
 call s:jumpTo()
 endfunction
 " }])>
 
-" GS_called <([{
-function! s:GS_called(from)
+" GS_callee <([{
+function! s:GS_callee(from)
 if a:from != 1
 	call s:noInput()
 endif
 
 " Call gs
-if a:from == 1
-	let s:str = system('./gs falias fundecl ' . s:symbol)
-	let s:alist = split(s:str, '\n')
-	let s:str = ''
-	for s:element in s:alist
-		let s:str = s:str . system('./gs callee -- ' . s:element)
-	endfor
-else
-	let s:str = system('./gs callee -- ' . s:symbol)
-	if s:str == ''
-		return
-	endif
+let s:str = system('./gs callee -- ' . s:symbol)
+let s:str2 = system('./gs falias fundecl ' . s:symbol)
+let s:alist = split(s:str2, '\n')
+for s:element in s:alist
+	let s:str = s:str . s:element . " CALL_MEMBER_POINTER <<< \n"
+	let s:blist = split(s:element)
+	let s:str = s:str . system('./gs callee -- ' . s:blist[3])
+endfor
+if s:str == ''
+	return
 endif
 
 let s:i = s:showSelection()
 if s:i == -1
 	return
 endif
-
 call s:jumpTo()
 endfunction
 " }])>
@@ -135,6 +122,26 @@ endfunction
 " }])>
 
 " GS_falias <([{
+function! s:GS_falias_def()
+let s:str = ''
+let s:str2 = system('./gs falias member ' . s:symbol)
+let s:alist = split(s:str2, '\n')
+for s:element in s:alist
+	let s:str = s:str . s:element . " MEMBER_POINTER <<< \n"
+	let s:blist = split(s:element)
+	let s:str = s:str . system('./gs def -- ' . s:blist[3])
+endfor
+if s:str == ''
+	return
+endif
+
+let s:i = s:showSelection()
+if s:i == -1
+	return
+endif
+call s:jumpTo()
+endfunction
+
 function! s:GS_falias()
 let s:str = system('./gs falias member ' . s:symbol)
 echo s:str
@@ -145,21 +152,25 @@ endfunction
 
 " GS_cmd <([{
 " Support only def/callee subcommand.
-function! s:GS_cmd(subcmd, symbol)
+function! s:GS_cmd(subcmd, ...)
 if a:subcmd == 'def'
 	let s:file_name = '--'
-	let s:symbol = a:symbol
+	let s:symbol = a:1
 	call s:GS_def(1)
 elseif a:subcmd == 'callee'
 	let s:file_name = '--'
-	let s:symbol = a:symbol
-	call s:GS_called(1)
+	let s:symbol = a:1
+	call s:GS_callee(1)
 elseif a:subcmd == 'ifdef'
 	call s:GS_ifdef()
 elseif a:subcmd == 'falias'
 	let s:file_name = '--'
-	let s:symbol = a:symbol
+	let s:symbol = a:1
 	call s:GS_falias()
+elseif a:subcmd == 'fdef'
+	let s:file_name = '--'
+	let s:symbol = a:1
+	call s:GS_falias_def()
 endif
 endfunction
 " }])>
@@ -169,7 +180,7 @@ endfunction
 " To see where char-offset is from file, try `g<CTRL-g>' on the char.
 
 nmap <C-]> :call <SID>GS_def(0)<CR>
-nmap <C-[> :call <SID>GS_called(0)<CR>
+nmap <C-[> :call <SID>GS_callee(0)<CR>
 nmap <C-T> :call <SID>GS_jumpback()<CR>
 
 " To `Gs' command of vim, filename is always `--'.

@@ -82,8 +82,8 @@ call s:jumpTo()
 endfunction
 " }])>
 
-" GS_called <([{
-function! s:GS_called(from)
+" GS_callee <([{
+function! s:GS_callee(from)
 if a:from != 1
 	call s:noInput()
 endif
@@ -119,13 +119,13 @@ if a:subcmd == 'def'
 elseif a:subcmd == 'callee'
 	let s:file_name = '--'
 	let s:symbol = a:symbol
-	call s:GS_called(1)
+	call s:GS_callee(1)
 endif
 endfunction
 " }])>
 
 nmap <C-]> :call <SID>GS_def(0)<CR>
-nmap <C-[> :call <SID>GS_called(0)<CR>
+nmap <C-[> :call <SID>GS_callee(0)<CR>
 nmap <C-T> :call <SID>GS_jumpback()<CR>
 
 " Gs command of vim only supports def/callee subcommands, and filename is
