@@ -52,8 +52,11 @@ create table Ifdef (
 );
 
 create table FunpAlias (
+	typeName text,
 	member text,
-	funDecl text
+	funDecl text,
+	fileID integer,
+	offset integer
 );
 
 -- Useful views <([{

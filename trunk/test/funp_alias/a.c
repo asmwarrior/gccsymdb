@@ -11,9 +11,9 @@ void ofo_expr(void) {}
 union
 {
 	char c;
-	F mem;
+	F u_mem;
 } u = {
-	.mem = foo,
+	.u_mem = foo,
 };
 
 struct def
