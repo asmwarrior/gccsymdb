@@ -126,10 +126,15 @@ function! s:GS_falias_def()
 let s:str = ''
 let s:str2 = system('./gs falias member ' . s:symbol)
 let s:alist = split(s:str2, '\n')
+let s:prevalias = ''
 for s:element in s:alist
-	let s:str = s:str . s:element . " MEMBER_POINTER <<< \n"
 	let s:blist = split(s:element)
+	if s:prevalias == s:blist[3]
+		continue
+	endif
+	let s:str = s:str . s:element . " MEMBER_POINTER <<< \n"
 	let s:str = s:str . system('./gs def -- ' . s:blist[3])
+	let s:prevalias = s:blist[3]
 endfor
 if s:str == ''
 	return

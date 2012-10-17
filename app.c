@@ -192,6 +192,8 @@ def (const char *root_fn, const char *def)
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "' and flag != ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_FUNC));
+  dyn_string_append_cstr (gbuf, " and flag != ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_POINTER));
   dyn_string_append_cstr (gbuf, " and ");
   dyn_string_append (gbuf, list);
   dyn_string_append_cstr (gbuf, ";");
