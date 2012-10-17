@@ -26,40 +26,49 @@ struct abc
 	char c;
 	F mem;
 	struct def y;
+	struct def* py;
 	struct def z[2];
 	F arr[2];
 	F* pp;
 } x = {
-	// The second and the third are the same, gcc internal only stores a tree.
+	// Initialize list sample.
 	.mem = foo,
+	// The later two lines are the same, gcc internal only stores a tree -- `.y.eme = oof'.
 	.y = { foo, },
 	.y.eme = oof,
-
 	// Later lines are too complex syntax.
 	.z[0].eme = ofo,
 	.arr[0] = ofo,
 	.pp = (F*) ofo,
 };
+struct abc* jump;
 
 int main(void)
 {
-	// Simple member function pointer calling sample.
+	jump = &x;
+
+	// calling sample.
 	(x.mem)();
+	(*jump->mem)();
+	(jump->mem)();
+	(jump->y.eme)();
+	(jump->py->eme)();
+	(x.y.eme)();
+	(x.py->eme)();
+	// Later lines are too complex syntax.
 	(x.arr[1])();
 	(*(x.pp + 1))();
 
+	// Assign expression sample.
 	x.mem = (F) ((int*) foo_expr); // The line is supported due to gcc internal simplifies syntax tree.
 	x.y.eme = oof_expr;
-
 	// Later lines are too complex syntax.
 	foo_expr, x.mem = oof_expr;
 	x.mem = oof_expr, ofo_expr;
 	x.mem = control ? oof_expr : ofo_expr;
 	x.pp = (F*) ofo_expr;
 	x.arr[1] = ofo_expr;
-
-	// assign function declaration not function pointer.
-	struct abc* xp = &x;
-	xp->mem = f;
+	// And don't assign function pointer, just function declaration.
+	x.mem = f;
 	return 0;
 }

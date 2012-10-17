@@ -27,6 +27,7 @@
  *   6) Class file: is in charge of File fold and FileDefinition table of
  *   init.sql.
  *   7) Class ifdef: is in charge of Ifdef table of init.sql.
+ *   8) Class funp_alias: is in charge of FunpAlias table of init.sql.
  *
  * GDB Guide:
  *   1) To support debug, I place a class `bug' in common fold, to use it,
@@ -1491,12 +1492,18 @@ symdb_call_func (void *gcc_data, void *user_data)
       if (DECL_BUILT_IN (decl))
 	goto done;
     }
-  else if (get_funcp_member (decl, NULL) != NULL)
-    {
-      pointer = true;
-    }
   else
-    goto done;
+    {
+      while (TREE_CODE (decl) == INDIRECT_REF)
+	{
+	  gcc_assert (TREE_OPERAND_LENGTH (decl) == 1);
+	  decl = TREE_OPERAND (decl, 0);
+	}
+      if (get_funcp_member (decl, NULL) != NULL)
+	pointer = true;
+      else
+	goto done;
+    }
   token = cache_get (0);
   demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_OPEN_PAREN);
