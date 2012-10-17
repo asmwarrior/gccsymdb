@@ -250,6 +250,9 @@ callee (const char *root_fn, const char *def)
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "' and flag = ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_FUNC));
+  dyn_string_append_cstr (gbuf, " or flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_POINTER));
+  dyn_string_append_cstr (gbuf, ")");
   if (fid != NULL)
     {
       dyn_string_append_cstr (gbuf, " and fileID = ");
