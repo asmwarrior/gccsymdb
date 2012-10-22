@@ -76,13 +76,18 @@ int
 usage (void)
 {
   printf ("Usage:\n");
-  printf ("    gs def/caller/callee filename definition\n");
+  printf ("    gs def filename definition\n");
+  printf ("    gs caller -- definition\n");
+  printf ("    gs callee structname definition\n");
   printf ("    gs ifdef filename fileoffset\n");
   printf ("    gs addsym/rmsym filename definition fileoffset\n");
   printf ("    gs falias member/fundecl symbol\n");
   printf ("    gs initdb prjpath\n");
   printf ("    gs vacuumdb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
+  printf ("        `-' for anonymous struct name\n");
+  printf
+    ("    structname only is used when definition is a struct-member-pointer\n");
   return EXIT_FAILURE;
 }
 
@@ -211,21 +216,11 @@ caller (const char *root_fn, const char *def)
   int nrow, ncolumn;
   char *error_msg, **table;
 
-  const char *fid = dep_get_fid (root_fn);
   dyn_string_copy_cstr (gbuf,
-			"select fileName, fileoffset, defName, flag from Helper where defID in (");
-  dyn_string_append_cstr (gbuf,
-			  "select callee from DefinitionRelationship where caller in (");
-  dyn_string_append_cstr (gbuf, "select defID from Helper where defName = '");
+			"select fileName, calleeFileOffset, calleeName, flag"
+			" from CallRelationship where callerName = '");
   dyn_string_append_cstr (gbuf, def);
-  dyn_string_append_cstr (gbuf, "' and flag = ");
-  dyn_string_append_cstr (gbuf, lltoa (DEF_FUNC));
-  if (fid != NULL)
-    {
-      dyn_string_append_cstr (gbuf, " and fileID = ");
-      dyn_string_append_cstr (gbuf, fid);
-    }
-  dyn_string_append_cstr (gbuf, "));");
+  dyn_string_append_cstr (gbuf, "';");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
@@ -236,29 +231,22 @@ caller (const char *root_fn, const char *def)
 }
 
 static void
-callee (const char *root_fn, const char *def)
+callee (const char *struct_name, const char *def)
 {
   int nrow, ncolumn;
   char *error_msg, **table;
 
-  const char *fid = dep_get_fid (root_fn);
   dyn_string_copy_cstr (gbuf,
-			"select fileName, fileoffset, defName, flag from Helper where defID in (");
-  dyn_string_append_cstr (gbuf,
-			  "select caller from DefinitionRelationship where callee in (");
-  dyn_string_append_cstr (gbuf, "select defID from Helper where defName = '");
-  dyn_string_append_cstr (gbuf, def);
-  dyn_string_append_cstr (gbuf, "' and flag = ");
-  dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_FUNC));
-  dyn_string_append_cstr (gbuf, " or flag = ");
-  dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_POINTER));
-  dyn_string_append_cstr (gbuf, ")");
-  if (fid != NULL)
+			"select distinct fileName, callerFileOffset, callerName, flag"
+			" from CallRelationship where calleeName = '");
+  if (strcmp (struct_name, "--") != 0)
     {
-      dyn_string_append_cstr (gbuf, " and fileID = ");
-      dyn_string_append_cstr (gbuf, fid);
+      if (strcmp (struct_name, "-") != 0)
+	dyn_string_append_cstr (gbuf, struct_name);
+      dyn_string_append_cstr (gbuf, "::");
     }
-  dyn_string_append_cstr (gbuf, "));");
+  dyn_string_append_cstr (gbuf, def);
+  dyn_string_append_cstr (gbuf, "';");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
@@ -419,7 +407,7 @@ falias (const char *type, const char *symbol)
     {
       dyn_string_copy_cstr (gbuf,
 			    "select name, offset, "
-			    " case when typeName = '' then '--' else typeName end, "
+			    " case when structName = '' then '-' else structName end, "
 			    " funDecl"
 			    " from FunpAlias, chFile "
 			    " where id = fileID and member = '");
@@ -428,13 +416,13 @@ falias (const char *type, const char *symbol)
     {
       dyn_string_copy_cstr (gbuf,
 			    "select name, offset, "
-			    " case when typeName = '' then '--' else typeName end, "
+			    " case when structName = '' then '-' else structName end, "
 			    " member"
 			    " from FunpAlias, chFile "
 			    " where id = fileID and funDecl = '");
     }
   dyn_string_append_cstr (gbuf, symbol);
-  dyn_string_append_cstr (gbuf, "' order by typeName;");
+  dyn_string_append_cstr (gbuf, "' order by structName;");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)

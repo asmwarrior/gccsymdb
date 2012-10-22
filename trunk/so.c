@@ -687,6 +687,7 @@ vec_pop_front (void *vec, int reserve)
     }
 }
 
+// Release cache as soon as possible.
 static void
 cache_reset (int reserve)
 {
@@ -941,74 +942,55 @@ def_append (enum definition_flag flag, dyn_string_t str, int offset)
   file_insert_defid (defid);
 }
 
-static inline bool
-is_uid (int cpp_type, int c_type)
-{
-  return cpp_type == CPP_NAME && c_type == 0xffff;
-}
-
 static inline void
-demangle_type (db_token * token, int *cpp_type, int *c_type)
+def_demangle_type (db_token * token, int *cpp_type, int *c_type)
 {
   enum symdb_flag flag = token->flag;
   *cpp_type = flag & CPP_TYPE_MASK;
   *c_type = (flag & C_TYPE_MASK) >> C_TYPE_SHIFT;
 }
 
-/* To strip outer parens successfully, we need the head of cache.itokens. */
-static int
-def_strip_paren_declarator_outer (int index)
+static inline bool
+def_is_uid (db_token * token)
 {
-  int pair = 0;
-  while (true)
-    {
-      int cpp_type, c_type;
-      db_token *tmp = cache_get (index);
-      demangle_type (tmp, &cpp_type, &c_type);
-      if (cpp_type != CPP_CLOSE_PAREN)
-	break;
-      if (VEC_length (db_token, cache.itokens) -
-	  cache_skip_match_pair (index, ')') != pair++)
-	break;
-      index++;
-    }
-  return index;
+  int cpp_type, c_type;
+  def_demangle_type (token, &cpp_type, &c_type);
+  return cpp_type == CPP_NAME && c_type == 0xffff;
 }
 
 static int
-def_strip_paren_declarator_inner (int index)
+def_strip_paren (int index)
 {
   while (true)
     {
       int cpp_type, c_type;
       db_token *tmp = cache_get (index++);
-      demangle_type (tmp, &cpp_type, &c_type);
+      def_demangle_type (tmp, &cpp_type, &c_type);
       if (cpp_type != CPP_CLOSE_PAREN)
 	break;
     }
   return index - 1;
 }
 
-static int
-def_strip_paren_declarator_middle (int index)
-{
-  return def_strip_paren_declarator_inner (index);
-}
-
 static void
-def_append_chk (int index, enum definition_flag flag)
+def_append_chk (int index, enum definition_flag flag, const char *p)
 {
   db_token *token;
   dyn_string_t str;
-  int cpp_type, c_type;
   token = cache_get (index);
   str = token->value;
-  demangle_type (token, &cpp_type, &c_type);
-  gcc_assert (is_uid (cpp_type, c_type));
+  if (p != NULL)
+    {
+      dyn_string_copy_cstr (gbuf, p);
+      dyn_string_append_cstr (gbuf, "::");
+      dyn_string_append (gbuf, token->value);
+    }
+  else
+    dyn_string_copy (gbuf, str);
+  gcc_assert (def_is_uid (token));
   token = cache_itoken_to_chtoken (index);
-  demangle_type (token, &cpp_type, &c_type);
-  gcc_assert (is_uid (cpp_type, c_type));
-  def_append (flag, str, token->file_offset);
+  gcc_assert (def_is_uid (token));
+  def_append (flag, gbuf, token->file_offset);
 }
 
 static void
@@ -1134,32 +1116,32 @@ static struct
 } funp_alias;
 
 void
-funp_alias_append (const char *type_name, const char *mem_name,
+funp_alias_append (const char *struct_name, const char *mem_name,
 		   const char *fun_decl)
 {
-  // printf ("falias %s::%s = %s\n", type_name, mem_name, fun_decl);
+  // printf ("falias %s::%s = %s\n", struct_name, mem_name, fun_decl);
   int fileid = file_get_current_fid ();
   int offset = cache_itoken_to_chtoken (0)->file_offset;
+  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 1, fileid));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 1, type_name, -1, SQLITE_STATIC));
+	    (funp_alias.select_funpalias, 2, struct_name, -1, SQLITE_STATIC));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 2, mem_name, -1, SQLITE_STATIC));
+	    (funp_alias.select_funpalias, 3, mem_name, -1, SQLITE_STATIC));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 3, fun_decl, -1, SQLITE_STATIC));
-  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 4, fileid));
+	    (funp_alias.select_funpalias, 4, fun_decl, -1, SQLITE_STATIC));
   db_error (sqlite3_bind_int (funp_alias.select_funpalias, 5, offset));
   if (sqlite3_step (funp_alias.select_funpalias) != SQLITE_ROW)
     {
+      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 1, fileid));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 1, type_name, -1,
+		(funp_alias.insert_funpalias, 2, struct_name, -1,
 		 SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 2, mem_name, -1,
+		(funp_alias.insert_funpalias, 3, mem_name, -1,
 		 SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 3, fun_decl, -1,
+		(funp_alias.insert_funpalias, 4, fun_decl, -1,
 		 SQLITE_STATIC));
-      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 4, fileid));
       db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 5, offset));
       execute_sql (funp_alias.insert_funpalias);
     }
@@ -1171,8 +1153,9 @@ funp_alias_init (void)
 {
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FunpAlias "
-				"where typeName = ? and member = ? and funDecl = ?"
-				" and fileID = ? and offset = ?;",
+				"where fileID = ?"
+				" and structName = ? and member = ? and funDecl = ?"
+				" and offset = ?;",
 				-1, &funp_alias.select_funpalias, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into FunpAlias values (?, ?, ?, ?, ?);",
@@ -1463,9 +1446,17 @@ get_funcp_member (tree var, tree * type)
   gcc_assert (TREE_OPERAND (var, 2) == NULL);
   gcc_assert (TREE_CODE (member) == FIELD_DECL);
   gcc_assert (TREE_CODE_CLASS (TREE_CODE (member)) == tcc_declaration);
-  if (type != NULL)
-    *type = TREE_TYPE (TREE_OPERAND (var, 0));
+  *type = TREE_TYPE (TREE_OPERAND (var, 0));
   return member;
+}
+
+static const char *
+get_typename (tree type)
+{
+  const char *result = "";
+  if (TYPE_NAME (type) && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
+    result = IDENTIFIER_POINTER (TYPE_NAME (type));
+  return result;
 }
 
 /*
@@ -1480,11 +1471,11 @@ get_funcp_member (tree var, tree * type)
 static void
 symdb_call_func (void *gcc_data, void *user_data)
 {
-  tree decl = (tree) gcc_data;
+  tree decl = (tree) gcc_data, type = NULL;
   db_token *token;
   int cpp_type, c_type;
   int index;
-  bool pointer = false;
+  enum definition_flag df = DEF_CALLED_FUNC;
   if (block_list.call_func)
     return;
   if (TREE_CODE (decl) == FUNCTION_DECL)
@@ -1499,19 +1490,16 @@ symdb_call_func (void *gcc_data, void *user_data)
 	  gcc_assert (TREE_OPERAND_LENGTH (decl) == 1);
 	  decl = TREE_OPERAND (decl, 0);
 	}
-      if (get_funcp_member (decl, NULL) != NULL)
-	pointer = true;
+      if (get_funcp_member (decl, &type) != NULL)
+	df = DEF_CALLED_POINTER;
       else
 	goto done;
     }
   token = cache_get (0);
-  demangle_type (token, &cpp_type, &c_type);
+  def_demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_OPEN_PAREN);
-  index = def_strip_paren_declarator_inner (1);
-  token = cache_get (index);
-  demangle_type (token, &cpp_type, &c_type);
-  gcc_assert (is_uid (cpp_type, c_type));
-  def_append_chk (index, pointer ? DEF_CALLED_POINTER : DEF_CALLED_FUNC);
+  index = def_strip_paren (1);
+  def_append_chk (index, df, type != NULL ? get_typename (type) : NULL);
 
 done:
   cache_reset (0);
@@ -1530,7 +1518,7 @@ symdb_enumerator (void *gcc_data, void *user_data)
 {
   if (block_list.enum_spec)
     return;
-  def_append_chk (0, DEF_ENUM_MEMBER);
+  def_append_chk (0, DEF_ENUM_MEMBER, NULL);
   /* Don't call cache_reset(0) here, since enum specifier hasn't been parsed,
    * see symdb_declspecs. */
 }
@@ -1541,7 +1529,7 @@ symdb_extern_func_old_param (void *gcc_data, void *user_data)
   db_token *token;
   int cpp_type, c_type;
   token = cache_get (1);
-  demangle_type (token, &cpp_type, &c_type);
+  def_demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_CLOSE_PAREN);
   func_old_param = cache_record_itoken_position ();
 }
@@ -1571,17 +1559,20 @@ symdb_extern_func (void *gcc_data, void *user_data)
   else
     {
       token = cache_get (0);
-      demangle_type (token, &cpp_type, &c_type);
+      def_demangle_type (token, &cpp_type, &c_type);
       gcc_assert (cpp_type == CPP_OPEN_BRACE);
       index = 1;
     }
   token = cache_get (index);
-  demangle_type (token, &cpp_type, &c_type);
+  def_demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_CLOSE_PAREN);
-  index = def_strip_paren_declarator_outer (index);
+  // strip outer parens.
+  index = def_strip_paren (index);
+  // Current paren must be -- `( parameter-type-list )'.
   index = cache_skip_match_pair (index, ')');
-  index = def_strip_paren_declarator_inner (index);
-  def_append_chk (index, DEF_FUNC);
+  // strip inner parens.
+  index = def_strip_paren (index);
+  def_append_chk (index, DEF_FUNC, NULL);
   block_list.enum_spec = true;
   block_list.call_func = false;
   cache_reset (0);
@@ -1609,7 +1600,7 @@ symdb_extern_func (void *gcc_data, void *user_data)
 *
 * Case `( attributes[opt] declarator )' is called paren cases, see
 * test/paren_declarator/a.c. There're three -- outer, middle and inner cases.
-* `int ((**(funtdpcomplex)[2][3]))(void));'
+* `int *(*(*(*(funpvar))[3])(void));'
 * function pointer includes all of them, from left to right.
 */
 static void
@@ -1620,60 +1611,59 @@ symdb_extern_var (void *gcc_data, void *user_data)
   const struct c_declarator *da = pair[1];
   db_token *token;
   int cpp_type, c_type;
-  int index;
+  int index = 1;
   int fun = 0;
+  int td = 0;
+  int arr = 0;
 
   if (ds->storage_class == csc_extern)
     /* User needn't the kind of definition at all. */
     goto done;
+  else if (ds->storage_class == csc_typedef)
+    td = 1;
 
-  while (da->kind == cdk_pointer || da->kind == cdk_attrs)
-    da = da->declarator;
-  if (da->kind == cdk_function)
+  while (da->declarator != NULL)
     {
-      if (da->declarator->kind != cdk_pointer)
+      if (da->kind == cdk_function)
 	{
-	  gcc_assert (da->declarator->kind == cdk_id);
-	  /* We encountered a function declaration or `typedef int fun(void);'. */
-	  if (ds->storage_class == csc_typedef)
-	    fun = 1;
-	  else
+	  if (da->declarator->kind != cdk_pointer && td == 0)
+	    // Just function declaration.
 	    goto done;
+	  fun = 1;
 	}
-      else
-	fun = 2;
+      if (da->kind == cdk_array)
+	arr = 1;
+      da = da->declarator;
     }
 
-  index = def_strip_paren_declarator_outer (1);
-  while (true)
+  // According to tested result,
+  //    1) int (*fun[2])(void); correct.
+  //    2) int (*fun)(void)[2]; wrong.
+  // Our syntax comes from gcc.src/gcc/c-parser:c_parser_declarator, but the
+  // result is strange...
+  // So search process is very simple.
+  // strip outer parens.
+  index = def_strip_paren (1);
+  if (fun)
+    // Current paren must be -- `( identifier-list[opt] )'.
+    index = cache_skip_match_pair (index, ')');
+  // strip middle parens.
+  index = def_strip_paren (index);
+  if (arr)
     {
-      token = cache_get (index);
-      demangle_type (token, &cpp_type, &c_type);
-      if (fun)
+      while (1)
 	{
-	  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
-	  index = cache_skip_match_pair (index, ')');
-	  if (fun == 2)
-	    {
-	      token = cache_get (index);
-	      demangle_type (token, &cpp_type, &c_type);
-	      gcc_assert (cpp_type == CPP_CLOSE_PAREN);
-	      index = def_strip_paren_declarator_middle (index);
-	    }
-	  fun = 0;
-	}
-      else if (cpp_type == CPP_CLOSE_SQUARE)
-	index = cache_skip_match_pair (index, ']');
-      else
-	{
-	  index = def_strip_paren_declarator_inner (index);
-	  if (ds->storage_class == csc_typedef)
-	    def_append_chk (index, DEF_TYPEDEF);
+	  token = cache_get (index);
+	  def_demangle_type (token, &cpp_type, &c_type);
+	  if (cpp_type == CPP_CLOSE_SQUARE)
+	    index = cache_skip_match_pair (index, ']');
 	  else
-	    def_append_chk (index, DEF_VAR);
-	  break;
+	    break;
 	}
     }
+  // strip inner parens.
+  index = def_strip_paren (index);
+  def_append_chk (index, td ? DEF_TYPEDEF : DEF_VAR, NULL);
 
 done:
   cache_reset (0);
@@ -1709,6 +1699,10 @@ symdb_declspecs (void *gcc_data, void *user_data)
 {
   void **pair = (void **) gcc_data;
   const struct c_declspecs *ds = pair[0];
+  // Here pair[1] is very important since to gcc intern
+  //    int i;
+  // in symdb_declspecs >> cache_reset(x), if without pair[1], symdb_extern_var
+  // will be crashed.
   int index = (int) pair[1];
   enum definition_flag flag;
   db_token *token;
@@ -1720,18 +1714,18 @@ symdb_declspecs (void *gcc_data, void *user_data)
   while (true)
     {
       token = cache_get (index);
-      demangle_type (token, &cpp_type, &c_type);
+      def_demangle_type (token, &cpp_type, &c_type);
       if (cpp_type != CPP_CLOSE_PAREN)
 	break;
       index = cache_skip_match_pair (index, ')');
       token = cache_get (index);
-      demangle_type (token, &cpp_type, &c_type);
+      def_demangle_type (token, &cpp_type, &c_type);
       gcc_assert (cpp_type == CPP_NAME && c_type == RID_ATTRIBUTE);
       index++;
     }
 
   token = cache_get (index);
-  demangle_type (token, &cpp_type, &c_type);
+  def_demangle_type (token, &cpp_type, &c_type);
   if (cpp_type != CPP_CLOSE_BRACE)
     goto done;
 
@@ -1752,9 +1746,8 @@ symdb_declspecs (void *gcc_data, void *user_data)
 
   index = cache_skip_match_pair (index, '}');
   token = cache_get (index);
-  demangle_type (token, &cpp_type, &c_type);
-  if (is_uid (cpp_type, c_type))
-    def_append_chk (index, flag);
+  if (def_is_uid (token))
+    def_append_chk (index, flag, NULL);
   /* else is anonymous struct/union/enum. */
 
 done:
@@ -1766,15 +1759,6 @@ symdb_extern_decl (void *gcc_data, void *user_data)
 {
   block_list.enum_spec = false;
   block_list.call_func = true;
-}
-
-static const char *
-get_typename (tree type)
-{
-  const char *result = "";
-  if (TYPE_NAME (type) && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
-    result = IDENTIFIER_POINTER (TYPE_NAME (type));
-  return result;
 }
 
 static void

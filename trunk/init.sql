@@ -52,10 +52,10 @@ create table Ifdef (
 );
 
 create table FunpAlias (
-	typeName text,
+	fileID integer,
+	structName text,
 	member text,
 	funDecl text,
-	fileID integer,
 	offset integer
 );
 
@@ -70,6 +70,22 @@ from
 where
 	fd.fileID = f.id and
 	fd.startDefID <= d.id and fd.endDefID >= d.id
+);
+
+create view CallRelationship as
+select * from
+(
+select
+	f.id as fileID, f.name as fileName,
+	d1.fileOffset as callerFileOffset, caller as callerID, d1.name as callerName,
+	d2.fileOffset as calleeFileOffset, callee as calleeID, d2.name as calleeName,
+	d2.flag
+from
+	DefinitionRelationship dr, chFile f, FileDefinition fd, Definition as d1, Definition as d2
+where
+	dr.caller = d1.id and dr.callee = d2.id and
+	fd.fileID = f.id and
+	fd.startDefID <= dr.caller and fd.endDefID >= dr.caller
 );
 -- }])>
 

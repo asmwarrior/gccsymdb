@@ -1,17 +1,17 @@
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE FunpAlias (
-	typeName text,
+	fileID integer,
+	structName text,
 	member text,
 	funDecl text,
-	fileID integer,
 	offset integer
 );
-INSERT INTO "FunpAlias" VALUES('','u_mem','foo',1,230);
-INSERT INTO "FunpAlias" VALUES('abc','mem','foo',1,618);
-INSERT INTO "FunpAlias" VALUES('def','eme','oof',1,618);
-INSERT INTO "FunpAlias" VALUES('abc','mem','foo_expr',1,937);
-INSERT INTO "FunpAlias" VALUES('def','eme','oof_expr',1,1027);
+INSERT INTO "FunpAlias" VALUES(1,'','u_mem','foo',230);
+INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo',618);
+INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof',618);
+INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo_expr',937);
+INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof_expr',1027);
 CREATE INDEX Alias on FunpAlias (member, funDecl);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -37,12 +37,12 @@ INSERT INTO "Definition" VALUES(12,'abc',5,266);
 INSERT INTO "Definition" VALUES(13,'x',1,360);
 INSERT INTO "Definition" VALUES(14,'jump',1,633);
 INSERT INTO "Definition" VALUES(15,'main',2,644);
-INSERT INTO "Definition" VALUES(16,'mem',10,694);
-INSERT INTO "Definition" VALUES(17,'mem',10,711);
-INSERT INTO "Definition" VALUES(18,'mem',10,727);
-INSERT INTO "Definition" VALUES(19,'eme',10,745);
-INSERT INTO "Definition" VALUES(20,'eme',10,765);
-INSERT INTO "Definition" VALUES(21,'eme',10,779);
-INSERT INTO "Definition" VALUES(22,'eme',10,795);
+INSERT INTO "Definition" VALUES(16,'abc::mem',10,694);
+INSERT INTO "Definition" VALUES(17,'abc::mem',10,711);
+INSERT INTO "Definition" VALUES(18,'abc::mem',10,727);
+INSERT INTO "Definition" VALUES(19,'def::eme',10,745);
+INSERT INTO "Definition" VALUES(20,'def::eme',10,765);
+INSERT INTO "Definition" VALUES(21,'def::eme',10,779);
+INSERT INTO "Definition" VALUES(22,'def::eme',10,795);
 CREATE INDEX DefName on Definition (name);
 COMMIT;

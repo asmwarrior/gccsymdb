@@ -101,7 +101,7 @@ let s:alist = split(s:str2, '\n')
 for s:element in s:alist
 	let s:str = s:str . s:element . " CALL_MEMBER_POINTER <<< \n"
 	let s:blist = split(s:element)
-	let s:str = s:str . system('./gs callee -- ' . s:blist[3])
+	let s:str = s:str . system('./gs callee ' . s:blist[2] . ' ' . s:blist[3])
 endfor
 if s:str == ''
 	return
