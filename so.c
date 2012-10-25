@@ -788,6 +788,12 @@ cache_append_itoken_c_stage (c_token_p token)
   cache.last_cpp_token->flag ^= keyword;
 }
 
+static int
+cache_get_itoken_size (void)
+{
+  return VEC_length (db_token, cache.itokens);
+}
+
 static inline int
 revert_index (int index)
 {
@@ -1542,8 +1548,16 @@ symdb_extern_func_old_param (void *gcc_data, void *user_data)
  * direct-declarator:
  *   direct-declarator ( parameter-type-list )
  *   ( attributes[opt] declarator )
-*
-* We also includes outer/inner-paren cases, see symdb_extern_var.
+ * parameter-type-list:
+ *   parameter-list
+ *   parameter-list , ...
+ * parameter-list:
+ *   parameter-declaration
+ *   parameter-list , parameter-declaration
+ * parameter-declaration:
+ *   declaration-specifiers declarator attributes[opt]
+ *
+ * We also includes outer/inner-paren cases, see symdb_extern_var.
  */
 static void
 symdb_extern_func (void *gcc_data, void *user_data)
@@ -1563,16 +1577,37 @@ symdb_extern_func (void *gcc_data, void *user_data)
       gcc_assert (cpp_type == CPP_OPEN_BRACE);
       index = 1;
     }
+
   token = cache_get (index);
   def_demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_CLOSE_PAREN);
-  // strip outer parens.
-  index = def_strip_paren (index);
-  // Current paren must be -- `( parameter-type-list )'.
-  index = cache_skip_match_pair (index, ')');
-  // strip inner parens.
-  index = def_strip_paren (index);
+  // here are some cases (tokens in `' are just you've seen in class cache).
+  //    1) ... int `(foo(int i __attribute__((unused)))) {' ...
+  //    2) ... int `*(foo(int i __attribute__((unused)))) {' ...
+  // which includes outer paren, parameter-type-list, variable attribute.
+  // So to strip outer parens, search them from both backward and forward.
+  if (cache_skip_match_pair (index, ')') == cache_get_itoken_size ())
+    // case 1, adjust `index' to avoid overflow cache.itokens.
+    index++;
+  while (true)
+    {
+      index = cache_skip_match_pair (index, ')');
+      token = cache_get (index);
+      def_demangle_type (token, &cpp_type, &c_type);
+      if (cpp_type == CPP_NAME && c_type == 0xffff)
+	break;
+      else if (cpp_type == CPP_CLOSE_PAREN)
+	{
+	  // strip inner parens.
+	  index = def_strip_paren (index);
+	  break;
+	}
+      else
+	gcc_assert (cpp_type == CPP_OPEN_PAREN);
+      index++;
+    }
   def_append_chk (index, DEF_FUNC, NULL);
+
   block_list.enum_spec = true;
   block_list.call_func = false;
   cache_reset (0);
@@ -1636,7 +1671,7 @@ symdb_extern_var (void *gcc_data, void *user_data)
       da = da->declarator;
     }
 
-  // According to tested result,
+  // First let's see tested result,
   //    1) int (*fun[2])(void); correct.
   //    2) int (*fun)(void)[2]; wrong.
   // Our syntax comes from gcc.src/gcc/c-parser:c_parser_declarator, but the
@@ -1646,7 +1681,7 @@ symdb_extern_var (void *gcc_data, void *user_data)
   index = def_strip_paren (1);
   if (fun)
     // Current paren must be -- `( identifier-list[opt] )'.
-    index = cache_skip_match_pair (index, ')');
+    index = cache_skip_match_pair (index - 1, ')');
   // strip middle parens.
   index = def_strip_paren (index);
   if (arr)
@@ -1776,6 +1811,13 @@ constructor_loop (tree node)
   FOR_EACH_CONSTRUCTOR_ELT (CONSTRUCTOR_ELTS (node), cnt, index, value)
   {
     gcc_assert (TREE_CODE (index) == FIELD_DECL);
+    if (TREE_CODE (value) == NOP_EXPR)
+      {
+	if (!is_funcp (value))
+	  continue;
+	gcc_assert (TREE_OPERAND_LENGTH (value) == 1);
+	value = TREE_OPERAND (value, 0);
+      }
     if (TREE_CODE (value) == ADDR_EXPR)
       {
 	if (!is_funcp (value))
@@ -1807,6 +1849,11 @@ modify_expr (tree node)
   if (member == NULL)
     return;
   tree tmp = TREE_OPERAND (node, 1);
+  if (TREE_CODE (tmp) == NOP_EXPR)
+    {
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
+      tmp = TREE_OPERAND (tmp, 0);
+    }
   if (TREE_CODE (tmp) != ADDR_EXPR)
     return;
   gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
