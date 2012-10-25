@@ -1,4 +1,5 @@
 typedef void (*F)(void);
+typedef void (FF)(void);
 int volatile control = 1;
 F f;
 void foo(void) {}
@@ -25,6 +26,7 @@ struct abc
 {
 	char c;
 	F mem;
+	FF *ff;
 	struct def y;
 	struct def* py;
 	struct def z[2];
@@ -33,6 +35,7 @@ struct abc
 } x = {
 	// Initialize list sample.
 	.mem = foo,
+	.ff = foo,
 	// The later two lines are the same, gcc internal only stores a tree -- `.y.eme = oof'.
 	.y = { foo, },
 	.y.eme = oof,
@@ -61,6 +64,7 @@ int main(void)
 
 	// Assign expression sample.
 	x.mem = (F) ((int*) foo_expr); // The line is supported due to gcc internal simplifies syntax tree.
+	x.ff = foo_expr;
 	x.y.eme = oof_expr;
 	// Later lines are too complex syntax.
 	foo_expr, x.mem = oof_expr;

@@ -20,6 +20,10 @@ INSERT INTO "Definition" VALUES(11,'oldfun',2,239);
 INSERT INTO "Definition" VALUES(12,'foo',2,274);
 INSERT INTO "Definition" VALUES(13,'main',2,310);
 INSERT INTO "Definition" VALUES(14,'foo',9,356);
+INSERT INTO "Definition" VALUES(15,'oof',2,372);
+INSERT INTO "Definition" VALUES(16,'c',1,387);
+INSERT INTO "Definition" VALUES(17,'ofo',2,418);
+INSERT INTO "Definition" VALUES(18,'fof',2,461);
 CREATE INDEX DefName on Definition (name);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -37,5 +41,5 @@ CREATE TABLE FileDefinition (
 	startDefID bigint,
 	endDefID bigint
 );
-INSERT INTO "FileDefinition" VALUES(1,1,14);
+INSERT INTO "FileDefinition" VALUES(1,1,18);
 COMMIT;

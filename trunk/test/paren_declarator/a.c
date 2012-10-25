@@ -29,4 +29,9 @@ int (main(void))
 	((*funpvar[0][1]))();
 	return (foo)();
 }
+
+int (oof)() {}
+char c __attribute__((unused));
+int ofo(int i __attribute__((unused))) {}
+int* fof(int i __attribute__((unused))) {}
 //*/
