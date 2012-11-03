@@ -40,6 +40,10 @@ INSERT INTO "Definition" VALUES(31,'cond',3,976);
 INSERT INTO "Definition" VALUES(32,'cascaded_cond',3,994);
 INSERT INTO "Definition" VALUES(33,'args',3,1090);
 CREATE INDEX DefName on Definition (name);
+CREATE TRIGGER DelDefinition after delete on Definition
+begin
+	delete from DefinitionRelationship where caller = old.id;
+end;
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -65,4 +69,8 @@ CREATE TABLE FileDefinition (
 	endDefID bigint
 );
 INSERT INTO "FileDefinition" VALUES(1,1,33);
+CREATE TRIGGER DelFileDefition after delete on FileDefinition
+begin
+	delete from Definition where id >= old.startDefID and id <= old.endDefID;
+end;
 COMMIT;

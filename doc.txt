@@ -61,9 +61,9 @@ architecture.
         fs.open(); // << which function will be called, where is it?
     }
 The feature treats `ext2_open' as an alias of `open'. So when you search
-`open', jump to `ext2_open'. Of course, know `ext2_open' is called by `foo'
-reversely. Note to simplify my code, only simple syntax is supported which
-showed in above assign-expression. See test/funp_alias/a.c for more.
+`open', jump to `ext2_open'. Of course, you can get `ext2_open' is called by
+`foo' reversely. Note to simplify my code, only simple syntax is supported
+which showed in above assign-expression. See test/funp_alias/a.c for more.
 // }])>
 
 // User Manual <([{
@@ -196,6 +196,31 @@ glibc-2.13 (mips):
     *) Change glibc.src/Makeconfig: `override CFLAGS = '.
 linux-2.6.35 (mips):
     *) Change linux.src/Makefile: `KBUILD_CFLAGS := '.
+// }])>
+
+// Know Issues <([{
+1) Be careful if you updated a file and try to re-update my database. Here is
+a case
+    -------------------------------- a.c
+    #define X
+    #include<a.h>
+    -------------------------------- a.c (updated)
+    #include<a.h>
+a.h maybe includes some old definitions caused by `define X' clause.
+By the way, control the feature by init.sql:ProjectOverview::canUpdateFile.
+Of course, don't forget call `gs vacuumdb ./' if too much files are updated.
+2) Currently, my plugin doesn't support nested functions but if a nested
+function calls other functions, all of them are treated as the callees of
+outest function.
+3) Current macro code has a bug, here is the case, not-matched pairs.
+    #define Y(a) a
+    #define X(p) p + Y(
+    int main(void)
+    {
+        return X(1)2);
+    }
+The code can make my plugin crashed even code is correct. The priority of the
+bug is low, and by in_macro_expansion_p of gcc-4.8.x, the bug can be fixed.
 // }])>
 
 For Developer

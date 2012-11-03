@@ -25,6 +25,10 @@ INSERT INTO "Definition" VALUES(16,'c',1,387);
 INSERT INTO "Definition" VALUES(17,'ofo',2,418);
 INSERT INTO "Definition" VALUES(18,'fof',2,461);
 CREATE INDEX DefName on Definition (name);
+CREATE TRIGGER DelDefinition after delete on Definition
+begin
+	delete from DefinitionRelationship where caller = old.id;
+end;
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -42,4 +46,8 @@ CREATE TABLE FileDefinition (
 	endDefID bigint
 );
 INSERT INTO "FileDefinition" VALUES(1,1,18);
+CREATE TRIGGER DelFileDefition after delete on FileDefinition
+begin
+	delete from Definition where id >= old.startDefID and id <= old.endDefID;
+end;
 COMMIT;
