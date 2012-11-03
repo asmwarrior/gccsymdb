@@ -9,6 +9,13 @@ CREATE TABLE chFile (
 INSERT INTO "chFile" VALUES(1,'test/ifdef/a.c',1325350860,'f');
 INSERT INTO "chFile" VALUES(2,'test/ifdef/a.h',1325350860,'f');
 CREATE INDEX FileName on chFile (name);
+CREATE TRIGGER DelFile after delete on chFile
+begin
+	delete from FileDependence where chFileID = old.id;
+	delete from FileDefinition where fileID = old.id;
+	delete from Ifdef where fileID = old.id;
+	delete from FunpAlias where fileID = old.id;
+end;
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;

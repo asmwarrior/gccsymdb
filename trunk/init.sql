@@ -3,8 +3,9 @@ create table ProjectOverview (
 	dbVersion text,
 	pluginVersion text,
 	gccVersion text,
-	projectRootPath text
+	projectRootPath text,
 	-- plugin control parameters.
+	canUpdateFile boolean
 );
 
 -- File tables <([{
@@ -35,13 +36,13 @@ create table DefinitionRelationship (
 	caller bigint,
 	callee bigint
 );
--- }])>
 
 create table FileDefinition (
 	fileID integer,
 	startDefID bigint,
 	endDefID bigint
 );
+-- }])>
 
 -- The table stores the information of which lines are skipped by such like `ifdef/if'.
 create table Ifdef (
@@ -97,4 +98,25 @@ create index DefName on Definition (name);
 create index Alias on FunpAlias (member, funDecl); 
 -- }])>
 
-insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "/project/root/path/");
+-- Triggger <([{
+-- Delete trigger note: all can be indexed directely or indirectely by chFile::id. But to Definition fold, two additional trigger must be set up.
+create trigger DelDefinition after delete on Definition
+begin
+	delete from DefinitionRelationship where caller = old.id;
+end;
+
+create trigger DelFileDefition after delete on FileDefinition
+begin
+	delete from Definition where id >= old.startDefID and id <= old.endDefID;
+end;
+
+create trigger DelFile after delete on chFile
+begin
+	delete from FileDependence where chFileID = old.id;
+	delete from FileDefinition where fileID = old.id;
+	delete from Ifdef where fileID = old.id;
+	delete from FunpAlias where fileID = old.id;
+end;
+-- }])>
+
+insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "/project/root/path/", 't');

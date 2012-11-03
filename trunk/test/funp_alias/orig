@@ -48,4 +48,8 @@ INSERT INTO "Definition" VALUES(21,'def::eme',10,811);
 INSERT INTO "Definition" VALUES(22,'def::eme',10,825);
 INSERT INTO "Definition" VALUES(23,'def::eme',10,841);
 CREATE INDEX DefName on Definition (name);
+CREATE TRIGGER DelDefinition after delete on Definition
+begin
+	delete from DefinitionRelationship where caller = old.id;
+end;
 COMMIT;

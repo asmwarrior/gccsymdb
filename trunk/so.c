@@ -99,6 +99,7 @@ static struct
   dyn_string_t prj_dir;
   dyn_string_t cwd;
   dyn_string_t main_file;
+  bool can_update_file;
 } control_panel;
 
 static const char *
@@ -129,9 +130,10 @@ control_panel_init (const char *main_file)
   dyn_string_copy_cstr (control_panel.main_file, canonical_path (main_file));
   /* initilize control data. */
   db_error (sqlite3_get_table (db,
-			       "select projectRootPath from ProjectOverview;",
+			       "select projectRootPath, canUpdateFile from ProjectOverview;",
 			       &result, &nrow, &ncolumn, &error_msg));
-  dyn_string_copy_cstr (control_panel.prj_dir, result[1]);
+  dyn_string_copy_cstr (control_panel.prj_dir, result[2]);
+  control_panel.can_update_file = strcmp (result[3], "t") == 0 ? true : false;
   sqlite3_free_table (result);
 }
 
@@ -288,6 +290,7 @@ insert_file (const char *fn, int *file_id, long long *mtime, bool sysp)
   int size = strlen (fn);
   db_error (sqlite3_bind_text
 	    (file.select_chfile, 1, fn, size, SQLITE_STATIC));
+reinsert:
   if (sqlite3_step (file.select_chfile) != SQLITE_ROW)
     {
       db_error (sqlite3_bind_text (file.insert_chfile, 1,
@@ -305,10 +308,20 @@ insert_file (const char *fn, int *file_id, long long *mtime, bool sysp)
     }
   *file_id = sqlite3_column_int (file.select_chfile, 0);
   *mtime = sqlite3_column_int64 (file.select_chfile, 1);
-  if (new_mtime < *mtime)
+  if (new_mtime > *mtime)
     {
-      printf ("Update single file isn't supported now.");
-      gcc_assert (false);
+      if (!control_panel.can_update_file)
+	{
+	  printf
+	    ("Update single file is disabled "
+	     "according to ProjectOverview::canUpdateFile parameter.");
+	  gcc_assert (false);
+	}
+      sprintf (dyn_string_buf (gbuf), "delete from chFile where id = %d;",
+	       *file_id);
+      db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
+      sqlite3_reset (file.select_chfile);
+      goto reinsert;
     }
   revalidate_sql (file.select_chfile);
   bug_trap_file (fn, *file_id);
@@ -1368,25 +1381,25 @@ symdb_unit_init (void *gcc_data, void *user_data)
   db_error ((sqlite3_exec
 	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
 
+  gbuf = dyn_string_new (1024);
   control_panel_init (main_input_filename);
   cache_init ();
   ifdef_init ();
   file_init (main_input_filename);
   def_init ();
   funp_alias_init ();
-  gbuf = dyn_string_new (1024);
 }
 
 static void
 symdb_unit_tini (void *gcc_data, void *user_data)
 {
-  dyn_string_delete (gbuf);
   funp_alias_tini ();
   def_tini ();
   file_tini ();
   ifdef_tini ();
   cache_tini ();
   control_panel_tini ();
+  dyn_string_delete (gbuf);
 
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);
