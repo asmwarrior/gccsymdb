@@ -59,6 +59,18 @@
 typedef const struct cpp_token *cpp_token_p;
 typedef const struct c_token *c_token_p;
 
+typedef struct
+{
+  long long start;
+  union
+  {
+    long long end;
+    long long length;
+  };
+} lpair;
+DEF_VEC_O (lpair);
+DEF_VEC_ALLOC_O (lpair, heap);
+
 static dyn_string_t gbuf;	/* Global temporary variable. */
 
 /* sqlite auxiliary <([{ */
@@ -200,18 +212,16 @@ print_token (cpp_token_p token, dyn_string_t str)
 /* The class is in charge of file tables and FileDefinition table. */
 typedef struct
 {
-  long long start;
-  long long end;
-} scope;
-DEF_VEC_O (scope);
-DEF_VEC_ALLOC_O (scope, heap);
+  int id;
+  dyn_string_t name;
+} include_unit;
+DEF_VEC_O (include_unit);
+DEF_VEC_ALLOC_O (include_unit, heap);
 
-DEF_VEC_I (int);
-DEF_VEC_ALLOC_I (int, heap);
 static struct
 {
-  VEC (scope, heap) * scopes;	/* for FileDefinition table. */
-  VEC (int, heap) * includee;
+  VEC (lpair, heap) * scopes;	/* for FileDefinition table. */
+  VEC (include_unit, heap) * includee;
 
   struct sqlite3_stmt *select_chfile;
   struct sqlite3_stmt *insert_chfile;
@@ -238,31 +248,17 @@ get_mtime (const char *file)
 /* debug purpose. */
 static void __attribute__ ((used)) dump_includee (void)
 {
-  int nrow, ncolumn;
-  char *error_msg, **table;
-  int ix, p;
-  dyn_string_t str = dyn_string_new (32);
-  FOR_EACH_VEC_ELT (int, file.includee, ix, p)
-  {
-    char tmp[16];
-    sprintf (tmp, "%d", p);
-    dyn_string_copy_cstr (str, "select name from chFile where id = ");
-    dyn_string_append_cstr (str, tmp);
-    dyn_string_append_cstr (str, ";");
-    db_error (sqlite3_get_table (db, dyn_string_buf (str), &table,
-				 &nrow, &ncolumn, &error_msg));
-    gcc_assert (nrow == 1 && ncolumn == 1);
-    printf ("%s:%s >> ", tmp, table[1]);
-    sqlite3_free_table (table);
-  }
-  dyn_string_delete (str);
+  int ix;
+  include_unit *p;
+  FOR_EACH_VEC_ELT (include_unit, file.includee, ix, p)
+    printf ("%d:%s >> ", p->id, dyn_string_buf (p->name));
   printf ("\n");
 }
 
 static int
 file_get_current_fid (void)
 {
-  return VEC_last (int, file.includee);
+  return VEC_last (include_unit, file.includee)->id;
 }
 
 static void
@@ -336,17 +332,17 @@ file_insert_defid (long long defid)
   db_error (sqlite3_bind_int64 (file.select_filedef, 3, defid));
   if (sqlite3_step (file.select_filedef) != SQLITE_ROW)
     {
-      scope *s;
-      if (VEC_length (scope, file.scopes) != 0)
+      lpair *s;
+      if (VEC_length (lpair, file.scopes) != 0)
 	{
-	  s = VEC_last (scope, file.scopes);
+	  s = VEC_last (lpair, file.scopes);
 	  if (defid == s->end + 1)
 	    {
 	      s->end++;
 	      goto done;
 	    }
 	}
-      s = VEC_safe_push (scope, heap, file.scopes, NULL);
+      s = VEC_safe_push (lpair, heap, file.scopes, NULL);
       s->start = s->end = defid;
     }
 done:
@@ -357,15 +353,15 @@ static void
 flush_scopes (void)
 {
   int ix, fileid = file_get_current_fid ();
-  scope *p;
-  FOR_EACH_VEC_ELT_REVERSE (scope, file.scopes, ix, p)
+  lpair *p;
+  FOR_EACH_VEC_ELT_REVERSE (lpair, file.scopes, ix, p)
   {
     db_error (sqlite3_bind_int (file.insert_filedef, 1, fileid));
     db_error (sqlite3_bind_int64 (file.insert_filedef, 2, p->start));
     db_error (sqlite3_bind_int64 (file.insert_filedef, 3, p->end));
     execute_sql (file.insert_filedef);
   }
-  VEC_truncate (scope, file.scopes, 0);
+  VEC_truncate (lpair, file.scopes, 0);
 }
 
 static bool mo_isvalid (void);
@@ -377,12 +373,15 @@ file_push (const char *f, bool sys)
   long long mtime;
   gcc_assert (!mo_isvalid ());
   insert_file (f, &id, &mtime, sys);
-  if (VEC_length (int, file.includee) != 0)
+  if (VEC_length (include_unit, file.includee) != 0)
     {
       flush_scopes ();
       insert_filedep (id);
     }
-  VEC_safe_push (int, heap, file.includee, id);
+  include_unit *p = VEC_safe_push (include_unit, heap, file.includee, NULL);
+  p->id = id;
+  p->name = dyn_string_new (32);
+  dyn_string_copy_cstr (p->name, f);
   ifdef_push ();
 }
 
@@ -393,14 +392,16 @@ file_pop (void)
   ifdef_pop ();
   gcc_assert (!mo_isvalid ());
   flush_scopes ();
-  VEC_pop (int, file.includee);
+  include_unit *p = VEC_last (include_unit, file.includee);
+  dyn_string_delete (p->name);
+  VEC_pop (include_unit, file.includee);
 }
 
 static void
 file_init (const char *main_file)
 {
-  file.scopes = VEC_alloc (scope, heap, 10);
-  file.includee = VEC_alloc (int, heap, 10);
+  file.scopes = VEC_alloc (lpair, heap, 10);
+  file.includee = VEC_alloc (include_unit, heap, 10);
 
   db_error (sqlite3_prepare_v2 (db,
 				"select id, mtime from chFile where name = ?;",
@@ -436,8 +437,8 @@ file_tini (void)
   sqlite3_finalize (file.insert_chfile);
   sqlite3_finalize (file.select_chfile);
 
-  VEC_free (int, heap, file.includee);
-  VEC_free (scope, heap, file.scopes);
+  VEC_free (include_unit, heap, file.includee);
+  VEC_free (lpair, heap, file.scopes);
 }
 
 /* }])> */
@@ -599,8 +600,7 @@ typedef struct
 {
   /* leader expanded token. */
   db_token leader;
-  int start;
-  int length;
+  lpair scope;
 } let;
 DEF_VEC_O (let);
 DEF_VEC_ALLOC_O (let, heap);
@@ -627,7 +627,8 @@ static void __attribute__ ((used)) dump_cache (void)
   FOR_EACH_VEC_ELT (let, cache.auxiliary, ix, p2)
   {
     printf ("[%d]: (%s:%d), %d, %d\n", ix, dyn_string_buf (p2->leader.value),
-	    p2->leader.file_offset, p2->start, p2->length);
+	    p2->leader.file_offset, (int) p2->scope.start,
+	    (int) p2->scope.length);
   }
   printf ("\n");
 }
@@ -709,9 +710,9 @@ cache_reset (int reserve)
       /* Deal with multiple definitions are in a macro internal. */
       let *p2 = VEC_last (let, cache.auxiliary);
       mo_substract_macro_count (VEC_length (db_token, cache.itokens) -
-				reserve - p2->start);
-      p2->start = 0;
-      p2->length = 0x1fffffff;
+				reserve - p2->scope.start);
+      p2->scope.start = 0;
+      p2->scope.length = 0x1fffffff;
       vec_pop_front (cache.auxiliary, 1);
     }
   else
@@ -732,10 +733,10 @@ cache_tag_let (cpp_token_p token)
 {
   let *p = VEC_safe_push (let, heap, cache.auxiliary, NULL);
   p->leader.value = dyn_string_new (32);
-  p->start = VEC_length (db_token, cache.itokens);
+  p->scope.start = VEC_length (db_token, cache.itokens);
   /* Here, the length is initialized as 0x1fffffff for tag all following cache.itokens
    * belong to the macro. */
-  p->length = 0x1fffffff;
+  p->scope.length = 0x1fffffff;
   p->leader.file_offset = token->file_offset;
   gcc_assert (token->type == CPP_NAME);
   p->leader.flag = CPP_NAME | C_TYPE_MASK;
@@ -755,7 +756,7 @@ static void
 cache_end_let (void)
 {
   let *p = VEC_last (let, cache.auxiliary);
-  p->length = mo_get_macro_count ();
+  p->scope.length = mo_get_macro_count ();
 }
 
 static void
@@ -834,7 +835,7 @@ cache_itoken_to_chtoken (int index)
   int tmp = revert_index (index);
   FOR_EACH_VEC_ELT_REVERSE (let, cache.auxiliary, ix, p)
   {
-    if (p->start <= tmp && tmp < p->start + p->length)
+    if (p->scope.start <= tmp && tmp < p->scope.start + p->scope.length)
       break;
   }
   if (ix != -1)
@@ -1050,17 +1051,9 @@ __extension__ enum ifdef_flag
   NO_SKIPPED,
 };
 
-typedef struct
-{
-  long long start;
-  long long end;
-} ifdef_unit;
-DEF_VEC_O (ifdef_unit);
-DEF_VEC_ALLOC_O (ifdef_unit, heap);
-
 static struct
 {
-  VEC (ifdef_unit, heap) * units;
+  VEC (lpair, heap) * units;
 
   struct sqlite3_stmt *select_ifdef;
   struct sqlite3_stmt *insert_ifdef;
@@ -1069,13 +1062,13 @@ static struct
 static void
 ifdef_append (enum ifdef_flag flag, int offset)
 {
-  ifdef_unit *unit = VEC_last (ifdef_unit, ifdef.units);
+  lpair *unit = VEC_last (lpair, ifdef.units);
   unit->end = offset;
   int fileid = file_get_current_fid ();
   db_error (sqlite3_bind_int (ifdef.select_ifdef, 1, fileid));
-  db_error (sqlite3_bind_int64 (ifdef.select_ifdef, 2, flag));
-  db_error (sqlite3_bind_int64 (ifdef.select_ifdef, 3, unit->start));
-  db_error (sqlite3_bind_int64 (ifdef.select_ifdef, 4, unit->end));
+  db_error (sqlite3_bind_int (ifdef.select_ifdef, 2, flag));
+  db_error (sqlite3_bind_int (ifdef.select_ifdef, 3, unit->start));
+  db_error (sqlite3_bind_int (ifdef.select_ifdef, 4, unit->end));
   if (sqlite3_step (ifdef.select_ifdef) != SQLITE_ROW)
     {
       db_error (sqlite3_bind_int (ifdef.insert_ifdef, 1, fileid));
@@ -1091,7 +1084,7 @@ ifdef_append (enum ifdef_flag flag, int offset)
 static void
 ifdef_push (void)
 {
-  ifdef_unit *unit = VEC_safe_push (ifdef_unit, heap, ifdef.units, NULL);
+  lpair *unit = VEC_safe_push (lpair, heap, ifdef.units, NULL);
   unit->start = 0;
   unit->end = -1;
 }
@@ -1100,7 +1093,7 @@ static void
 ifdef_pop (void)
 {
   ifdef_append (NO_SKIPPED, 0x10000000);
-  VEC_pop (ifdef_unit, ifdef.units);
+  VEC_pop (lpair, ifdef.units);
 }
 
 static void
@@ -1114,13 +1107,13 @@ ifdef_init (void)
   db_error (sqlite3_prepare_v2 (db,
 				"insert into Ifdef values (?, ?, ?, ?);",
 				-1, &ifdef.insert_ifdef, 0));
-  ifdef.units = VEC_alloc (ifdef_unit, heap, 10);
+  ifdef.units = VEC_alloc (lpair, heap, 10);
 }
 
 static void
 ifdef_tini (void)
 {
-  VEC_free (ifdef_unit, heap, ifdef.units);
+  VEC_free (lpair, heap, ifdef.units);
   sqlite3_finalize (ifdef.insert_ifdef);
   sqlite3_finalize (ifdef.select_ifdef);
 }
