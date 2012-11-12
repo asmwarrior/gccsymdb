@@ -28,6 +28,7 @@
  *   init.sql.
  *   7) Class ifdef: is in charge of Ifdef table of init.sql.
  *   8) Class funp_alias: is in charge of FunpAlias table of init.sql.
+ *   9) Class mo: now, is also charge of Macro table.
  *
  * GDB Guide:
  *   1) To support debug, I place a class `bug' in common fold, to use it,
@@ -256,6 +257,19 @@ static void __attribute__ ((used)) dump_includee (void)
 }
 
 static int
+file_get_fid_from_cache (const char *file_name)
+{
+  int ix;
+  include_unit *p;
+  FOR_EACH_VEC_ELT (include_unit, file.includee, ix, p)
+  {
+    if (strcmp (dyn_string_buf (p->name), file_name) == 0)
+      return p->id;
+  }
+  gcc_assert (false);
+}
+
+static int
 file_get_current_fid (void)
 {
   return VEC_last (include_unit, file.includee)->id;
@@ -452,19 +466,42 @@ static struct
   bool cancel;
   bool cascaded;
   bool valid;
+
+  /* For Macro table of init.sql */
+  int process;
+  int letFileID;
+  int letOffset;
+  int defFileID;
+  int defLine;
+  int defColumn;
+  dyn_string_t expandedTokens;
+  dyn_string_t macroTokens;
+  struct sqlite3_stmt *insert_macro;
 } mo =
 {
-0, 0, false, false, false};
+0, 0, false, false, false, false};
 
 static void
-mo_append_expanded_token (void)
+mo_append_expanded_token (cpp_token_p token)
 {
+  if (mo.process == 2)
+    {
+      print_token (token, gbuf);
+      dyn_string_append (mo.expandedTokens, gbuf);
+      dyn_string_append_cstr (mo.expandedTokens, " ");
+    }
   mo.expanded_count++;
 }
 
 static void
-mo_append_macro_token (void)
+mo_append_macro_token (cpp_token_p token)
 {
+  if (mo.process == 2)
+    {
+      print_token (token, gbuf);
+      dyn_string_append (mo.macroTokens, gbuf);
+      dyn_string_append_cstr (mo.macroTokens, " ");
+    }
   mo.macro_count++;
 }
 
@@ -483,6 +520,22 @@ mo_substract_macro_count (int value)
 static void
 mo_leave (void)
 {
+  if (mo.process == 2)
+    {
+      db_error (sqlite3_bind_int (mo.insert_macro, 1, mo.defFileID));
+      db_error (sqlite3_bind_int (mo.insert_macro, 2, mo.defLine));
+      db_error (sqlite3_bind_int (mo.insert_macro, 3, mo.defColumn));
+      db_error (sqlite3_bind_text
+		(mo.insert_macro, 4, dyn_string_buf (mo.expandedTokens),
+		 dyn_string_length (mo.expandedTokens), SQLITE_STATIC));
+      db_error (sqlite3_bind_text
+		(mo.insert_macro, 5, dyn_string_buf (mo.macroTokens),
+		 dyn_string_length (mo.macroTokens), SQLITE_STATIC));
+      execute_sql (mo.insert_macro);
+      dyn_string_copy_cstr (mo.expandedTokens, "");
+      dyn_string_copy_cstr (mo.macroTokens, "");
+      mo.process = 1;
+    }
   mo.expanded_count = mo.macro_count = 0;
   mo.cancel = mo.cascaded = false;
   gcc_assert (mo.valid == true);
@@ -490,9 +543,21 @@ mo_leave (void)
 }
 
 static void
-mo_enter (void)
+mo_enter (cpp_reader * pfile, cpp_token_p token)
 {
-  mo_append_expanded_token ();
+  if (mo.process == 1 &&
+      file_get_current_fid () == mo.letFileID
+      && token->file_offset == mo.letOffset)
+    {
+      cpp_macro *macro = token->val.node.node->value.macro;
+      source_location sl = macro->line;
+      const struct line_map *lm = linemap_lookup (pfile->line_table, sl);
+      mo.defFileID = file_get_fid_from_cache (lm->to_file);
+      mo.defLine = SOURCE_LINE (lm, sl);
+      mo.defColumn = SOURCE_COLUMN (lm, sl);
+      mo.process = 2;
+    }
+  mo_append_expanded_token (token);
   gcc_assert (mo.valid == false);
   mo.valid = true;
 }
@@ -574,6 +639,37 @@ static bool
 mo_cancel (void)
 {
   return mo.cancel;
+}
+
+static void
+mo_init (void)
+{
+  int nrow, ncolumn;
+  char *error_msg, **result;
+  db_error (sqlite3_get_table (db,
+			       "select letFileID, letOffset from Macro;",
+			       &result, &nrow, &ncolumn, &error_msg));
+  if (nrow == 1)
+    {
+      mo.process = 1;
+      mo.letFileID = atoi (result[2]);
+      mo.letOffset = atoi (result[3]);
+    }
+  sqlite3_free_table (result);
+
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into Macro values (NULL, NULL, ?, ?, ?, ?, ?);",
+				-1, &mo.insert_macro, 0));
+  mo.expandedTokens = dyn_string_new (128);
+  mo.macroTokens = dyn_string_new (128);
+}
+
+static void
+mo_tini (void)
+{
+  dyn_string_delete (mo.macroTokens);
+  dyn_string_delete (mo.expandedTokens);
+  sqlite3_finalize (mo.insert_macro);
 }
 
 /* }])> */
@@ -1203,7 +1299,7 @@ cb_lex_token (cpp_reader * pfile, cpp_token_p token)
   if (token->type == CPP_EOF)
     return;
   if (mo_isvalid ())
-    mo_append_expanded_token ();
+    mo_append_expanded_token (token);
   else
     {
       print_token (token, gbuf);
@@ -1283,13 +1379,14 @@ cb_macro_start (cpp_reader * pfile, cpp_token_p token,
 		const cpp_hashnode * node)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  gcc_assert (token->val.node.node == node);
   bool fun_like = false;
   if (!(node->flags & NODE_BUILTIN))
     fun_like = node->value.macro->fun_like;
   if (pfile->context->prev == NULL)
     {
       bug_trap_token (token->file_offset);
-      mo_enter ();
+      mo_enter (pfile, token);
       cache_tag_let (token);
     reinit:
       if (fun_like)
@@ -1381,11 +1478,13 @@ symdb_unit_init (void *gcc_data, void *user_data)
   file_init (main_input_filename);
   def_init ();
   funp_alias_init ();
+  mo_init ();
 }
 
 static void
 symdb_unit_tini (void *gcc_data, void *user_data)
 {
+  mo_tini ();
   funp_alias_tini ();
   def_tini ();
   file_tini ();
@@ -1422,7 +1521,7 @@ symdb_cpp_token (void *gcc_data, void *user_data)
   bug_trap_token (token->file_offset);
   cache_append_itoken_cpp_stage (token);
   if (mo_isvalid ())
-    mo_append_macro_token ();
+    mo_append_macro_token (token);
 }
 
 static void
