@@ -39,7 +39,7 @@ For User
 3) As the convention, the members of an extern enum are collected and dumped
 to database.
 4) Funtion call relationship are collected too, just like cscope.
-5) You can use table FileDependence of database to reconstruct file dependence
+5) Using `gs filedep/filedepee filename' to reconstruct file dependence
 relationship.
 6) Not in cscope, you can use `gs addsym/rmsym' to re-edit the database,
 remove the duplicate results and append new symbols to the database, see
@@ -64,6 +64,25 @@ The feature treats `ext2_open' as an alias of `open'. So when you search
 `open', jump to `ext2_open'. Of course, you can get `ext2_open' is called by
 `foo' reversely. Note to simplify my code, only simple syntax is supported
 which showed in above assign-expression. See test/funp_alias/a.c for more.
+11) Get macro expansion process by later steps
+    a) ./gs macro a.h 0
+    b) re-compile all files which depends directly/indirectly on a.h by my
+        plugin.
+    c) ./gs macro
+Note, later case will return multiple results
+    ---- a.h ----                     ---- <results> ----
+    X;                                def: a.c, 3, 0
+    ---- a.c ----                     exp: X
+    int main(void)                    mo: int i
+    {                                 def: a.c, 6, 0
+    #define X int i                   exp: X
+    #include"a.h"                     mo: int j
+    #undef X
+    #define X int j
+    #include"a.h"
+    #undef X
+    return 0;
+    }
 // }])>
 
 // User Manual <([{

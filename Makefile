@@ -18,6 +18,9 @@ default:
 	# chcon -t texrel_shlib_t symdb.so
 	./gs initdb ./ && LD_LIBRARY_PATH=${MY_ROOT}/lib ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
 
+redo:
+	LD_LIBRARY_PATH=${MY_ROOT}/lib ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
+
 db:
 	rm -f gccsym.db && ${MY_ROOT}/bin/sqlite3 -init init.sql gccsym.db ""
 

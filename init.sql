@@ -60,6 +60,19 @@ create table FunpAlias (
 	offset integer
 );
 
+create table Macro (
+	-- user request.
+	letFileID integer,
+	letOffset integer, 
+
+	-- result.
+	defFileID integer,
+	defLine integer,
+	defColumn integer,
+	expandedTokens text,
+	macroTokens text
+);
+
 -- Useful views <([{
 create view Helper as
 select * from

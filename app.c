@@ -82,6 +82,9 @@ usage (void)
   printf ("    gs ifdef filename fileoffset\n");
   printf ("    gs addsym/rmsym filename definition fileoffset\n");
   printf ("    gs falias member/fundecl symbol\n");
+  printf ("    gs filedep/filedepee filename\n");
+  printf ("    gs macro filename fileoffset\n");
+  printf ("    gs macro\n");
   printf ("    gs initdb prjpath\n");
   printf ("    gs vacuumdb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
@@ -431,6 +434,67 @@ falias (const char *type, const char *symbol)
   sqlite3_free_table (table);
 }
 
+static void
+filedep (const char *file_name, int dep)
+{
+  int nrow, ncolumn;
+  char *error_msg, **table;
+  const char *fid = dep_get_fid (file_name);
+
+  dyn_string_copy_cstr (gbuf,
+			"select name, sysHeader from chFile where id in (select ");
+  if (dep)
+    dyn_string_append_cstr (gbuf, " hID ");
+  else
+    dyn_string_append_cstr (gbuf, " chFileID ");
+  dyn_string_append_cstr (gbuf, "from FileDependence where ");
+  if (dep)
+    dyn_string_append_cstr (gbuf, " chFileID = ");
+  else
+    dyn_string_append_cstr (gbuf, " hID = ");
+  dyn_string_append_cstr (gbuf, fid);
+  dyn_string_append_cstr (gbuf, ");");
+  db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
+			       &nrow, &ncolumn, &error_msg));
+  for (int i = 1; i <= nrow; i++)
+    printf ("%s\n", table[i * ncolumn + 0]);
+  sqlite3_free_table (table);
+}
+
+static void
+macro (const char *file_name, const char *offset)
+{
+  int nrow, ncolumn;
+  char *error_msg, **table;
+  if (file_name == NULL)
+    {
+      dyn_string_copy_cstr (gbuf,
+			    "select * from Macro, chFile where defFileID = id;");
+      db_error (sqlite3_get_table
+		(db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn,
+		 &error_msg));
+      for (int i = 1; i <= nrow; i++)
+	{
+	  printf ("def: %s, %s, %s\n", table[i * ncolumn + 8],
+		  table[i * ncolumn + 3], table[i * ncolumn + 4]);
+	  printf ("exp: %s\n", table[i * ncolumn + 5]);
+	  printf ("mo: %s\n", table[i * ncolumn + 6]);
+	}
+      sqlite3_free_table (table);
+    }
+  else
+    {
+      db_error ((sqlite3_exec (db, "delete from Macro;", NULL, 0, NULL)));
+      dyn_string_copy_cstr (gbuf,
+			    "insert into Macro (letFileID, letOffset) values (");
+      dyn_string_append_cstr (gbuf, dep_get_fid (file_name));
+      dyn_string_append_cstr (gbuf, ", ");
+      dyn_string_append_cstr (gbuf, offset);
+      dyn_string_append_cstr (gbuf, ");");
+      db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
+    }
+}
+
 /* }])> */
 
 int
@@ -468,16 +532,22 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "ifdef") == 0)
     ifdef (argv[2], argv[3]);
   else if (strcmp (argv[1], "addsym") == 0)
-    {
-      if (strcmp (argv[2], "--") == 0)
-	ret = usage ();
-      else
-	addsym (argv[2], argv[3], argv[4]);
-    }
+    addsym (argv[2], argv[3], argv[4]);
   else if (strcmp (argv[1], "rmsym") == 0)
     rmsym (argv[2], argv[3], argv[4]);
   else if (strcmp (argv[1], "falias") == 0)
     falias (argv[2], argv[3]);
+  else if (strcmp (argv[1], "filedep") == 0)
+    filedep (argv[2], 1);
+  else if (strcmp (argv[1], "filedepee") == 0)
+    filedep (argv[2], 0);
+  else if (strcmp (argv[1], "macro") == 0)
+    {
+      if (argc == 2)
+	macro (NULL, NULL);
+      else
+	macro (argv[2], argv[3]);
+    }
   dep_tini ();
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);
