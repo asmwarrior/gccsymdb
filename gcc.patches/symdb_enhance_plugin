@@ -1,7 +1,7 @@
 Index: gcc/gcc/plugin.def
 ===================================================================
---- gcc.orig/gcc/plugin.def	2012-06-18 15:53:11.650664884 +0800
-+++ gcc/gcc/plugin.def	2012-09-27 14:43:54.552385757 +0800
+--- gcc.orig/gcc/plugin.def	2012-11-12 15:01:59.565617649 +0800
++++ gcc/gcc/plugin.def	2012-11-12 15:02:01.537291538 +0800
 @@ -89,6 +89,37 @@
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
@@ -42,8 +42,8 @@ Index: gcc/gcc/plugin.def
     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
 Index: gcc/gcc/c-family/c-lex.c
 ===================================================================
---- gcc.orig/gcc/c-family/c-lex.c	2012-06-18 15:53:11.650664884 +0800
-+++ gcc/gcc/c-family/c-lex.c	2012-06-18 15:53:16.661632312 +0800
+--- gcc.orig/gcc/c-family/c-lex.c	2012-11-12 15:01:59.564616073 +0800
++++ gcc/gcc/c-family/c-lex.c	2012-11-12 15:02:01.540210719 +0800
 @@ -36,6 +36,7 @@
  #include "splay-tree.h"
  #include "debug.h"
@@ -78,55 +78,9 @@ Index: gcc/gcc/c-family/c-lex.c
  }
 Index: gcc/gcc/c-parser.c
 ===================================================================
---- gcc.orig/gcc/c-parser.c	2012-06-18 15:53:11.650664884 +0800
-+++ gcc/gcc/c-parser.c	2012-09-27 14:52:23.560337365 +0800
-@@ -121,45 +121,6 @@
-    C++).  It would then be possible to share more of the C and C++
-    lexer code, if desired.  */
- 
--/* The following local token type is used.  */
--
--/* A keyword.  */
--#define CPP_KEYWORD ((enum cpp_ttype) (N_TTYPES + 1))
--
--/* More information about the type of a CPP_NAME token.  */
--typedef enum c_id_kind {
--  /* An ordinary identifier.  */
--  C_ID_ID,
--  /* An identifier declared as a typedef name.  */
--  C_ID_TYPENAME,
--  /* An identifier declared as an Objective-C class name.  */
--  C_ID_CLASSNAME,
--  /* An address space identifier.  */
--  C_ID_ADDRSPACE,
--  /* Not an identifier.  */
--  C_ID_NONE
--} c_id_kind;
--
--/* A single C token after string literal concatenation and conversion
--   of preprocessing tokens to tokens.  */
--typedef struct GTY (()) c_token {
--  /* The kind of token.  */
--  ENUM_BITFIELD (cpp_ttype) type : 8;
--  /* If this token is a CPP_NAME, this value indicates whether also
--     declared as some kind of type.  Otherwise, it is C_ID_NONE.  */
--  ENUM_BITFIELD (c_id_kind) id_kind : 8;
--  /* If this token is a keyword, this value indicates which keyword.
--     Otherwise, this value is RID_MAX.  */
--  ENUM_BITFIELD (rid) keyword : 8;
--  /* If this token is a CPP_PRAGMA, this indicates the pragma that
--     was seen.  Otherwise it is PRAGMA_NONE.  */
--  ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
--  /* The location at which this token was found.  */
--  location_t location;
--  /* The value associated with this token, if any.  */
--  tree value;
--} c_token;
--
- /* A parser structure recording information about the state and
-    context of parsing.  Includes lexer information with up to two
-    tokens of look-ahead; more are not needed for C.  */
-@@ -386,6 +347,7 @@
+--- gcc.orig/gcc/c-parser.c	2012-11-12 15:01:59.565617649 +0800
++++ gcc/gcc/c-parser.c	2012-11-12 15:02:01.547056945 +0800
+@@ -386,6 +386,7 @@
        break;
      }
    timevar_pop (TV_LEX);
@@ -134,7 +88,7 @@ Index: gcc/gcc/c-parser.c
  }
  
  /* Return a pointer to the next token from PARSER, reading it in if
-@@ -1329,6 +1291,7 @@
+@@ -1329,6 +1330,7 @@
  	 an @interface or @protocol with prefix attributes).  We can
  	 only tell which after parsing the declaration specifiers, if
  	 any, and the first declarator.  */
@@ -142,7 +96,7 @@ Index: gcc/gcc/c-parser.c
        c_parser_declaration_or_fndef (parser, true, true, true, false, true, NULL);
        break;
      }
-@@ -1457,6 +1420,11 @@
+@@ -1457,6 +1459,11 @@
        return;
      }
    finish_declspecs (specs);
@@ -154,7 +108,7 @@ Index: gcc/gcc/c-parser.c
    if (c_parser_next_token_is (parser, CPP_SEMICOLON))
      {
        if (empty_ok)
-@@ -1590,6 +1558,11 @@
+@@ -1590,6 +1597,11 @@
  	{
  	  tree asm_name = NULL_TREE;
  	  tree postfix_attrs = NULL_TREE;
@@ -166,7 +120,7 @@ Index: gcc/gcc/c-parser.c
  	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
  	    {
  	      diagnosed_no_specs = true;
-@@ -1618,6 +1591,8 @@
+@@ -1618,6 +1630,8 @@
  	      init_loc = c_parser_peek_token (parser)->location;
  	      init = c_parser_initializer (parser);
  	      finish_init ();
@@ -175,7 +129,7 @@ Index: gcc/gcc/c-parser.c
  	      if (d != error_mark_node)
  		{
  		  maybe_warn_string_init (TREE_TYPE (d), init);
-@@ -1709,11 +1684,15 @@
+@@ -1709,11 +1723,15 @@
  	 declarator with a nonempty identifier list in a definition;
  	 and postfix attributes have never been accepted here in
  	 function definitions either.  */
@@ -191,7 +145,7 @@ Index: gcc/gcc/c-parser.c
        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
  	= c_parser_peek_token (parser)->location;
        fnbody = c_parser_compound_statement (parser);
-@@ -2211,6 +2190,7 @@
+@@ -2211,6 +2229,7 @@
  	    }
  	  token = c_parser_peek_token (parser);
  	  enum_id = token->value;
@@ -199,7 +153,7 @@ Index: gcc/gcc/c-parser.c
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
-@@ -6563,6 +6543,7 @@
+@@ -6563,6 +6582,7 @@
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -207,7 +161,7 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-@@ -6706,6 +6687,7 @@
+@@ -6706,6 +6726,7 @@
        expr.original_code = COMPOUND_EXPR;
        expr.original_type = next.original_type;
      }
@@ -217,8 +171,8 @@ Index: gcc/gcc/c-parser.c
  
 Index: gcc/gcc/plugin.c
 ===================================================================
---- gcc.orig/gcc/plugin.c	2012-06-18 15:53:11.650664884 +0800
-+++ gcc/gcc/plugin.c	2012-09-27 14:44:37.328459697 +0800
+--- gcc.orig/gcc/plugin.c	2012-11-12 15:01:59.564616073 +0800
++++ gcc/gcc/plugin.c	2012-11-12 15:02:01.548083181 +0800
 @@ -438,6 +438,16 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
@@ -255,8 +209,8 @@ Index: gcc/gcc/plugin.c
               call it.  */
 Index: gcc/gcc/doc/plugins.texi
 ===================================================================
---- gcc.orig/gcc/doc/plugins.texi	2012-06-18 15:53:11.650664884 +0800
-+++ gcc/gcc/doc/plugins.texi	2012-09-27 14:42:51.448242637 +0800
+--- gcc.orig/gcc/doc/plugins.texi	2012-11-12 15:01:59.564616073 +0800
++++ gcc/gcc/doc/plugins.texi	2012-11-12 15:02:01.548083181 +0800
 @@ -183,6 +183,25 @@
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
@@ -283,59 +237,3 @@ Index: gcc/gcc/doc/plugins.texi
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
-Index: gcc/gcc/c-family/c-common.h
-===================================================================
---- gcc.orig/gcc/c-family/c-common.h	2012-06-18 15:53:11.650664884 +0800
-+++ gcc/gcc/c-family/c-common.h	2012-06-18 15:53:16.667417437 +0800
-@@ -25,6 +25,7 @@
- #include "splay-tree.h"
- #include "cpplib.h"
- #include "ggc.h"
-+#include "c-pragma.h"
- 
- /* In order for the format checking to accept the C frontend
-    diagnostic framework extensions, you must include this file before
-@@ -1008,4 +1009,43 @@
- extern tree c_omp_remap_decl (tree, bool);
- extern void record_types_used_by_current_var_decl (tree);
- 
-+/* The following local token type is used.  */
-+
-+/* A keyword.  */
-+#define CPP_KEYWORD ((enum cpp_ttype) (N_TTYPES + 1))
-+
-+/* More information about the type of a CPP_NAME token.  */
-+typedef enum c_id_kind {
-+  /* An ordinary identifier.  */
-+  C_ID_ID,
-+  /* An identifier declared as a typedef name.  */
-+  C_ID_TYPENAME,
-+  /* An identifier declared as an Objective-C class name.  */
-+  C_ID_CLASSNAME,
-+  /* An address space identifier.  */
-+  C_ID_ADDRSPACE,
-+  /* Not an identifier.  */
-+  C_ID_NONE
-+} c_id_kind;
-+
-+/* A single C token after string literal concatenation and conversion
-+   of preprocessing tokens to tokens.  */
-+typedef struct GTY (()) c_token {
-+  /* The kind of token.  */
-+  ENUM_BITFIELD (cpp_ttype) type : 8;
-+  /* If this token is a CPP_NAME, this value indicates whether also
-+     declared as some kind of type.  Otherwise, it is C_ID_NONE.  */
-+  ENUM_BITFIELD (c_id_kind) id_kind : 8;
-+  /* If this token is a keyword, this value indicates which keyword.
-+     Otherwise, this value is RID_MAX.  */
-+  ENUM_BITFIELD (rid) keyword : 8;
-+  /* If this token is a CPP_PRAGMA, this indicates the pragma that
-+     was seen.  Otherwise it is PRAGMA_NONE.  */
-+  ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
-+  /* The value associated with this token, if any.  */
-+  tree value;
-+  /* The location at which this token was found.  */
-+  location_t location;
-+} c_token;
-+
- #endif /* ! GCC_C_COMMON_H */

@@ -54,6 +54,7 @@
 #include "libcpp/include/cpplib.h"
 #include "libcpp/internal.h"
 #include <sqlite3.h>
+#include "gcc/c-parser.c"
 /* }])> */
 
 /* common <([{ */
@@ -552,10 +553,13 @@ mo_enter (cpp_reader * pfile, cpp_token_p token)
       cpp_macro *macro = token->val.node.node->value.macro;
       source_location sl = macro->line;
       const struct line_map *lm = linemap_lookup (pfile->line_table, sl);
-      mo.defFileID = file_get_fid_from_cache (lm->to_file);
-      mo.defLine = SOURCE_LINE (lm, sl);
-      mo.defColumn = SOURCE_COLUMN (lm, sl);
-      mo.process = 2;
+      if (strcmp (lm->to_file, "<command-line>") != 0)
+	{
+	  mo.defFileID = file_get_fid_from_cache (lm->to_file);
+	  mo.defLine = SOURCE_LINE (lm, sl);
+	  mo.defColumn = SOURCE_COLUMN (lm, sl);
+	  mo.process = 2;
+	}
     }
   mo_append_expanded_token (token);
   gcc_assert (mo.valid == false);
