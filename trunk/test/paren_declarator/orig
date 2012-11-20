@@ -21,9 +21,9 @@ INSERT INTO "Definition" VALUES(12,'foo',2,274);
 INSERT INTO "Definition" VALUES(13,'main',2,310);
 INSERT INTO "Definition" VALUES(14,'foo',9,356);
 INSERT INTO "Definition" VALUES(15,'oof',2,372);
-INSERT INTO "Definition" VALUES(16,'c',1,387);
-INSERT INTO "Definition" VALUES(17,'ofo',2,418);
-INSERT INTO "Definition" VALUES(18,'fof',2,461);
+INSERT INTO "Definition" VALUES(16,'fof',2,389);
+INSERT INTO "Definition" VALUES(17,'fun',1,435);
+INSERT INTO "Definition" VALUES(18,'fun2',1,482);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin

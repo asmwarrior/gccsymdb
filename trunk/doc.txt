@@ -64,6 +64,9 @@ The feature treats `ext2_open' as an alias of `open'. So when you search
 `open', jump to `ext2_open'. Of course, you can get `ext2_open' is called by
 `foo' reversely. Note to simplify my code, only simple syntax is supported
 which showed in above assign-expression. See test/funp_alias/a.c for more.
+Syntax pattern is `struct::fun_pointer = fun_decl' and call the pattern,
+complex struct::...::struct::__pattern__ is supported, but only the last two
+levels are imported into database.
 11) Get macro expansion process by later steps
     a) ./gs macro a.h 0
     b) re-compile all files which depends directly/indirectly on a.h by my
@@ -240,6 +243,10 @@ outest function.
     }
 The code can make my plugin crashed even code is correct. The priority of the
 bug is low, and by in_macro_expansion_p of gcc-4.8.x, the bug can be fixed.
+4) About port the plugin to g++, there's a major different between g++ and
+gcc on converting tokens from cpp stage to c/c++ stage -- g++ tries to convert
+all cpp_tokens to cp_tokens at one time, it violates the architecture of my
+plugin.
 // }])>
 
 For Developer
