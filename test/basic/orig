@@ -27,6 +27,9 @@ INSERT INTO "Definition" VALUES(18,'oldfun',2,462);
 INSERT INTO "Definition" VALUES(19,'foo',2,495);
 INSERT INTO "Definition" VALUES(20,'main',2,529);
 INSERT INTO "Definition" VALUES(21,'foo',9,664);
+INSERT INTO "Definition" VALUES(22,'c',1,679);
+INSERT INTO "Definition" VALUES(23,'ofo',2,710);
+INSERT INTO "Definition" VALUES(24,'fof',2,753);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
@@ -48,7 +51,7 @@ CREATE TABLE FileDefinition (
 	startDefID bigint,
 	endDefID bigint
 );
-INSERT INTO "FileDefinition" VALUES(1,1,21);
+INSERT INTO "FileDefinition" VALUES(1,1,24);
 CREATE TRIGGER DelFileDefition after delete on FileDefinition
 begin
 	delete from Definition where id >= old.startDefID and id <= old.endDefID;

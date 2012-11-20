@@ -44,4 +44,8 @@ int main(void)
 	funpvar();
 	return foo();
 }
+
+char c __attribute__((unused));
+int ofo(int i __attribute__((unused))) {}
+int* fof(int i __attribute__((unused))) {}
 //*/

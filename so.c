@@ -1549,20 +1549,20 @@ is_funcp (tree node)
   return true;
 }
 
-static tree
-get_funcp_member (tree var, tree * type)
+static bool
+var_is_struct_funcp (tree var, tree * type, tree * member)
 {
   if (TREE_CODE (var) != COMPONENT_REF)
-    return NULL;
+    return false;
   gcc_assert (TREE_OPERAND_LENGTH (var) == 3);
-  tree member = TREE_OPERAND (var, 1);
-  if (!is_funcp (member))
-    return NULL;
+  *member = TREE_OPERAND (var, 1);
+  if (!is_funcp (*member))
+    return false;
   gcc_assert (TREE_OPERAND (var, 2) == NULL);
-  gcc_assert (TREE_CODE (member) == FIELD_DECL);
-  gcc_assert (TREE_CODE_CLASS (TREE_CODE (member)) == tcc_declaration);
+  gcc_assert (TREE_CODE (*member) == FIELD_DECL);
+  gcc_assert (TREE_CODE_CLASS (TREE_CODE (*member)) == tcc_declaration);
   *type = TREE_TYPE (TREE_OPERAND (var, 0));
-  return member;
+  return true;
 }
 
 static const char *
@@ -1586,7 +1586,7 @@ get_typename (tree type)
 static void
 symdb_call_func (void *gcc_data, void *user_data)
 {
-  tree decl = (tree) gcc_data, type = NULL;
+  tree decl = (tree) gcc_data, type = NULL, member;
   db_token *token;
   int cpp_type, c_type;
   int index;
@@ -1605,7 +1605,7 @@ symdb_call_func (void *gcc_data, void *user_data)
 	  gcc_assert (TREE_OPERAND_LENGTH (decl) == 1);
 	  decl = TREE_OPERAND (decl, 0);
 	}
-      if (get_funcp_member (decl, &type) != NULL)
+      if (var_is_struct_funcp (decl, &type, &member))
 	df = DEF_CALLED_POINTER;
       else
 	goto done;
@@ -1613,6 +1613,7 @@ symdb_call_func (void *gcc_data, void *user_data)
   token = cache_get (0);
   def_demangle_type (token, &cpp_type, &c_type);
   gcc_assert (cpp_type == CPP_OPEN_PAREN);
+  // Strip inner parens.
   index = def_strip_paren (1);
   def_append_chk (index, df, type != NULL ? get_typename (type) : NULL);
 
@@ -1694,27 +1695,26 @@ symdb_extern_func (void *gcc_data, void *user_data)
   //    1) ... int `(foo(int i __attribute__((unused)))) {' ...
   //    2) ... int `*(foo(int i __attribute__((unused)))) {' ...
   // which includes outer paren, parameter-type-list, variable attribute.
-  // So to strip outer parens, search them from both backward and forward.
   if (cache_skip_match_pair (index, ')') == cache_get_itoken_size ())
     // case 1, adjust `index' to avoid overflow cache.itokens.
     index++;
+  // strip outer parens.
   while (true)
     {
-      index = cache_skip_match_pair (index, ')');
-      token = cache_get (index);
+      int tmp;
+      tmp = cache_skip_match_pair (index, ')');
+      token = cache_get (tmp);
       def_demangle_type (token, &cpp_type, &c_type);
-      if (cpp_type == CPP_NAME && c_type == 0xffff)
-	break;
-      else if (cpp_type == CPP_CLOSE_PAREN)
+      if ((cpp_type == CPP_NAME && c_type == 0xffff) ||
+	  cpp_type == CPP_CLOSE_PAREN)
 	{
-	  // strip inner parens.
-	  index = def_strip_paren (index);
+	  index = tmp;
 	  break;
 	}
-      else
-	gcc_assert (cpp_type == CPP_OPEN_PAREN);
       index++;
     }
+  // strip inner parens.
+  index = def_strip_paren (index);
   def_append_chk (index, DEF_FUNC, NULL);
 
   block_list.enum_spec = true;
@@ -1729,23 +1729,47 @@ symdb_extern_func (void *gcc_data, void *user_data)
 *   identifier
 *   ( attributes[opt] declarator )
 *   direct-declarator array-declarator
-*   direct-declarator ( parameter-type-list ) << function declaration.
+*   direct-declarator ( parameter-type-list )
 *   direct-declarator ( identifier-list[opt] ) << function call.
-* pointer:
-*   type-qualifier-list[opt]
-*   type-qualifier-list[opt] pointer
-* type-qualifier-list:
-*   type-qualifier
-*   attributes
-*   type-qualifier-list type-qualifier
-*   type-qualifier-list attributes
+* parameter-type-list:
+*   parameter-list
+*   parameter-list , ...
+* parameter-list:
+*   parameter-declaration
+*   parameter-list , parameter-declaration
+* parameter-declaration:
+*   declaration-specifiers declarator attributes[opt]
+*   declaration-specifiers abstract-declarator[opt] attributes[opt]
+* identifier-list:
+*   identifier
+*   identifier-list , identifier
 *
-* Our callback hook makes sure there's not function-call case at all.
+* Our callback hook makes sure there's not function-call case at all. And we
+* also don't care about function-declaration. So 
+*   direct-declarator ( parameter-type-list )
+* only are available to function pointer.
 *
 * Case `( attributes[opt] declarator )' is called paren cases, see
 * test/paren_declarator/a.c. There're three -- outer, middle and inner cases.
 * `int *(*(*(*(funpvar))[3])(void));'
 * function pointer includes all of them, from left to right.
+* `int ((arr)[3][2]);'
+* includes outer and inner cases. To simple, later code calls outer as middle.
+* And the remain variable types and typedef include only inner cases.
+*
+* To function pointer
+* 1) int (*fun[2])(void); correct.
+* 2) int (*fun)(void)[2]; wrong.
+* Which means `[' is closer than `(void)' to `fun'.
+*
+* Here is a trap to function pointer.
+* int ((*fun[2])(int i __attribute__((unused))));
+* which includes outer paren, parameter-type-list, variable attribute. So just
+* stripping parens from backward to forwared is wrong.
+*
+* Syntax comes from c-parser.c:c_parser_declarator, but later case is also ok?
+* char c __attribute__((unused));
+* To the case, class cache snapshot is `c __attribute__'.
 */
 static void
 symdb_extern_var (void *gcc_data, void *user_data)
@@ -1756,7 +1780,7 @@ symdb_extern_var (void *gcc_data, void *user_data)
   db_token *token;
   int cpp_type, c_type;
   int index = 1;
-  int fun = 0;
+  int funp = 0;
   int td = 0;
   int arr = 0;
 
@@ -1773,24 +1797,34 @@ symdb_extern_var (void *gcc_data, void *user_data)
 	  if (da->declarator->kind != cdk_pointer && td == 0)
 	    // Just function declaration.
 	    goto done;
-	  fun = 1;
+	  funp = 1;
 	}
       if (da->kind == cdk_array)
 	arr = 1;
       da = da->declarator;
     }
 
-  // First let's see tested result,
-  //    1) int (*fun[2])(void); correct.
-  //    2) int (*fun)(void)[2]; wrong.
-  // Our syntax comes from gcc.src/gcc/c-parser:c_parser_declarator, but the
-  // result is strange...
-  // So search process is very simple.
-  // strip outer parens.
-  index = def_strip_paren (1);
-  if (fun)
-    // Current paren must be -- `( identifier-list[opt] )'.
-    index = cache_skip_match_pair (index - 1, ')');
+  if (funp)
+    {
+      if (cache_skip_match_pair (index, ')') == cache_get_itoken_size ())
+	// trap case, adjust `index' to avoid overflow cache.itokens.
+	index++;
+      // strip outer parens.
+      while (true)
+	{
+	  int tmp;
+	  tmp = cache_skip_match_pair (index, ')');
+	  token = cache_get (tmp);
+	  def_demangle_type (token, &cpp_type, &c_type);
+	  if ((cpp_type == CPP_NAME && c_type == 0xffff) ||
+	      cpp_type == CPP_CLOSE_PAREN)
+	    {
+	      index = tmp;
+	      break;
+	    }
+	  index++;
+	}
+    }
   // strip middle parens.
   index = def_strip_paren (index);
   if (arr)
@@ -1845,8 +1879,8 @@ symdb_declspecs (void *gcc_data, void *user_data)
   const struct c_declspecs *ds = pair[0];
   // Here pair[1] is very important since to gcc intern
   //    int i;
-  // in symdb_declspecs >> cache_reset(x), if without pair[1], symdb_extern_var
-  // will be crashed.
+  // In the function, class cache snapshot is `int i', so symdb_declspecs >>
+  // cache_reset must make sure later symdb_extern_var will not crashed.
   int index = (int) pair[1];
   enum definition_flag flag;
   db_token *token;
@@ -1953,9 +1987,8 @@ modify_expr (tree node)
   if (!is_funcp (node))
     return;
   gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
-  tree type;
-  tree member = get_funcp_member (TREE_OPERAND (node, 0), &type);
-  if (member == NULL)
+  tree type, member = NULL;
+  if (!var_is_struct_funcp (TREE_OPERAND (node, 0), &type, &member))
     return;
   tree tmp = TREE_OPERAND (node, 1);
   if (TREE_CODE (tmp) == NOP_EXPR)

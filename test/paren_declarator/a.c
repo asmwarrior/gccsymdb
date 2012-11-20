@@ -31,7 +31,7 @@ int (main(void))
 }
 
 int (oof)() {}
-char c __attribute__((unused));
-int ofo(int i __attribute__((unused))) {}
-int* fof(int i __attribute__((unused))) {}
+int *((fof(int i __attribute__((unused))))) {}
+int (*fun[2])(int i __attribute__((unused)));
+int ((*fun2[2])(int i __attribute__((unused))));
 //*/
