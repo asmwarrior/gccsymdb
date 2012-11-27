@@ -176,6 +176,12 @@ elseif a:subcmd == 'fdef'
 	let s:file_name = '--'
 	let s:symbol = a:1
 	call s:GS_falias_def()
+else
+	echo 'Gs command:'
+	echo 'def     : search a definition.'
+	echo 'callee  : where a function is called, member-function-pointer assignment is also searched cascadedly'
+	echo 'ifdef   : whether current position is skipped by ifdef/if.'
+	echo 'fdef    : where the member-function-pointer is assigned and assigned-definition.'
 endif
 endfunction
 " }])>

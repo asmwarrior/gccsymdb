@@ -3,10 +3,13 @@ create table ProjectOverview (
 	dbVersion text,
 	pluginVersion text,
 	gccVersion text,
+	sqliteVersion text,
 	projectRootPath text,
 	-- plugin control parameters.
 	canUpdateFile boolean
 );
+
+insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "3.7.9", "/project/root/path/", 't');
 
 -- File tables <([{
 create table chFile (
@@ -131,5 +134,3 @@ begin
 	delete from FunpAlias where fileID = old.id;
 end;
 -- }])>
-
-insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "/project/root/path/", 't');

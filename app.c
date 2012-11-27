@@ -87,10 +87,12 @@ usage (void)
   printf ("    gs macro\n");
   printf ("    gs initdb prjpath\n");
   printf ("    gs vacuumdb prjpath\n");
+  printf ("    gs relocate prjpath\n");
+  printf ("    gs infodb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
   printf ("        `-' for anonymous struct name\n");
   printf
-    ("    structname only is used when definition is a struct-member-pointer\n");
+    ("    structname only is used when definition is a member-function-pointer\n");
   return EXIT_FAILURE;
 }
 
@@ -344,7 +346,9 @@ initdb (const char *path)
   dyn_string_copy_cstr (gbuf, "echo \"update ProjectOverview set ");
   dyn_string_append_cstr (gbuf, "gccVersion = '<@a@>', ");
   dyn_string_append_cstr (gbuf, "pluginVersion = 'svn-<@b@>', ");
-  dyn_string_append_cstr (gbuf, "projectRootPath = '");
+  dyn_string_append_cstr (gbuf, "sqliteVersion = '");
+  dyn_string_append_cstr (gbuf, sqlite3_libversion ());
+  dyn_string_append_cstr (gbuf, "', projectRootPath = '");
   dyn_string_append_cstr (gbuf, str);
   dyn_string_append_cstr (gbuf, "/';\" | sqlite3 -batch ");
   dyn_string_append_cstr (gbuf, path);
@@ -495,6 +499,30 @@ macro (const char *file_name, const char *offset)
     }
 }
 
+static void
+relocate (const char *path)
+{
+  dyn_string_copy_cstr (gbuf,
+			"update ProjectOverview set projectRootPath = '");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/';");
+  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
+}
+
+static void
+infodb (const char *path)
+{
+  char *str = lrealpath (path);
+  system ("echo \"Current sqlite is:\"");
+  system ("sqlite3 --version");
+  dyn_string_copy_cstr (gbuf,
+			"echo \".du ProjectOverview\" | sqlite3 -batch ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/gccsym.db");
+  system (dyn_string_buf (gbuf));
+  free (str);
+}
+
 /* }])> */
 
 int
@@ -516,6 +544,11 @@ main (int argc, char **argv)
   if (argc == 3 && strcmp (argv[1], "vacuumdb") == 0)
     {
       vacuumdb (argv[2]);
+      goto done;
+    }
+  if (argc == 3 && strcmp (argv[1], "infodb") == 0)
+    {
+      infodb (argv[2]);
       goto done;
     }
   db_error ((sqlite3_open_v2
@@ -548,6 +581,8 @@ main (int argc, char **argv)
       else
 	macro (argv[2], argv[3]);
     }
+  else if (strcmp (argv[1], "relocate") == 0)
+    relocate (argv[2]);
   dep_tini ();
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);

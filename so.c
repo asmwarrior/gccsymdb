@@ -2033,7 +2033,7 @@ modify_expr (tree node)
  * designator:
  *   . identifier
  *
- * And you struct-member can't be 2-level function pointer or array.
+ * And you member-function-pointer can't be 2-level function pointer or array.
  */
 static void
 symdb_funp_alias (void *gcc_data, void *user_data)
