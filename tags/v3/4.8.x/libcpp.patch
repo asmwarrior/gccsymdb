@@ -1,0 +1,192 @@
+Only in libcpp/: .svn
+Only in libcpp/: ChangeLog
+Only in libcpp/: Makefile.in
+Only in libcpp/: aclocal.m4
+Only in libcpp/: charset.c
+Only in libcpp/: config.in
+Only in libcpp/: configure
+Only in libcpp/: configure.ac
+Only in libcpp/: directives-only.c
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/directives.c libcpp/directives.c
+*** .pc/symdb_enhance_libcpp/libcpp/directives.c	Wed Jul 25 10:57:16 2012
+--- libcpp/directives.c	Wed Jul 25 10:57:31 2012
+*************** start_directive (cpp_reader *pfile)
+*** 275,280 ****
+--- 275,283 ----
+  
+    /* Some handlers need the position of the # for diagnostics.  */
+    pfile->directive_line = pfile->line_table->highest_line;
++ 
++   if (pfile->cb.start_directive)
++     pfile->cb.start_directive (pfile);
+  }
+  
+  /* Called when leaving a directive, _Pragma or command-line directive.  */
+*************** end_directive (cpp_reader *pfile, int sk
+*** 309,314 ****
+--- 312,320 ----
+    pfile->state.in_expression = 0;
+    pfile->state.angled_headers = 0;
+    pfile->directive = 0;
++ 
++   if (pfile->cb.end_directive)
++     pfile->cb.end_directive (pfile);
+  }
+  
+  /* Prepare to handle the directive in pfile->directive.  */
+Only in libcpp/: errors.c
+Only in libcpp/: expr.c
+Only in libcpp/: files.c
+Only in libcpp/: identifiers.c
+Only in libcpp/include: .svn
+Only in libcpp/include: cpp-id-data.h
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/include/cpplib.h libcpp/include/cpplib.h
+*** .pc/symdb_enhance_libcpp/libcpp/include/cpplib.h	Wed Jul 25 10:57:16 2012
+--- libcpp/include/cpplib.h	Wed Jul 25 10:57:31 2012
+*************** struct cpp_callbacks
+*** 526,531 ****
+--- 526,548 ----
+       be expanded.  */
+    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
+  
++   /* The more powerful function extracts token than cpp_get_token. Later
++    * callbacks show it. */
++   void (*lex_token) (cpp_reader *, const cpp_token*);
++   /* The pair is called when gcc expands macro. Enable lex_token in
++    * macro_start_expand, you can catch all macro tokens. The pair can be called
++    * nested, and the second parameter of macro_end_expand notifies you whether
++    * macro is still expanding. */
++   void (*macro_start_expand) (cpp_reader *, const cpp_token *,
++ 		  const cpp_hashnode *);
++   void (*macro_end_expand) (cpp_reader *, bool);
++   /* The pair is called when cpp directive (starting from `#', such as
++    * `#define M', `#endif' etc) is encountered and reaches end. When enable
++    * lex_token in start_directive, the sequence is lex_token("define"),
++    * lex_token("M") ... */
++   void (*start_directive) (cpp_reader *);
++   void (*end_directive) (cpp_reader *);
++ 
+    /* Called to emit a diagnostic.  This callback receives the
+       translated message.  */
+    bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
+Only in libcpp/include: cpplib.h.rej
+Only in libcpp/include: line-map.h
+Only in libcpp/include: mkdeps.h
+Only in libcpp/include: symtab.h
+Only in libcpp/: init.c
+Only in libcpp/: internal.h
+Only in libcpp/: internal.h.rej
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/lex.c libcpp/lex.c
+*** .pc/symdb_enhance_libcpp/libcpp/lex.c	Wed Jul 25 10:25:36 2012
+--- libcpp/lex.c	Wed Jul 25 10:58:27 2012
+*************** _cpp_lex_token (cpp_reader *pfile)
+*** 1972,1977 ****
+--- 1972,1979 ----
+  	}
+        else
+  	result = _cpp_lex_direct (pfile);
++     if (pfile->cb.lex_token)
++       pfile->cb.lex_token (pfile, result);
+  
+        if (result->flags & BOL)
+  	{
+Only in libcpp/: lex.c.rej
+Only in libcpp/: line-map.c
+diff -cpr .pc/symdb_enhance_libcpp/libcpp/macro.c libcpp/macro.c
+*** .pc/symdb_enhance_libcpp/libcpp/macro.c	Wed Jul 25 10:57:16 2012
+--- libcpp/macro.c	Wed Jul 25 10:57:31 2012
+*************** static inline void tokens_buff_remove_la
+*** 148,154 ****
+  static void replace_args (cpp_reader *, cpp_hashnode *, cpp_macro *,
+  			  macro_arg *, source_location);
+  static _cpp_buff *funlike_invocation_p (cpp_reader *, cpp_hashnode *,
+! 					_cpp_buff **, unsigned *);
+  static bool create_iso_definition (cpp_reader *, cpp_macro *);
+  
+  /* #define directive parsing and handling.  */
+--- 148,154 ----
+  static void replace_args (cpp_reader *, cpp_hashnode *, cpp_macro *,
+  			  macro_arg *, source_location);
+  static _cpp_buff *funlike_invocation_p (cpp_reader *, cpp_hashnode *,
+! 					_cpp_buff **, unsigned *, const cpp_token *);
+  static bool create_iso_definition (cpp_reader *, cpp_macro *);
+  
+  /* #define directive parsing and handling.  */
+*************** collect_args (cpp_reader *pfile, const c
+*** 963,969 ****
+     returned buffer.  */
+  static _cpp_buff *
+  funlike_invocation_p (cpp_reader *pfile, cpp_hashnode *node,
+! 		      _cpp_buff **pragma_buff, unsigned *num_args)
+  {
+    const cpp_token *token, *padding = NULL;
+  
+--- 963,970 ----
+     returned buffer.  */
+  static _cpp_buff *
+  funlike_invocation_p (cpp_reader *pfile, cpp_hashnode *node,
+! 		      _cpp_buff **pragma_buff, unsigned *num_args,
+! 		      const cpp_token *head)
+  {
+    const cpp_token *token, *padding = NULL;
+  
+*************** funlike_invocation_p (cpp_reader *pfile,
+*** 980,985 ****
+--- 981,988 ----
+    if (token->type == CPP_OPEN_PAREN)
+      {
+        pfile->state.parsing_args = 2;
++       if (pfile->cb.macro_start_expand)
++         pfile->cb.macro_start_expand (pfile, head, node);
+        return collect_args (pfile, node, pragma_buff, num_args);
+      }
+  
+*************** enter_macro_context (cpp_reader *pfile, 
+*** 1064,1070 ****
+  	  pfile->keep_tokens++;
+  	  pfile->state.parsing_args = 1;
+  	  buff = funlike_invocation_p (pfile, node, &pragma_buff,
+! 				       &num_args);
+  	  pfile->state.parsing_args = 0;
+  	  pfile->keep_tokens--;
+  	  pfile->state.prevent_expansion--;
+--- 1067,1073 ----
+  	  pfile->keep_tokens++;
+  	  pfile->state.parsing_args = 1;
+  	  buff = funlike_invocation_p (pfile, node, &pragma_buff,
+! 				       &num_args, result);
+  	  pfile->state.parsing_args = 0;
+  	  pfile->keep_tokens--;
+  	  pfile->state.prevent_expansion--;
+*************** enter_macro_context (cpp_reader *pfile, 
+*** 1110,1115 ****
+--- 1113,1120 ----
+  
+        if (macro->paramc == 0)
+  	{
++       if (pfile->cb.macro_start_expand)
++         pfile->cb.macro_start_expand (pfile, result, node);
+  	  if (CPP_OPTION (pfile, track_macro_expansion))
+  	    {
+  	      unsigned int i, count = macro->count;
+*************** _cpp_pop_context (cpp_reader *pfile)
+*** 2245,2250 ****
+--- 2250,2257 ----
+    /* decrease peak memory consumption by feeing the context.  */
+    pfile->context->next = NULL;
+    free (context);
++   if (pfile->cb.macro_end_expand)
++     pfile->cb.macro_end_expand (pfile, in_macro_expansion_p (pfile));
+  }
+  
+  /* Return TRUE if we reached the end of the set of tokens stored in
+Only in libcpp/: macro.c.rej
+Only in libcpp/: makeucnid.c
+Only in libcpp/: mkdeps.c
+Only in libcpp/: pch.c
+Only in libcpp/: po
+Only in libcpp/: symtab.c
+Only in libcpp/: system.h
+Only in libcpp/: traditional.c
+Only in libcpp/: ucnid.h
+Only in libcpp/: ucnid.tab

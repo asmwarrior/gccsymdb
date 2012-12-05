@@ -1,0 +1,53 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	fileoffset integer
+);
+INSERT INTO "Definition" VALUES(1,'td',4,17);
+INSERT INTO "Definition" VALUES(2,'tdfunp',4,39);
+INSERT INTO "Definition" VALUES(3,'p',1,69);
+INSERT INTO "Definition" VALUES(4,'arr',1,96);
+INSERT INTO "Definition" VALUES(5,'funpvar',1,121);
+INSERT INTO "Definition" VALUES(6,'abc',5,151);
+INSERT INTO "Definition" VALUES(7,'v1',1,177);
+INSERT INTO "Definition" VALUES(8,'v2',1,194);
+INSERT INTO "Definition" VALUES(9,'enumx',8,211);
+INSERT INTO "Definition" VALUES(10,'enumy',8,223);
+INSERT INTO "Definition" VALUES(11,'oldfun',2,239);
+INSERT INTO "Definition" VALUES(12,'foo',2,274);
+INSERT INTO "Definition" VALUES(13,'main',2,310);
+INSERT INTO "Definition" VALUES(14,'foo',9,356);
+INSERT INTO "Definition" VALUES(15,'oof',2,372);
+INSERT INTO "Definition" VALUES(16,'fof',2,389);
+INSERT INTO "Definition" VALUES(17,'fun',1,435);
+INSERT INTO "Definition" VALUES(18,'fun2',1,482);
+CREATE INDEX DefName on Definition (name);
+CREATE TRIGGER DelDefinition after delete on Definition
+begin
+	delete from DefinitionRelationship where caller = old.id;
+end;
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE DefinitionRelationship (
+	caller bigint,
+	callee bigint
+);
+INSERT INTO "DefinitionRelationship" VALUES(13,14);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDefinition (
+	fileID integer,
+	startDefID bigint,
+	endDefID bigint
+);
+INSERT INTO "FileDefinition" VALUES(1,1,18);
+CREATE TRIGGER DelFileDefition after delete on FileDefinition
+begin
+	delete from Definition where id >= old.startDefID and id <= old.endDefID;
+end;
+COMMIT;

@@ -1,0 +1,55 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunpAlias (
+	fileID integer,
+	structName text,
+	member text,
+	funDecl text,
+	offset integer
+);
+INSERT INTO "FunpAlias" VALUES(1,'','u_mem','foo',255);
+INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo',664);
+INSERT INTO "FunpAlias" VALUES(1,'abc','ff','foo',664);
+INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof',664);
+INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo_expr',983);
+INSERT INTO "FunpAlias" VALUES(1,'abc','ff','foo_expr',1070);
+INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof_expr',1091);
+CREATE INDEX Alias on FunpAlias (member, funDecl);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	fileoffset integer
+);
+INSERT INTO "Definition" VALUES(1,'F',4,15);
+INSERT INTO "Definition" VALUES(2,'FF',4,39);
+INSERT INTO "Definition" VALUES(3,'control',1,63);
+INSERT INTO "Definition" VALUES(4,'f',1,78);
+INSERT INTO "Definition" VALUES(5,'foo',2,86);
+INSERT INTO "Definition" VALUES(6,'oof',2,104);
+INSERT INTO "Definition" VALUES(7,'ofo',2,122);
+INSERT INTO "Definition" VALUES(8,'foo_expr',2,140);
+INSERT INTO "Definition" VALUES(9,'oof_expr',2,163);
+INSERT INTO "Definition" VALUES(10,'ofo_expr',2,186);
+INSERT INTO "Definition" VALUES(11,'u',1,234);
+INSERT INTO "Definition" VALUES(12,'def',5,266);
+INSERT INTO "Definition" VALUES(13,'abc',5,291);
+INSERT INTO "Definition" VALUES(14,'x',1,394);
+INSERT INTO "Definition" VALUES(15,'jump',1,679);
+INSERT INTO "Definition" VALUES(16,'main',2,690);
+INSERT INTO "Definition" VALUES(17,'abc::mem',10,740);
+INSERT INTO "Definition" VALUES(18,'abc::mem',10,757);
+INSERT INTO "Definition" VALUES(19,'abc::mem',10,773);
+INSERT INTO "Definition" VALUES(20,'def::eme',10,791);
+INSERT INTO "Definition" VALUES(21,'def::eme',10,811);
+INSERT INTO "Definition" VALUES(22,'def::eme',10,825);
+INSERT INTO "Definition" VALUES(23,'def::eme',10,841);
+CREATE INDEX DefName on Definition (name);
+CREATE TRIGGER DelDefinition after delete on Definition
+begin
+	delete from DefinitionRelationship where caller = old.id;
+end;
+COMMIT;
