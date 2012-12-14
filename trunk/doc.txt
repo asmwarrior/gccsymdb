@@ -64,9 +64,9 @@ The feature treats `ext2_open' as an alias of `open'. So when you search
 `open', jump to `ext2_open'. Of course, you can get `ext2_open' is called by
 `foo' reversely. Note to simplify my code, only simple syntax is supported
 which showed in above assign-expression. See test/funp_alias/a.c for more.
-Syntax pattern is `struct::fun_pointer = fun_decl' and call the pattern,
-complex struct::...::struct::__pattern__ is supported, but only the last two
-levels are imported into database.
+Syntax pattern (member-function-pointer) is `struct::fun_pointer = fun_decl'
+and call the pattern, complex struct::...::struct::__pattern__ is supported,
+but only the last two levels are imported into database.
 11) Get macro expansion process by later steps
     a) ./gs macro a.h 0
     b) re-compile all files which depends directly/indirectly on a.h by my
@@ -130,10 +130,9 @@ Working with new database:
 6) Using `CTRL-T' to jump back.
 7) Using `Gs def yoursymbol' to search a definition.
 8) Using `Gs callee yourfunction' to search function call relationship.
-9) Using `CTRL-X CTRL-Z' to judge whether current position is skipped.
-10) Using `Gs ifdef' to search see whether current position is skipped.
-11) Place cursor to a member-function-pointer, `Gs fdef' to search where it
-is assigned.
+9) Using `Gs ifdef' to search see whether current position is skipped.
+10) Place cursor to a member-function-pointer, `Gs fdef' to search where it
+is assigned and assigned-definition.
 
 Vim quickref:
 Since my database stores the file-offset of every token, so
@@ -159,10 +158,7 @@ store the third line to database.
         ...
     };
 The syntax is correct. `gs' will return two results, one is DEF_TYPEDEF,
-another is DEF_STRUCT. In gcc-4.6.2, search `cpp_reader' will see the case, by
-the way, `helper.vim' will search definition from current file and its
-dependence, then all files, so in libcpp/internal.h searching `cpp_reader'
-will return one result.
+another is DEF_STRUCT. In gcc-4.6.2, search `cpp_reader' will see the case.
 
     #define X a
     #include "afile"
@@ -194,9 +190,6 @@ plugin, such as `gs addsym arch/mips/kernel/vmlinux.lds jiffies 6601'.
 
 // Tested projects (gcc, glibc and linux) <([{
 Prepare gcc support packages:
-sqlite-autoconf-3070900:
-    ./configure --prefix=/home/zyf/root
-    make install
 gmp-5.0.1
     ./configure --prefix=/home/zyf/root/ --enable-shared=no && make install
 mpfr-3.0.1
@@ -247,6 +240,8 @@ bug is low, and by in_macro_expansion_p of gcc-4.8.x, the bug can be fixed.
 gcc on converting tokens from cpp stage to c/c++ stage -- g++ tries to convert
 all cpp_tokens to cp_tokens at one time, it violates the architecture of my
 plugin.
+5) Run vim in linux.src, `:Gs fdef open' is slow which is a combination
+command, try `:Gs falias open' and `:Gs def XXX' individually.
 // }])>
 
 For Developer

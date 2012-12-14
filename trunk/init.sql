@@ -8,8 +8,9 @@ create table ProjectOverview (
 	-- plugin control parameters.
 	canUpdateFile boolean
 );
+insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 't');
 
-insert into ProjectOverview values ("1.0", "2.0", "4.6.2", "3.7.9", "/project/root/path/", 't');
+-- chFile is the root of all tables, see trigger fold for more, delete the table will delete all things in the file.
 
 -- File tables <([{
 create table chFile (
@@ -34,7 +35,7 @@ create table Definition (
 	fileoffset integer
 );
 
--- Not only function-definition and its callee functions, in the future, the table can be used as other similar relationship.
+-- Not only function and its callee functions, in the future, the table can be used as other similar relationship.
 create table DefinitionRelationship (
 	caller bigint,
 	callee bigint
@@ -55,6 +56,7 @@ create table Ifdef (
 	endOffset integer
 );
 
+-- For function alias feature.
 create table FunpAlias (
 	fileID integer,
 	structName text,
@@ -63,6 +65,7 @@ create table FunpAlias (
 	offset integer
 );
 
+-- For macro feature of `./gs macro XX'.
 create table Macro (
 	-- user request.
 	letFileID integer,
@@ -77,6 +80,7 @@ create table Macro (
 );
 
 -- Useful views <([{
+-- Search file-definition pair.
 create view Helper as
 select * from
 (
@@ -89,6 +93,7 @@ where
 	fd.startDefID <= d.id and fd.endDefID >= d.id
 );
 
+-- Search function-call relationship.
 create view CallRelationship as
 select * from
 (

@@ -29,14 +29,14 @@ GCC_BUILD_BIN="${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}/"
 test_it ()
 {
 (cd ../ && ./gs initdb ./)
-(cd ../ && LD_LIBRARY_PATH=${MY_ROOT}/lib ${GCC_BUILD_BIN} --sysroot=${PATCH_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
+(cd ../ && ${GCC_BUILD_BIN} --sysroot=${PATCH_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
 (cd ../ && cat > abc123 << "EOF"
 .output log.gdb
 uvwxyz
 .qu
 EOF
 dump_helper $2
-cat abc123 | ${MY_ROOT}/bin/sqlite3 gccsym.db && rm -f abc123)
+cat abc123 | sqlite3 gccsym.db && rm -f abc123)
 cp ../log.gdb $1/new
 diff $1/orig $1/new || exit 1
 }

@@ -343,16 +343,17 @@ initdb (const char *path)
   dyn_string_append_cstr (gbuf, "/gccsym.db ''");
   system (dyn_string_buf (gbuf));
   char *str = lrealpath (path);
-  dyn_string_copy_cstr (gbuf, "echo \"update ProjectOverview set ");
+  dyn_string_copy_cstr (gbuf, "sqlite3 ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/gccsym.db ");
+  dyn_string_append_cstr (gbuf, "\"update ProjectOverview set ");
   dyn_string_append_cstr (gbuf, "gccVersion = '<@a@>', ");
   dyn_string_append_cstr (gbuf, "pluginVersion = 'svn-<@b@>', ");
   dyn_string_append_cstr (gbuf, "sqliteVersion = '");
   dyn_string_append_cstr (gbuf, sqlite3_libversion ());
   dyn_string_append_cstr (gbuf, "', projectRootPath = '");
   dyn_string_append_cstr (gbuf, str);
-  dyn_string_append_cstr (gbuf, "/';\" | sqlite3 -batch ");
-  dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf, "/gccsym.db");
+  dyn_string_append_cstr (gbuf, "/';\"");
   system (dyn_string_buf (gbuf));
   free (str);
 }
@@ -360,9 +361,9 @@ initdb (const char *path)
 static void
 vacuumdb (const char *path)
 {
-  dyn_string_copy_cstr (gbuf, "echo 'vacuum;' | sqlite3 -batch  ");
+  dyn_string_copy_cstr (gbuf, "sqlite3 ");
   dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf, "/gccsym.db");
+  dyn_string_append_cstr (gbuf, "/gccsym.db \"vacuum;\"");
   system (dyn_string_buf (gbuf));
 }
 
@@ -515,10 +516,9 @@ infodb (const char *path)
   char *str = lrealpath (path);
   system ("echo \"Current sqlite is:\"");
   system ("sqlite3 --version");
-  dyn_string_copy_cstr (gbuf,
-			"echo \".du ProjectOverview\" | sqlite3 -batch ");
+  dyn_string_copy_cstr (gbuf, "sqlite3 ");
   dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf, "/gccsym.db");
+  dyn_string_append_cstr (gbuf, "/gccsym.db \".du ProjectOverview\"");
   system (dyn_string_buf (gbuf));
   free (str);
 }
