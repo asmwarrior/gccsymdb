@@ -71,8 +71,9 @@ if a:from != 1
 	call s:noInput()
 endif
 
-" Call gs
-let s:str = system('./gs def ' . s:file_name . ' ' . s:symbol)
+" Call gs, to linux.src, using './gs def filename xx' is slow.
+" let s:str = system('./gs def ' . s:file_name . ' ' . s:symbol)
+let s:str = ''
 if s:str == ''
 	let s:str = system('./gs def -- ' . s:symbol)
 endif
@@ -129,10 +130,10 @@ let s:alist = split(s:str2, '\n')
 let s:prevalias = ''
 for s:element in s:alist
 	let s:blist = split(s:element)
+	let s:str = s:str . s:element . " MEMBER_FUNC_P <<< \n"
 	if s:prevalias == s:blist[3]
 		continue
 	endif
-	let s:str = s:str . s:element . " MEMBER_POINTER <<< \n"
 	let s:str = s:str . system('./gs def -- ' . s:blist[3])
 	let s:prevalias = s:blist[3]
 endfor
