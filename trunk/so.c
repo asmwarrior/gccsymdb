@@ -323,8 +323,8 @@ reinsert:
     {
       if (!control_panel.can_update_file)
 	{
-	  printf
-	    ("Update single file is disabled "
+	  sprintf
+	    (stderr, "Update single file is disabled "
 	     "according to ProjectOverview::canUpdateFile parameter.");
 	  gcc_assert (false);
 	}
@@ -1231,7 +1231,7 @@ void
 funp_alias_append (const char *struct_name, const char *mem_name,
 		   const char *fun_decl)
 {
-  // printf ("falias %s::%s = %s\n", struct_name, mem_name, fun_decl);
+  // sprintf (stderr, "falias %s::%s = %s\n", struct_name, mem_name, fun_decl);
   int fileid = file_get_current_fid ();
   int offset = cache_itoken_to_chtoken (0)->file_offset;
   db_error (sqlite3_bind_int (funp_alias.select_funpalias, 1, fileid));
@@ -2088,7 +2088,8 @@ plugin_init (struct plugin_name_args *plugin_info,
   /* When `-E' is passed, symdb_unit_init is skipped. */
   if (flag_preprocess_only)
     {
-      printf ("`-E' or `-save-temps' aren't supported by symdb.so.");
+      sprintf (stderr,
+	       "`-E' or `-save-temps' aren't coexisted with symdb.so.");
       return 0;
     }
   /* We only accept a param -- `dbfile', using ProjectOverview table of

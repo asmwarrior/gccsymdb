@@ -374,6 +374,11 @@ ifdef (const char *root_fn, const char *offset)
   char *error_msg, **table;
 
   const char *fid = dep_get_fid (root_fn);
+  if (fid == NULL)
+    {
+      printf ("File %s isn't compiled.", root_fn);
+      return;
+    }
   dyn_string_copy_cstr (gbuf, "select flag from Ifdef where fileID = ");
   dyn_string_append_cstr (gbuf, fid);
   dyn_string_append_cstr (gbuf, " and startOffset <= ");
@@ -445,6 +450,11 @@ filedep (const char *file_name, int dep)
   int nrow, ncolumn;
   char *error_msg, **table;
   const char *fid = dep_get_fid (file_name);
+  if (fid == NULL)
+    {
+      printf ("File %s isn't compiled.", file_name);
+      return;
+    }
 
   dyn_string_copy_cstr (gbuf,
 			"select name, sysHeader from chFile where id in (select ");
@@ -489,10 +499,16 @@ macro (const char *file_name, const char *offset)
     }
   else
     {
+      const char *fid = dep_get_fid (file_name);
+      if (fid == NULL)
+	{
+	  printf ("File %s isn't compiled.", file_name);
+	  return;
+	}
       db_error ((sqlite3_exec (db, "delete from Macro;", NULL, 0, NULL)));
       dyn_string_copy_cstr (gbuf,
 			    "insert into Macro (letFileID, letOffset) values (");
-      dyn_string_append_cstr (gbuf, dep_get_fid (file_name));
+      dyn_string_append_cstr (gbuf, fid);
       dyn_string_append_cstr (gbuf, ", ");
       dyn_string_append_cstr (gbuf, offset);
       dyn_string_append_cstr (gbuf, ");");
