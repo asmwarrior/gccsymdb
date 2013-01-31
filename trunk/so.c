@@ -2089,7 +2089,9 @@ plugin_init (struct plugin_name_args *plugin_info,
   if (flag_preprocess_only)
     {
       sprintf (stderr,
-	       "`-E' or `-save-temps' aren't coexisted with symdb.so.");
+	       "`-E' or `-save-temps' aren't coexisted with symdb.so.\n");
+      sprintf (stderr,
+	       "And such like `gcc x.S' which calls those parameters implicitly.\n");
       return 0;
     }
   /* We only accept a param -- `dbfile', using ProjectOverview table of
