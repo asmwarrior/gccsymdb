@@ -1,12 +1,23 @@
-.PHONY: default clean format db
+.PHONY: default clean format db redo
 
+# If only compile the plugin, you can ignore any error from `redo' target.
+
+# Compiling the plugin need gmp.h, mpfr.h and so on.
+# To cross-ng (mips), it should be crossng.build/mipsel-uxl-linux-gnu/build/static/.
 MY_ROOT=/home/zyf/root/
+
+# Plugin source directory.
 SYMDB_ROOT=/home/zyf/src/symdb.gcc/
+
+# To cross-ng(mips), it should be crossng.build/src/gcc-4.6.3/.
 GCC_SRC=/home/zyf/gcc/
+# To cross-ng (mips), it should be crossng.build/mipsel-uxl-linux-gnu/build/build-gcc/build-i686-build_pc-linux-gnu/libiberty/.
 GCC_BUILD_LIB=/home/zyf/gcc/host-i686-pc-linux-gnu/libiberty/
+# To cross-ng (mips), it should be crossng.build/mipsel-uxl-linux-gnu/build/build-gcc/gcc/.
 GCC_BUILD_ROOT=/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/
-# To cross-toolchain, GCC_BUILD_BIN should be set to installation directory.
-# GCC_BUILD_BIN=/opt/cross-mips/bin/mipsel-gcc
+
+# To cross-toolchain, GCC_BUILD_BIN should be set to installation directory -- /opt/cross-mips/bin/mipsel-gcc.
+# The variable is useful for run test.
 GCC_BUILD_BIN=${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}
 
 default:

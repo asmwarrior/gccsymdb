@@ -95,31 +95,35 @@ infinite-loop or crashed.
 Prepare stage (patch on gcc-4.6.3):
 1) cp gcc.patches/* gcc.src/patches
 2) quilt push -a
-3) make # as usual
-More about compilation suite (such as crosstool-ng-1.13.2):
-1) Since gcc plugin is implemented as shared library, so disable compiling
-static toolchain option.
-2) add `--enable-plugin' to your gcc configure line, or append
-`CT_CC_GCC_ENABLE_PLUGINS=y' to your crossng.config.
-3) See section <Tested cases> for a sample command line on gcc-4.6.3.
+3) make STAGE1_CFLAGS="-ggdb" all-stage1
+More about compilation suite (such as crosstool-ng-1.13.2, mips):
+1) Disable compile static toolchain option.
+2) append `CT_CC_GCC_ENABLE_PLUGINS=y' to your crossng.config manually.
+3) cp gcc.patches/* crossng.install/lib/ct-ng-1.13.2/patches/gcc/4.6.3/
+4) make # as usual
 
-Compiling source by patched gcc (cd myplugin.src/):
-1) make
-2) cp gs helper.vim init.sql target.src/ && cd target.src/
-3) ./gs initdb ./ # Initialize database. If you want to custom the plugin,
+Compiling plugin by patched gcc (cd myplugin.src/):
+1) Open Makefile, change the path in it.
+2) make
+
+Make database on gcc-4.6.3:
+1) cp gs helper.vim init.sql symdb.so gcc.src/ && cd gcc.src/
+2) ./gs initdb ./ # Initialize database. If you want to custom the plugin,
 update plugin-control-fields of database:ProjectOverview.
-4) make STAGE2_CFLAGS="-fplugin=/home/zyf/src/symdb.gcc/symdb.so
--fplugin-arg-symdb-dbfile=/home/zyf/gcc/gccsym.db" STAGE2_CONFIGURE_FLAGS=
+4) make STAGE2_CFLAGS="-fplugin=/path/to/symdb.so
+-fplugin-arg-symdb-dbfile=/path/to/gccsym.db" STAGE2_CONFIGURE_FLAGS=
 all-stage2
 5) It will cost more time to compile your project, because my plugin need
 compare whether a token has been inserted into database and multi-core can't
 help you -- sqlite doesn't support access database simultaneously, do it
 overnight.
 6) ./gs vacuumdb ./ # Rearrange and defrag your database.
-Of course, you can use some short-cuts to compile your projects without any
-modification.
-    alias gcc='gccplugin -fplugin=symdb.so -fplugin-arg-symdb-dbfile=gccsym.db'
-    alias make='make -j1'
+Make database on linux-2.6.35 using crossng-mips:
+1) cp gs helper.vim init.sql symdb.so linux.src/ && cd linux.src/
+2) Open linux.src/Makefile.
+3) Append `-fplugin=/path/to/symdb.so
+-fplugin-arg-symdb-dbfile=/path/to/gccsym.db' to line `KBUILD_CFLAGS'.
+4) make
 
 Working with new database:
 1) cd /target.src
@@ -130,9 +134,10 @@ Working with new database:
 6) Using `CTRL-T' to jump back.
 7) Using `Gs def yoursymbol' to search a definition.
 8) Using `Gs callee yourfunction' to search function call relationship.
+Function alias can be showed at the same time.
 9) Using `Gs ifdef' to search see whether current position is skipped.
-10) Place cursor to a member-function-pointer, `Gs fdef' to search where it
-is assigned and assigned-definition.
+10) Place cursor to a member-function-pointer such as `open', `Gs fdef open'
+to search where it is assigned and assigned-definition.
 
 Vim quickref:
 Since my database stores the file-offset of every token, so
@@ -240,8 +245,8 @@ bug is low, and by in_macro_expansion_p of gcc-4.8.x, the bug can be fixed.
 gcc on converting tokens from cpp stage to c/c++ stage -- g++ tries to convert
 all cpp_tokens to cp_tokens at one time, it violates the architecture of my
 plugin.
-5) Run vim in linux.src, `:Gs fdef open' is slow which is a combination
-command, try `:Gs falias open' and `:Gs def XXX' individually.
+5) Execute `:Gs fdef open' by vim in linux.src is slow, in fact, it is a
+combination command, try `:Gs falias open' and `:Gs def XXX' individually.
 // }])>
 
 For Developer

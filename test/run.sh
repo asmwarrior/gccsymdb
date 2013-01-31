@@ -23,13 +23,13 @@ dump_helper ()
 
 # test_it function <([{
 MY_ROOT=/home/zyf/root/
-PATCH_ROOT=/home/zyf/src/symdb.gcc/
+SYMDB_ROOT=/home/zyf/src/symdb.gcc/
 GCC_BUILD_ROOT=/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/
 GCC_BUILD_BIN="${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}/"
 test_it ()
 {
 (cd ../ && ./gs initdb ./)
-(cd ../ && ${GCC_BUILD_BIN} --sysroot=${PATCH_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
+(cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
 (cd ../ && cat > abc123 << "EOF"
 .output log.gdb
 uvwxyz
