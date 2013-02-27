@@ -35,8 +35,7 @@ create table Definition (
 	fileoffset integer
 );
 
--- Not only function and its callee functions, in the future, the table can be used as other similar relationship.
-create table DefinitionRelationship (
+create table FunctionRelationship (
 	caller bigint,
 	callee bigint
 );
@@ -57,6 +56,7 @@ create table Ifdef (
 );
 
 -- For function alias feature.
+-- The table is used to store where a member function pointer is assigned.
 create table FunpAlias (
 	fileID integer,
 	structName text,
@@ -79,9 +79,17 @@ create table Macro (
 	macroTokens text
 );
 
--- Useful views <([{
+-- For member offset feature.
+-- If member field is '', offset represents the size of the struct.
+create table Offsetof (
+	structID bigint,
+	member text,
+	offset integer
+);
+
+-- Useful views, search them instead of table if possible <([{
 -- Search file-definition pair.
-create view Helper as
+create view FileSymbol as
 select * from
 (
 select
@@ -103,7 +111,7 @@ select
 	d2.fileOffset as calleeFileOffset, callee as calleeID, d2.name as calleeName,
 	d2.flag
 from
-	DefinitionRelationship dr, chFile f, FileDefinition fd, Definition as d1, Definition as d2
+	FunctionRelationship dr, chFile f, FileDefinition fd, Definition as d1, Definition as d2
 where
 	dr.caller = d1.id and dr.callee = d2.id and
 	fd.fileID = f.id and
@@ -123,7 +131,8 @@ create index Alias on FunpAlias (member, funDecl);
 -- Delete trigger note: all can be indexed directely or indirectely by chFile::id. But to Definition fold, two additional trigger must be set up.
 create trigger DelDefinition after delete on Definition
 begin
-	delete from DefinitionRelationship where caller = old.id;
+	delete from FunctionRelationship where caller = old.id;
+	delete from Offsetof where structID = old.id;
 end;
 
 create trigger DelFileDefition after delete on FileDefinition

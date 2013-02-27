@@ -50,6 +50,7 @@ INSERT INTO "Definition" VALUES(23,'def::eme',10,841);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
-	delete from DefinitionRelationship where caller = old.id;
+	delete from FunctionRelationship where caller = old.id;
+	delete from Offsetof where structID = old.id;
 end;
 COMMIT;

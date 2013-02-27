@@ -33,16 +33,17 @@ INSERT INTO "Definition" VALUES(24,'fof',2,753);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
-	delete from DefinitionRelationship where caller = old.id;
+	delete from FunctionRelationship where caller = old.id;
+	delete from Offsetof where structID = old.id;
 end;
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
-CREATE TABLE DefinitionRelationship (
+CREATE TABLE FunctionRelationship (
 	caller bigint,
 	callee bigint
 );
-INSERT INTO "DefinitionRelationship" VALUES(20,21);
+INSERT INTO "FunctionRelationship" VALUES(20,21);
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;

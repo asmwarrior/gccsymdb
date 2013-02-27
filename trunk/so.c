@@ -323,7 +323,7 @@ reinsert:
     {
       if (!control_panel.can_update_file)
 	{
-	  sprintf
+	  fprintf
 	    (stderr, "Update single file is disabled "
 	     "according to ProjectOverview::canUpdateFile parameter.");
 	  gcc_assert (false);
@@ -1051,7 +1051,7 @@ insert_defrel (long long callee)
   revalidate_sql (def.select_defrel);
 }
 
-static void
+static long long
 def_append (enum definition_flag flag, dyn_string_t str, int offset)
 {
   long long defid = insert_def (flag, str, offset);
@@ -1060,6 +1060,7 @@ def_append (enum definition_flag flag, dyn_string_t str, int offset)
   else if (flag == DEF_CALLED_FUNC || flag == DEF_CALLED_POINTER)
     insert_defrel (defid);
   file_insert_defid (defid);
+  return defid;
 }
 
 static inline void
@@ -1092,7 +1093,7 @@ def_strip_paren (int index)
   return index - 1;
 }
 
-static void
+static long long
 def_append_chk (int index, enum definition_flag flag, const char *p)
 {
   db_token *token;
@@ -1110,25 +1111,25 @@ def_append_chk (int index, enum definition_flag flag, const char *p)
   gcc_assert (def_is_uid (token));
   token = cache_itoken_to_chtoken (index);
   gcc_assert (def_is_uid (token));
-  def_append (flag, gbuf, token->file_offset);
+  return def_append (flag, gbuf, token->file_offset);
 }
 
 static void
 def_init (void)
 {
-  /* Search fileDefinition view not Definition table. */
+  /* Search FileSymbol view not Definition table. */
   db_error (sqlite3_prepare_v2 (db,
-				"select defID from Helper "
+				"select defID from FileSymbol "
 				"where fileID = ? and fileoffset = ? and defName = ? and flag = ?;",
 				-1, &def.helper, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into Definition values (NULL, ?, ?, ?);",
 				-1, &def.insert_def, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"select rowid from DefinitionRelationship where caller = ? and callee = ?;",
+				"select rowid from FunctionRelationship where caller = ? and callee = ?;",
 				-1, &def.select_defrel, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into DefinitionRelationship values (?, ?);",
+				"insert into FunctionRelationship values (?, ?);",
 				-1, &def.insert_defrel, 0));
 }
 
@@ -1216,6 +1217,87 @@ ifdef_tini (void)
   VEC_free (lpair, heap, ifdef.units);
   sqlite3_finalize (ifdef.insert_ifdef);
   sqlite3_finalize (ifdef.select_ifdef);
+}
+
+/* }])> */
+
+/* offsetof <([{ */
+typedef const char *const_char_p;
+DEF_VEC_P (const_char_p);
+DEF_VEC_ALLOC_P (const_char_p, heap);
+
+static struct
+{
+  VEC (const_char_p, heap) * prefix;
+  long long structid;
+
+  struct sqlite3_stmt *select_offsetof;
+  struct sqlite3_stmt *insert_offsetof;
+} offsetof;
+
+static bool
+offsetof_prepare (long long structid)
+{
+  offsetof.structid = structid;
+  db_error (sqlite3_bind_int64
+	    (offsetof.select_offsetof, 1, offsetof.structid));
+  bool result = sqlite3_step (offsetof.select_offsetof) != SQLITE_ROW;
+  revalidate_sql (offsetof.select_offsetof);
+  return result;
+}
+
+static void
+offsetof_push (const char *prefix)
+{
+  VEC_safe_push (const_char_p, heap, offsetof.prefix, prefix);
+}
+
+static void
+offsetof_pop (void)
+{
+  VEC_pop (const_char_p, offsetof.prefix);
+}
+
+static void
+offsetof_commit (const char *member, int offset)
+{
+  int ix;
+  const_char_p p;
+  dyn_string_copy_cstr (gbuf, "");
+  FOR_EACH_VEC_ELT (const_char_p, offsetof.prefix, ix, p)
+  {
+    dyn_string_append_cstr (gbuf, p);
+    dyn_string_append_cstr (gbuf, ".");
+  }
+  dyn_string_append_cstr (gbuf, member);
+  db_error (sqlite3_bind_int64
+	    (offsetof.insert_offsetof, 1, offsetof.structid));
+  db_error (sqlite3_bind_text
+	    (offsetof.insert_offsetof, 2, dyn_string_buf (gbuf),
+	     dyn_string_length (gbuf), SQLITE_STATIC));
+  db_error (sqlite3_bind_int (offsetof.insert_offsetof, 3, offset));
+  execute_sql (offsetof.insert_offsetof);
+}
+
+static void
+offsetof_init (void)
+{
+  db_error (sqlite3_prepare_v2 (db,
+				"select rowid from Offsetof "
+				"where structID = ?;",
+				-1, &offsetof.select_offsetof, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into Offsetof values (?, ?, ?);",
+				-1, &offsetof.insert_offsetof, 0));
+  offsetof.prefix = VEC_alloc (const_char_p, heap, 10);
+}
+
+static void
+offsetof_tini (void)
+{
+  VEC_free (const_char_p, heap, offsetof.prefix);
+  sqlite3_finalize (offsetof.insert_offsetof);
+  sqlite3_finalize (offsetof.select_offsetof);
 }
 
 /* }])> */
@@ -1478,6 +1560,7 @@ symdb_unit_init (void *gcc_data, void *user_data)
   gbuf = dyn_string_new (1024);
   control_panel_init (main_input_filename);
   cache_init ();
+  offsetof_init ();
   ifdef_init ();
   file_init (main_input_filename);
   def_init ();
@@ -1493,6 +1576,7 @@ symdb_unit_tini (void *gcc_data, void *user_data)
   def_tini ();
   file_tini ();
   ifdef_tini ();
+  offsetof_tini ();
   cache_tini ();
   control_panel_tini ();
   dyn_string_delete (gbuf);
@@ -1538,7 +1622,7 @@ symdb_c_token (void *gcc_data, void *user_data)
 }
 
 static bool
-is_funcp (tree node)
+is_fun_p (tree node)
 {
   tree type = TREE_TYPE (node);
   if (TREE_CODE (type) != POINTER_TYPE)
@@ -1550,13 +1634,13 @@ is_funcp (tree node)
 }
 
 static bool
-var_is_struct_funcp (tree var, tree * type, tree * member)
+var_is_mfp (tree var, tree * type, tree * member)
 {
   if (TREE_CODE (var) != COMPONENT_REF)
     return false;
   gcc_assert (TREE_OPERAND_LENGTH (var) == 3);
   *member = TREE_OPERAND (var, 1);
-  if (!is_funcp (*member))
+  if (!is_fun_p (*member))
     return false;
   gcc_assert (TREE_OPERAND (var, 2) == NULL);
   gcc_assert (TREE_CODE (*member) == FIELD_DECL);
@@ -1572,6 +1656,83 @@ get_typename (tree type)
   if (TYPE_NAME (type) && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
     result = IDENTIFIER_POINTER (TYPE_NAME (type));
   return result;
+}
+
+static bool
+is_anonymous_type (tree type)
+{
+  return (TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
+    && TYPE_NAME (type) == NULL;
+}
+
+static void
+loop_struct (tree field, int base)
+{
+  if (field == NULL)
+    /* The struct has nothing. */
+    return;
+  do
+    {
+      gcc_assert (TREE_CODE (field) == FIELD_DECL);
+      /* From __builtin_offsetof stack snapshot.
+       *   size_binop_loc
+       *   fold_offsetof_1
+       *   fold_offsetof
+       *   c_parser_postfix_expression
+       * In brief, later is the result.
+       */
+      int offset = tree_low_cst (DECL_FIELD_OFFSET (field), 1) +
+	tree_low_cst (DECL_FIELD_BIT_OFFSET (field),
+		      1) / BITS_PER_UNIT + base;
+      tree type = TREE_TYPE (field);
+
+      const char *tmp = NULL;
+      if (DECL_NAME (field) != NULL)
+	{
+	  tmp = IDENTIFIER_POINTER (DECL_NAME (field));
+	  offsetof_commit (tmp, offset);
+	}
+
+      if (is_anonymous_type (type))
+	{
+	  /* Enumerate anonymous struct/union. */
+	  if (tmp != NULL)
+	    offsetof_push (tmp);
+	  loop_struct (TYPE_FIELDS (type), offset);
+	  if (tmp != NULL)
+	    offsetof_pop ();
+	}
+    }
+  while ((field = TREE_CHAIN (field)) != NULL);
+}
+
+static void
+struct_offsetof (long long dbid, tree node)
+{
+  tree field;
+  if (!offsetof_prepare (dbid))
+    return;
+
+  /* From sizeof stack snapshot.
+   *   size_binop_loc
+   *   c_sizeof_or_alignof_type
+   *   c_expr_sizeof_type
+   *   c_parser_sizeof_expression
+   * In brief, later is the result.
+   */
+  int size = tree_low_cst (TYPE_SIZE_UNIT (node), 1);
+  offsetof_commit ("", size);
+
+  switch (TREE_CODE (node))
+    {
+    case RECORD_TYPE:
+    case UNION_TYPE:
+      field = TYPE_FIELDS (node);
+      loop_struct (field, 0);
+      break;
+    default:
+      break;
+    }
 }
 
 /*
@@ -1605,7 +1766,7 @@ symdb_call_func (void *gcc_data, void *user_data)
 	  gcc_assert (TREE_OPERAND_LENGTH (decl) == 1);
 	  decl = TREE_OPERAND (decl, 0);
 	}
-      if (var_is_struct_funcp (decl, &type, &member))
+      if (var_is_mfp (decl, &type, &member))
 	df = DEF_CALLED_POINTER;
       else
 	goto done;
@@ -1841,7 +2002,10 @@ symdb_extern_var (void *gcc_data, void *user_data)
     }
   // strip inner parens.
   index = def_strip_paren (index);
-  def_append_chk (index, td ? DEF_TYPEDEF : DEF_VAR, NULL);
+  long long id = def_append_chk (index, td ? DEF_TYPEDEF : DEF_VAR, NULL);
+
+  if (is_anonymous_type (ds->type))
+    struct_offsetof (id, ds->type);
 
 done:
   cache_reset (0);
@@ -1925,7 +2089,10 @@ symdb_declspecs (void *gcc_data, void *user_data)
   index = cache_skip_match_pair (index, '}');
   token = cache_get (index);
   if (def_is_uid (token))
-    def_append_chk (index, flag, NULL);
+    {
+      long long id = def_append_chk (index, flag, NULL);
+      struct_offsetof (id, ds->type);
+    }
   /* else is anonymous struct/union/enum. */
 
 done:
@@ -1956,14 +2123,14 @@ constructor_loop (tree node)
     gcc_assert (TREE_CODE (index) == FIELD_DECL);
     if (TREE_CODE (value) == NOP_EXPR)
       {
-	if (!is_funcp (value))
+	if (!is_fun_p (value))
 	  continue;
 	gcc_assert (TREE_OPERAND_LENGTH (value) == 1);
 	value = TREE_OPERAND (value, 0);
       }
     if (TREE_CODE (value) == ADDR_EXPR)
       {
-	if (!is_funcp (value))
+	if (!is_fun_p (value))
 	  continue;
 	gcc_assert (TREE_OPERAND_LENGTH (value) == 1);
 	tree arg0 = TREE_OPERAND (value, 0);
@@ -1984,11 +2151,11 @@ constructor_loop (tree node)
 static void
 modify_expr (tree node)
 {
-  if (!is_funcp (node))
+  if (!is_fun_p (node))
     return;
   gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
   tree type, member = NULL;
-  if (!var_is_struct_funcp (TREE_OPERAND (node, 0), &type, &member))
+  if (!var_is_mfp (TREE_OPERAND (node, 0), &type, &member))
     return;
   tree tmp = TREE_OPERAND (node, 1);
   if (TREE_CODE (tmp) == NOP_EXPR)
@@ -2088,9 +2255,9 @@ plugin_init (struct plugin_name_args *plugin_info,
   /* When `-E' is passed, symdb_unit_init is skipped. */
   if (flag_preprocess_only)
     {
-      sprintf (stderr,
+      fprintf (stderr,
 	       "`-E' or `-save-temps' aren't coexisted with symdb.so.\n");
-      sprintf (stderr,
+      fprintf (stderr,
 	       "And such like `gcc x.S' which calls those parameters implicitly.\n");
       return 0;
     }

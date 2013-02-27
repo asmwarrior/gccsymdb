@@ -42,24 +42,25 @@ INSERT INTO "Definition" VALUES(33,'args',3,1090);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
-	delete from DefinitionRelationship where caller = old.id;
+	delete from FunctionRelationship where caller = old.id;
+	delete from Offsetof where structID = old.id;
 end;
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
-CREATE TABLE DefinitionRelationship (
+CREATE TABLE FunctionRelationship (
 	caller bigint,
 	callee bigint
 );
-INSERT INTO "DefinitionRelationship" VALUES(9,13);
-INSERT INTO "DefinitionRelationship" VALUES(9,15);
-INSERT INTO "DefinitionRelationship" VALUES(9,18);
-INSERT INTO "DefinitionRelationship" VALUES(9,20);
-INSERT INTO "DefinitionRelationship" VALUES(9,22);
-INSERT INTO "DefinitionRelationship" VALUES(9,24);
-INSERT INTO "DefinitionRelationship" VALUES(9,26);
-INSERT INTO "DefinitionRelationship" VALUES(9,28);
-INSERT INTO "DefinitionRelationship" VALUES(9,30);
+INSERT INTO "FunctionRelationship" VALUES(9,13);
+INSERT INTO "FunctionRelationship" VALUES(9,15);
+INSERT INTO "FunctionRelationship" VALUES(9,18);
+INSERT INTO "FunctionRelationship" VALUES(9,20);
+INSERT INTO "FunctionRelationship" VALUES(9,22);
+INSERT INTO "FunctionRelationship" VALUES(9,24);
+INSERT INTO "FunctionRelationship" VALUES(9,26);
+INSERT INTO "FunctionRelationship" VALUES(9,28);
+INSERT INTO "FunctionRelationship" VALUES(9,30);
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;

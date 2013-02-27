@@ -85,6 +85,8 @@ usage (void)
   printf ("    gs filedep/filedepee filename\n");
   printf ("    gs macro filename fileoffset\n");
   printf ("    gs macro\n");
+  printf ("    gs sizeof struct\n");
+  printf ("    gs offsetof struct member\n");
   printf ("    gs initdb prjpath\n");
   printf ("    gs vacuumdb prjpath\n");
   printf ("    gs relocate prjpath\n");
@@ -198,7 +200,7 @@ def (const char *root_fn, const char *def)
 
   dep_search_deplist (root_fn, list);
   dyn_string_copy_cstr (gbuf,
-			"select fileName, fileoffset, flag from Helper where defName = '");
+			"select fileName, fileoffset, flag from FileSymbol where defName = '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "' and flag != ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_FUNC));
@@ -301,7 +303,8 @@ rmsym (const char *root_fn, const char *def, const char *fileoffset)
   int nrow, ncolumn;
   char *error_msg, **table;
   const char *fid = dep_get_fid (root_fn);
-  dyn_string_copy_cstr (gbuf, "select defID from Helper where defName = '");
+  dyn_string_copy_cstr (gbuf,
+			"select defID from FileSymbol where defName = '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "'");
   if (fid != NULL)
@@ -527,6 +530,31 @@ relocate (const char *path)
 }
 
 static void
+offset_of (const char *struct_name, const char *member)
+{
+  int nrow, ncolumn;
+  char *error_msg, **table;
+  dyn_string_copy_cstr (gbuf,
+			"select offset from Definition as a, Offsetof as b "
+			" where a.id = b.structID " " and (flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_STRUCT));
+  dyn_string_append_cstr (gbuf, " or flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
+  dyn_string_append_cstr (gbuf, " or flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_UNION));
+  dyn_string_append_cstr (gbuf, ") and name = '");
+  dyn_string_append_cstr (gbuf, struct_name);
+  dyn_string_append_cstr (gbuf, "' and member = '");
+  dyn_string_append_cstr (gbuf, member);
+  dyn_string_append_cstr (gbuf, "';");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  for (int i = 1; i <= nrow; i++)
+    printf ("%s\n", table[i * ncolumn + 0]);
+  sqlite3_free_table (table);
+}
+
+static void
 infodb (const char *path)
 {
   char *str = lrealpath (path);
@@ -599,6 +627,10 @@ main (int argc, char **argv)
     }
   else if (strcmp (argv[1], "relocate") == 0)
     relocate (argv[2]);
+  else if (strcmp (argv[1], "sizeof") == 0)
+    offset_of (argv[2], "");
+  else if (strcmp (argv[1], "offsetof") == 0)
+    offset_of (argv[2], argv[3]);
   dep_tini ();
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);

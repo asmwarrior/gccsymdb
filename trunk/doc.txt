@@ -49,9 +49,7 @@ section <Multiple-results ...>.
 after macro expansion (such as tell you where `sys_open' is defined in linux
 source) and skip `#ifdef/#if'.
 9) Tell you whether current position is skipped by `ifdef/if' directive clause
-block. About the feature, if you are IDE author, to `#if 0', database stores
-the scope from `if' to `0', not from `#' to `0' due to gcc callback
-architecture.
+block.
 10) Function alias. To linux, later code often makes you confusion.
     f_ops fs = { .open = ext2_open, };
     void foo(void)
@@ -67,6 +65,7 @@ which showed in above assign-expression. See test/funp_alias/a.c for more.
 Syntax pattern (member-function-pointer) is `struct::fun_pointer = fun_decl'
 and call the pattern, complex struct::...::struct::__pattern__ is supported,
 but only the last two levels are imported into database.
+	./gs fdef open
 11) Get macro expansion process by later steps
     a) ./gs macro a.h 0
     b) re-compile all files which depends directly/indirectly on a.h by my
@@ -86,11 +85,43 @@ Note, later case will return multiple results
     #undef X
     return 0;
     }
+12) offsetof and sizeof.
+Consider you've got a memory address by hardware debug tool in Linux and make
+sure it refers to a variable of task_struct, now you need compute the address
+of tsk->mm, but it isn't easy since there're too much members before it
+    struct task_struct {
+        ...
+        struct sched_entity se;
+        ...
+        struct mm_struct *mm, *active_mm;
+        ...
+    };
+The feature will dump member offset and struct size to database. union and
+__attribute__((packed)) are also supported.
+	./gs offsetof task_struct mm
+	./gs sizeof task_struct
+Note: to later case
+	struct s {
+		struct { int x; } m;
+		struct snest { int y; } n;
+		struct { int z; };
+	};
+Since from gcc internal, struct snest has a tree just like an extern struct,
+so the members of snest aren't enumerated.
+	./gs offsetof s m.x
+	./gs offsetof s z
+The extern variable of an anonymous struct is supported.
+	struct {
+		int i;
+		int j;
+	} anonv;
+	./gs offsetof anonv i
 // }])>
 
 // User Manual <([{
 Note: Using my plugin on correct code, buggy code maybe cause my plugin
-infinite-loop or crashed.
+infinite-loop or crashed. And since I must patch gcc to support my plugin
+which makes gcc slow, you're advised using patched-gcc for my plugin only.
 
 Prepare stage (patch on gcc-4.6.3):
 1) cp gcc.patches/* gcc.src/patches
@@ -146,6 +177,10 @@ Since my database stores the file-offset of every token, so
 
 Testing my plugin:
 1) cd test && ./run.sh
+
+More features -- `myplugin.src/gs'.
+
+To compile a cross-plugin, follow the instruction in `myplugin.src/Makefile'.
 // }])>
 
 // Multiple-results from my database and my solution <([{
@@ -540,11 +575,26 @@ definition.
 
 // Database (init.sql) <([{
 *) User should use the fields of ProjectOverview to control the plugin.
-*) User should use view Helper to search file, definition and fileoffset.
-*) Using `gs initdb/vacuumdb' to initialize database and arrange it.
 
 init.sql has been organized by vim fold feature. Meanwhile table chFile is
 the root.
+// }])>
+
+// Function Alias Feature <([{
+member function pointer abbr. mfp. Its syntax can't be function pointer array
+or two-level function pointer as <Feature List> showed. To assignment syntax,
+but assigned value must be function declaration not a function pointer.
+
+The feature is consist of two parts:
+1) Where a mfp is assigned.
+Database init.sql:FunpAlias stores assignment position data.
+Code so.c:<funp-alias fold> manages FunpAlias table.
+Code so.c:symdb_funp_alias is called by gcc from two positions, one is when
+parsing an expression, another is parsing initializer-list of a variable.
+2) Where a mfp variable is called.
+Database init.sql:Definition, `flag' field has a new type --
+DEF_CALLED_POINTER. `name' field is just like `struct::member' or `::member'.
+Code so.c:symdb_call_func is enhanced to collect a mfp variable is called.
 // }])>
 
 // Misc. <([{

@@ -3,6 +3,7 @@
 define bug
 end
 
+# >>>> To avoid problem, call `make db' before execute the script.
 define dlc
 set logging overwrite
 set logging file ~/src/symdb.gcc/log.gdb
