@@ -65,7 +65,7 @@ which showed in above assign-expression. See test/funp_alias/a.c for more.
 Syntax pattern (member-function-pointer) is `struct::fun_pointer = fun_decl'
 and call the pattern, complex struct::...::struct::__pattern__ is supported,
 but only the last two levels are imported into database.
-	./gs fdef open
+    ./gs fdef open
 11) Get macro expansion process by later steps
     a) ./gs macro a.h 0
     b) re-compile all files which depends directly/indirectly on a.h by my
@@ -98,24 +98,26 @@ of tsk->mm, but it isn't easy since there're too much members before it
     };
 The feature will dump member offset and struct size to database. union and
 __attribute__((packed)) are also supported.
-	./gs offsetof task_struct mm
-	./gs sizeof task_struct
+    ./gs offsetof task_struct mm
+    ./gs sizeof task_struct
 Note: to later case
-	struct s {
-		struct { int x; } m;
-		struct snest { int y; } n;
-		struct { int z; };
-	};
-Since from gcc internal, struct snest has a tree just like an extern struct,
-so the members of snest aren't enumerated.
-	./gs offsetof s m.x
-	./gs offsetof s z
+    struct s {
+        struct { int x; } m;
+        struct snest { int y; } n;
+        struct { int z; };
+    };
+    struct snest v;
+Even you don't like, to C, struct declaration has global scope, so the last
+line is legal, but the plugin only stores file-scope struct, so `snest' can't
+use offsetof feature at all.
+    ./gs offsetof s m.x
+    ./gs offsetof s n.y
+    ./gs offsetof s z
 The extern variable of an anonymous struct is supported.
-	struct {
-		int i;
-		int j;
-	} anonv;
-	./gs offsetof anonv i
+    struct {
+        int i;
+    } anonv;
+    ./gs offsetof anonv i
 // }])>
 
 // User Manual <([{
@@ -257,11 +259,12 @@ linux-2.6.35 (mips):
 1) Be careful if you updated a file and try to re-update my database. Here is
 a case
     -------------------------------- a.c
-    #define X
-    #include<a.h>
-    -------------------------------- a.c (updated)
-    #include<a.h>
-a.h maybe includes some old definitions caused by `define X' clause.
+    #include<config.h>
+    -------------------------------- a.c
+    // config.h is updated, such enable PREEMPT option.
+a.c maybe includes some old definitions caused by new option because from
+database, definitions are linked to file and are updated only if the file is
+updated.
 By the way, control the feature by init.sql:ProjectOverview::canUpdateFile.
 Of course, don't forget call `gs vacuumdb ./' if too much files are updated.
 2) Currently, my plugin doesn't support nested functions but if a nested
@@ -549,12 +552,13 @@ void (*directive_token) (...);
     are used to collect ERASED_TOKEN. Meanwhile, directive_token is much
 powerful than cpp_get_token since cpp_get_token doesn't output ERASED_TOKEN.
 Most code in libcpp directory is surrounding how to implement the callbacks.
+// }])>
 
+// symdb_fileoffset <([{
 A new field -- file_offset is added into cpplib.h:cpp_token, the field is used
 to mark every chToken exclusively, it's just like line_map + source_location,
-but simpler, and to show line/column to user new script offset2lc(filename,
-fileoffset, &line, &column) should be used. internal.h:_cpp_line_note is also
-changed to fit with the purpose.
+but simpler, the field can be used by database for sort purpose.
+internal.h:_cpp_line_note is also changed to fit with the purpose.
 // }])>
 
 // symdb_enhance_plugin <([{
@@ -570,6 +574,10 @@ PLUGIN_CALL_FUNCTION
 PLUGIN_ENUM_SPECIFIER
 The first two events are used to cache iToken, the remain are used to collect
 definition.
+
+To support offsetof feature, I sign all external struct in
+c_parser_declaration_or_fndef,
+    TYPE_CONTEXT (tmp) = tmp;
 // }])>
 // }])>
 
@@ -577,7 +585,7 @@ definition.
 *) User should use the fields of ProjectOverview to control the plugin.
 
 init.sql has been organized by vim fold feature. Meanwhile table chFile is
-the root.
+the root -- all remain tables has a direct/indirect link to it.
 // }])>
 
 // Function Alias Feature <([{

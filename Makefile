@@ -49,3 +49,6 @@ clean:
 sync:
 	(cd ${GCC_SRC} && quilt refresh)
 	cp -u ${GCC_SRC}/patches/* gcc.patches
+
+quilt:
+	cd ${GCC_SRC}

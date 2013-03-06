@@ -50,6 +50,8 @@ INSERT INTO "Offsetof" VALUES(4,'d3',24);
 INSERT INTO "Offsetof" VALUES(4,'d3.d3anon1',24);
 INSERT INTO "Offsetof" VALUES(4,'d3.d3anon2',44);
 INSERT INTO "Offsetof" VALUES(4,'d4',44);
+INSERT INTO "Offsetof" VALUES(4,'d4.d4nest1',44);
+INSERT INTO "Offsetof" VALUES(4,'d4.d4nest2',64);
 INSERT INTO "Offsetof" VALUES(4,'du1',64);
 INSERT INTO "Offsetof" VALUES(4,'du2',64);
 INSERT INTO "Offsetof" VALUES(4,'du3',64);

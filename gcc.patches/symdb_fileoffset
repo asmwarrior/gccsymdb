@@ -1,0 +1,127 @@
+Index: gcc/libcpp/include/cpplib.h
+===================================================================
+--- gcc.orig/libcpp/include/cpplib.h	2013-02-28 15:40:42.838695483 +0800
++++ gcc/libcpp/include/cpplib.h	2013-02-28 15:40:55.538238580 +0800
+@@ -208,10 +208,10 @@
+        node;
+ };
+ 
+-/* A preprocessing token.  This has been carefully packed and should
+-   occupy 16 bytes on 32-bit hosts and 24 bytes on 64-bit hosts.  */
++/* A preprocessing token. */
+ struct GTY(()) cpp_token {
+   source_location src_loc;	/* Location of first char of token.  */
++  int file_offset;
+   ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
+   unsigned short flags;		/* flags - see above */
+ 
+Index: gcc/libcpp/lex.c
+===================================================================
+--- gcc.orig/libcpp/lex.c	2013-02-28 15:40:42.838695483 +0800
++++ gcc/libcpp/lex.c	2013-02-28 15:40:55.539596000 +0800
+@@ -51,7 +51,8 @@
+ #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
+ #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
+ 
+-static void add_line_note (cpp_buffer *, const uchar *, unsigned int);
++static void add_line_note (cpp_buffer *, const uchar *, unsigned int,
++			   const uchar *);
+ static int skip_line_comment (cpp_reader *);
+ static void skip_whitespace (cpp_reader *, cppchar_t);
+ static void lex_string (cpp_reader *, cpp_token *, const uchar *);
+@@ -82,7 +83,8 @@
+ /* Record a note TYPE at byte POS into the current cleaned logical
+    line.  */
+ static void
+-add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type)
++add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type,
++	       const uchar * offset)
+ {
+   if (buffer->notes_used == buffer->notes_cap)
+     {
+@@ -93,6 +95,7 @@
+ 
+   buffer->notes[buffer->notes_used].pos = pos;
+   buffer->notes[buffer->notes_used].type = type;
++  buffer->notes[buffer->notes_used].adjust_offset = offset;
+   buffer->notes_used++;
+ }
+ 
+@@ -678,7 +681,7 @@
+ 		{
+ 		  /* Have a trigraph.  We may or may not have to convert
+ 		     it.  Add a line note regardless, for -Wtrigraphs.  */
+-		  add_line_note (buffer, s, s[2]);
++		  add_line_note (buffer, s, s[2], 0);
+ 		  if (CPP_OPTION (pfile, trigraphs))
+ 		    {
+ 		      /* We do, and that means we have to switch to the
+@@ -723,7 +726,7 @@
+ 
+       /* Have an escaped newline; process it and proceed to
+ 	 the slow path.  */
+-      add_line_note (buffer, p - 1, p != d ? ' ' : '\\');
++      add_line_note (buffer, p - 1, p != d ? ' ' : '\\', s + 1);
+       d = p - 2;
+       buffer->next_line = p - 1;
+ 
+@@ -748,14 +751,14 @@
+ 	      if (p == buffer->next_line || p[-1] != '\\')
+ 		break;
+ 
+-	      add_line_note (buffer, p - 1, p != d ? ' ': '\\');
++	      add_line_note (buffer, p - 1, p != d ? ' ': '\\', s + 1);
+ 	      d = p - 2;
+ 	      buffer->next_line = p - 1;
+ 	    }
+ 	  else if (c == '?' && s[1] == '?' && _cpp_trigraph_map[s[2]])
+ 	    {
+ 	      /* Add a note regardless, for the benefit of -Wtrigraphs.  */
+-	      add_line_note (buffer, d, s[2]);
++	      add_line_note (buffer, d, s[2], 0);
+ 	      if (CPP_OPTION (pfile, trigraphs))
+ 		{
+ 		  *d = _cpp_trigraph_map[s[2]];
+@@ -778,7 +781,7 @@
+  done:
+   *d = '\n';
+   /* A sentinel note that should never be processed.  */
+-  add_line_note (buffer, d + 1, '\n');
++  add_line_note (buffer, d + 1, '\n', s + 1);
+   buffer->next_line = s + 1;
+ }
+ 
+@@ -1983,6 +1986,17 @@
+       _cpp_process_line_notes (pfile, false);
+       result->src_loc = pfile->line_table->highest_line;
+     }
++  if (buffer->cur_note != 0)
++    {
++      int index = buffer->cur_note - 1;
++      result->file_offset = buffer->cur - buffer->buf;
++      result->file_offset +=
++	buffer->notes[index].adjust_offset - buffer->notes[index].pos;
++    }
++  else
++    {
++      result->file_offset = buffer->cur - buffer->buf;
++    }
+   c = *buffer->cur++;
+ 
+   LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
+Index: gcc/libcpp/internal.h
+===================================================================
+--- gcc.orig/libcpp/internal.h	2013-02-28 15:40:40.798975508 +0800
++++ gcc/libcpp/internal.h	2013-02-28 15:40:55.540261218 +0800
+@@ -243,6 +243,11 @@
+      intervening space, 0 represents a note that has already been handled,
+      and anything else is invalid.  */
+   unsigned int type;
++
++  /* file offset adjustment is recorded by add_line_note to adjust
++   * cpp_token::file_offset. The case is when some spaces are left after an
++   * escaped newline `\', cpp_token::file_offset becomes inexact. */
++  const unsigned char *adjust_offset;
+ };
+ 
+ /* Represents the contents of a file cpplib has read in.  */
