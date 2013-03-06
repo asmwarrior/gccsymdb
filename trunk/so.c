@@ -1693,7 +1693,8 @@ loop_struct (tree field, int base)
 	  offsetof_commit (tmp, offset);
 	}
 
-      if (is_anonymous_type (type))
+      if ((TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
+	  && !TYPE_CONTEXT (type))
 	{
 	  /* Enumerate anonymous struct/union. */
 	  if (tmp != NULL)

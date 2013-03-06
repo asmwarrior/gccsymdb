@@ -1,7 +1,7 @@
 Index: gcc/gcc/plugin.def
 ===================================================================
---- gcc.orig/gcc/plugin.def	2012-11-12 15:01:59.565617649 +0800
-+++ gcc/gcc/plugin.def	2012-11-12 15:02:01.537291538 +0800
+--- gcc.orig/gcc/plugin.def	2013-03-05 19:59:31.659979592 +0800
++++ gcc/gcc/plugin.def	2013-03-05 19:59:50.437019340 +0800
 @@ -89,6 +89,37 @@
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
@@ -42,8 +42,8 @@ Index: gcc/gcc/plugin.def
     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
 Index: gcc/gcc/c-family/c-lex.c
 ===================================================================
---- gcc.orig/gcc/c-family/c-lex.c	2012-11-12 15:01:59.564616073 +0800
-+++ gcc/gcc/c-family/c-lex.c	2012-11-12 15:02:01.540210719 +0800
+--- gcc.orig/gcc/c-family/c-lex.c	2013-03-05 19:59:31.648831482 +0800
++++ gcc/gcc/c-family/c-lex.c	2013-03-05 19:59:50.440813540 +0800
 @@ -36,6 +36,7 @@
  #include "splay-tree.h"
  #include "debug.h"
@@ -78,8 +78,8 @@ Index: gcc/gcc/c-family/c-lex.c
  }
 Index: gcc/gcc/c-parser.c
 ===================================================================
---- gcc.orig/gcc/c-parser.c	2012-11-12 15:01:59.565617649 +0800
-+++ gcc/gcc/c-parser.c	2012-11-12 15:02:01.547056945 +0800
+--- gcc.orig/gcc/c-parser.c	2013-03-05 19:59:31.661352625 +0800
++++ gcc/gcc/c-parser.c	2013-03-05 20:23:58.061993071 +0800
 @@ -386,6 +386,7 @@
        break;
      }
@@ -96,19 +96,23 @@ Index: gcc/gcc/c-parser.c
        c_parser_declaration_or_fndef (parser, true, true, true, false, true, NULL);
        break;
      }
-@@ -1457,6 +1459,11 @@
+@@ -1457,6 +1459,15 @@
        return;
      }
    finish_declspecs (specs);
 +  {
 +    void* pair[2]; pair[0] = specs; pair[1] = (void*) parser->tokens_avail;
++    tree tmp = specs->type;
++    /* mark external struct/union. */
++    if (TREE_CODE (tmp) == RECORD_TYPE || TREE_CODE (tmp) == UNION_TYPE)
++      TYPE_CONTEXT (tmp) = tmp;
 +    if (!nested)
 +      invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, pair);
 +  }
    if (c_parser_next_token_is (parser, CPP_SEMICOLON))
      {
        if (empty_ok)
-@@ -1590,6 +1597,11 @@
+@@ -1590,6 +1601,11 @@
  	{
  	  tree asm_name = NULL_TREE;
  	  tree postfix_attrs = NULL_TREE;
@@ -120,7 +124,7 @@ Index: gcc/gcc/c-parser.c
  	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
  	    {
  	      diagnosed_no_specs = true;
-@@ -1618,6 +1630,8 @@
+@@ -1618,6 +1634,8 @@
  	      init_loc = c_parser_peek_token (parser)->location;
  	      init = c_parser_initializer (parser);
  	      finish_init ();
@@ -129,7 +133,7 @@ Index: gcc/gcc/c-parser.c
  	      if (d != error_mark_node)
  		{
  		  maybe_warn_string_init (TREE_TYPE (d), init);
-@@ -1709,11 +1723,15 @@
+@@ -1709,11 +1727,15 @@
  	 declarator with a nonempty identifier list in a definition;
  	 and postfix attributes have never been accepted here in
  	 function definitions either.  */
@@ -145,7 +149,7 @@ Index: gcc/gcc/c-parser.c
        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
  	= c_parser_peek_token (parser)->location;
        fnbody = c_parser_compound_statement (parser);
-@@ -2211,6 +2229,7 @@
+@@ -2211,6 +2233,7 @@
  	    }
  	  token = c_parser_peek_token (parser);
  	  enum_id = token->value;
@@ -153,7 +157,7 @@ Index: gcc/gcc/c-parser.c
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
-@@ -6563,6 +6582,7 @@
+@@ -6563,6 +6586,7 @@
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -161,7 +165,7 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-@@ -6706,6 +6726,7 @@
+@@ -6706,6 +6730,7 @@
        expr.original_code = COMPOUND_EXPR;
        expr.original_type = next.original_type;
      }
@@ -171,8 +175,8 @@ Index: gcc/gcc/c-parser.c
  
 Index: gcc/gcc/plugin.c
 ===================================================================
---- gcc.orig/gcc/plugin.c	2012-11-12 15:01:59.564616073 +0800
-+++ gcc/gcc/plugin.c	2012-11-12 15:02:01.548083181 +0800
+--- gcc.orig/gcc/plugin.c	2013-03-05 19:59:31.657845088 +0800
++++ gcc/gcc/plugin.c	2013-03-05 19:59:50.450009553 +0800
 @@ -438,6 +438,16 @@
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
@@ -209,8 +213,8 @@ Index: gcc/gcc/plugin.c
               call it.  */
 Index: gcc/gcc/doc/plugins.texi
 ===================================================================
---- gcc.orig/gcc/doc/plugins.texi	2012-11-12 15:01:59.564616073 +0800
-+++ gcc/gcc/doc/plugins.texi	2012-11-12 15:02:01.548083181 +0800
+--- gcc.orig/gcc/doc/plugins.texi	2013-03-05 19:59:31.657845088 +0800
++++ gcc/gcc/doc/plugins.texi	2013-03-05 19:59:50.450009553 +0800
 @@ -183,6 +183,25 @@
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */

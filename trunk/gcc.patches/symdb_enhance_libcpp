@@ -1,26 +1,17 @@
-Index: gcc-4.6.3/libcpp/include/cpplib.h
+Index: gcc/libcpp/include/cpplib.h
 ===================================================================
---- gcc-4.6.3.orig/libcpp/include/cpplib.h	2012-06-12 09:50:26.262927584 +0800
-+++ gcc-4.6.3/libcpp/include/cpplib.h	2012-06-13 09:29:53.777415999 +0800
-@@ -208,10 +208,10 @@
-        node;
- };
- 
--/* A preprocessing token.  This has been carefully packed and should
--   occupy 16 bytes on 32-bit hosts and 24 bytes on 64-bit hosts.  */
-+/* A preprocessing token. */
- struct GTY(()) cpp_token {
-   source_location src_loc;	/* Location of first char of token.  */
-+  int file_offset;
-   ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
-   unsigned short flags;		/* flags - see above */
- 
-@@ -493,6 +493,21 @@
+--- gcc.orig/libcpp/include/cpplib.h	2013-02-28 15:40:40.964029599 +0800
++++ gcc/libcpp/include/cpplib.h	2013-02-28 15:51:57.284399535 +0800
+@@ -493,6 +493,25 @@
       be expanded.  */
    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
  
-+  /* macro_{start/end}_expand are called when gcc starts to expand macro, note
-+   * if A macro includes B macro, the pair is called multiple times. */
++  /* The more powerful function extracts token than cpp_get_token. Later
++   * callbacks show it. */
++  void (*lex_token) (cpp_reader *, const cpp_token*);
++  /* The pair is called when gcc expands macro. Enable lex_token in
++   * macro_start_expand, you can catch all macro tokens. The pair can be called
++   * nested. */
 +  void (*macro_start_expand) (cpp_reader *, const cpp_token *,
 +		  const cpp_hashnode *);
 +  void (*macro_end_expand) (cpp_reader *);
@@ -28,92 +19,20 @@ Index: gcc-4.6.3/libcpp/include/cpplib.h
 +   * cancel = true, macro expansion is canceled. */
 +  void (*macro_end_arg) (cpp_reader *, bool cancel);
 +  /* The pair is called when cpp directive (starting from `#', such as
-+   * `#define', `#endif' etc) is encountered and reaches end. */
++   * `#define M', `#endif' etc) is encountered and reaches end. When enable
++   * lex_token in start_directive, the sequence is lex_token("define"),
++   * lex_token("M") ... */
 +  void (*start_directive) (cpp_reader *);
 +  void (*end_directive) (cpp_reader *);
-+  /* The more powerful function getting token than cpp_get_token. */
-+  void (*lex_token) (cpp_reader *, const cpp_token*);
 +
    /* Called to emit a diagnostic.  This callback receives the
       translated message.  */
    bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
-Index: gcc-4.6.3/libcpp/lex.c
+Index: gcc/libcpp/lex.c
 ===================================================================
---- gcc-4.6.3.orig/libcpp/lex.c	2012-06-12 09:50:26.262927584 +0800
-+++ gcc-4.6.3/libcpp/lex.c	2012-06-13 09:30:17.509113536 +0800
-@@ -51,7 +51,8 @@
- #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
- #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
- 
--static void add_line_note (cpp_buffer *, const uchar *, unsigned int);
-+static void add_line_note (cpp_buffer *, const uchar *, unsigned int,
-+			   const uchar *);
- static int skip_line_comment (cpp_reader *);
- static void skip_whitespace (cpp_reader *, cppchar_t);
- static void lex_string (cpp_reader *, cpp_token *, const uchar *);
-@@ -82,7 +83,8 @@
- /* Record a note TYPE at byte POS into the current cleaned logical
-    line.  */
- static void
--add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type)
-+add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type,
-+	       const uchar * offset)
- {
-   if (buffer->notes_used == buffer->notes_cap)
-     {
-@@ -93,6 +95,7 @@
- 
-   buffer->notes[buffer->notes_used].pos = pos;
-   buffer->notes[buffer->notes_used].type = type;
-+  buffer->notes[buffer->notes_used].adjust_offset = offset;
-   buffer->notes_used++;
- }
- 
-@@ -678,7 +681,7 @@
- 		{
- 		  /* Have a trigraph.  We may or may not have to convert
- 		     it.  Add a line note regardless, for -Wtrigraphs.  */
--		  add_line_note (buffer, s, s[2]);
-+		  add_line_note (buffer, s, s[2], 0);
- 		  if (CPP_OPTION (pfile, trigraphs))
- 		    {
- 		      /* We do, and that means we have to switch to the
-@@ -723,7 +726,7 @@
- 
-       /* Have an escaped newline; process it and proceed to
- 	 the slow path.  */
--      add_line_note (buffer, p - 1, p != d ? ' ' : '\\');
-+      add_line_note (buffer, p - 1, p != d ? ' ' : '\\', s + 1);
-       d = p - 2;
-       buffer->next_line = p - 1;
- 
-@@ -748,14 +751,14 @@
- 	      if (p == buffer->next_line || p[-1] != '\\')
- 		break;
- 
--	      add_line_note (buffer, p - 1, p != d ? ' ': '\\');
-+	      add_line_note (buffer, p - 1, p != d ? ' ': '\\', s + 1);
- 	      d = p - 2;
- 	      buffer->next_line = p - 1;
- 	    }
- 	  else if (c == '?' && s[1] == '?' && _cpp_trigraph_map[s[2]])
- 	    {
- 	      /* Add a note regardless, for the benefit of -Wtrigraphs.  */
--	      add_line_note (buffer, d, s[2]);
-+	      add_line_note (buffer, d, s[2], 0);
- 	      if (CPP_OPTION (pfile, trigraphs))
- 		{
- 		  *d = _cpp_trigraph_map[s[2]];
-@@ -778,7 +781,7 @@
-  done:
-   *d = '\n';
-   /* A sentinel note that should never be processed.  */
--  add_line_note (buffer, d + 1, '\n');
-+  add_line_note (buffer, d + 1, '\n', s + 1);
-   buffer->next_line = s + 1;
- }
- 
-@@ -1824,6 +1827,8 @@
+--- gcc.orig/libcpp/lex.c	2013-02-28 15:40:40.964029599 +0800
++++ gcc/libcpp/lex.c	2013-02-28 15:49:26.821252724 +0800
+@@ -1824,6 +1824,8 @@
  	}
        else
  	result = _cpp_lex_direct (pfile);
@@ -122,28 +41,10 @@ Index: gcc-4.6.3/libcpp/lex.c
  
        if (result->flags & BOL)
  	{
-@@ -1981,6 +1986,17 @@
-       _cpp_process_line_notes (pfile, false);
-       result->src_loc = pfile->line_table->highest_line;
-     }
-+  if (buffer->cur_note != 0)
-+    {
-+      int index = buffer->cur_note - 1;
-+      result->file_offset = buffer->cur - buffer->buf;
-+      result->file_offset +=
-+	buffer->notes[index].adjust_offset - buffer->notes[index].pos;
-+    }
-+  else
-+    {
-+      result->file_offset = buffer->cur - buffer->buf;
-+    }
-   c = *buffer->cur++;
- 
-   LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
-Index: gcc-4.6.3/libcpp/macro.c
+Index: gcc/libcpp/macro.c
 ===================================================================
---- gcc-4.6.3.orig/libcpp/macro.c	2012-06-12 09:50:26.262927584 +0800
-+++ gcc-4.6.3/libcpp/macro.c	2012-06-18 15:46:58.999527662 +0800
+--- gcc.orig/libcpp/macro.c	2013-02-28 15:40:40.964029599 +0800
++++ gcc/libcpp/macro.c	2013-02-28 15:40:42.842909094 +0800
 @@ -855,6 +855,8 @@
  	  pfile->keep_tokens++;
  	  pfile->state.parsing_args = 1;
@@ -178,10 +79,10 @@ Index: gcc-4.6.3/libcpp/macro.c
  	  if (ret)
   	    {
  	      if (pfile->state.in_directive || ret == 2)
-Index: gcc-4.6.3/libcpp/directives.c
+Index: gcc/libcpp/directives.c
 ===================================================================
---- gcc-4.6.3.orig/libcpp/directives.c	2012-06-12 09:50:26.261895069 +0800
-+++ gcc-4.6.3/libcpp/directives.c	2012-06-12 09:50:29.312642164 +0800
+--- gcc.orig/libcpp/directives.c	2013-02-28 15:40:40.962466559 +0800
++++ gcc/libcpp/directives.c	2013-02-28 15:40:42.844353406 +0800
 @@ -275,6 +275,9 @@
  
    /* Some handlers need the position of the # for diagnostics.  */
@@ -202,19 +103,3 @@ Index: gcc-4.6.3/libcpp/directives.c
  }
  
  /* Prepare to handle the directive in pfile->directive.  */
-Index: gcc-4.6.3/libcpp/internal.h
-===================================================================
---- gcc-4.6.3.orig/libcpp/internal.h	2012-06-12 09:50:26.262927584 +0800
-+++ gcc-4.6.3/libcpp/internal.h	2012-06-18 15:47:19.385481606 +0800
-@@ -243,6 +243,11 @@
-      intervening space, 0 represents a note that has already been handled,
-      and anything else is invalid.  */
-   unsigned int type;
-+
-+  /* file offset adjustment is recorded by add_line_note to adjust
-+   * cpp_token::file_offset. The case is when some spaces are left after an
-+   * escaped newline `\', cpp_token::file_offset becomes inexact. */
-+  const unsigned char *adjust_offset;
- };
- 
- /* Represents the contents of a file cpplib has read in.  */
