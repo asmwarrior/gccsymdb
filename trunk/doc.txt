@@ -73,10 +73,10 @@ but only the last two levels are imported into database.
     c) ./gs macro
 Note, later case will return multiple results
     ---- a.h ----                     ---- <results> ----
-    X;                                def: a.c, 3, 0
+    X;                                def: a.c, 25
     ---- a.c ----                     exp: X
     int main(void)                    mo: int i
-    {                                 def: a.c, 6, 0
+    {                                 def: a.c, 64
     #define X int i                   exp: X
     #include"a.h"                     mo: int j
     #undef X

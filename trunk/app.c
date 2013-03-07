@@ -487,16 +487,17 @@ macro (const char *file_name, const char *offset)
   if (file_name == NULL)
     {
       dyn_string_copy_cstr (gbuf,
-			    "select * from Macro, chFile where defFileID = id;");
+			    "select name, defFileOffset, expandedTokens, macroTokens "
+			    "from Macro, chFile where defFileID = id;");
       db_error (sqlite3_get_table
 		(db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn,
 		 &error_msg));
       for (int i = 1; i <= nrow; i++)
 	{
-	  printf ("def: %s, %s, %s\n", table[i * ncolumn + 8],
-		  table[i * ncolumn + 3], table[i * ncolumn + 4]);
-	  printf ("exp: %s\n", table[i * ncolumn + 5]);
-	  printf ("mo: %s\n", table[i * ncolumn + 6]);
+	  printf ("def: %s, %s\n", table[i * ncolumn + 0],
+		  table[i * ncolumn + 1]);
+	  printf ("exp: %s\n", table[i * ncolumn + 2]);
+	  printf ("mo: %s\n", table[i * ncolumn + 3]);
 	}
       sqlite3_free_table (table);
     }

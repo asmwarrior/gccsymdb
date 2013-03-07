@@ -1,8 +1,8 @@
 Index: gcc/libcpp/include/cpplib.h
 ===================================================================
---- gcc.orig/libcpp/include/cpplib.h	2013-02-28 15:40:40.964029599 +0800
-+++ gcc/libcpp/include/cpplib.h	2013-02-28 15:51:57.284399535 +0800
-@@ -493,6 +493,25 @@
+--- gcc.orig/libcpp/include/cpplib.h
++++ gcc/libcpp/include/cpplib.h
+@@ -493,6 +493,25 @@ struct cpp_callbacks
       be expanded.  */
    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
  
@@ -30,9 +30,9 @@ Index: gcc/libcpp/include/cpplib.h
    bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
 Index: gcc/libcpp/lex.c
 ===================================================================
---- gcc.orig/libcpp/lex.c	2013-02-28 15:40:40.964029599 +0800
-+++ gcc/libcpp/lex.c	2013-02-28 15:49:26.821252724 +0800
-@@ -1824,6 +1824,8 @@
+--- gcc.orig/libcpp/lex.c
++++ gcc/libcpp/lex.c
+@@ -1824,6 +1824,8 @@ _cpp_lex_token (cpp_reader *pfile)
  	}
        else
  	result = _cpp_lex_direct (pfile);
@@ -43,9 +43,9 @@ Index: gcc/libcpp/lex.c
  	{
 Index: gcc/libcpp/macro.c
 ===================================================================
---- gcc.orig/libcpp/macro.c	2013-02-28 15:40:40.964029599 +0800
-+++ gcc/libcpp/macro.c	2013-02-28 15:40:42.842909094 +0800
-@@ -855,6 +855,8 @@
+--- gcc.orig/libcpp/macro.c
++++ gcc/libcpp/macro.c
+@@ -855,6 +855,8 @@ enter_macro_context (cpp_reader *pfile, 
  	  pfile->keep_tokens++;
  	  pfile->state.parsing_args = 1;
  	  buff = funlike_invocation_p (pfile, node, &pragma_buff);
@@ -54,7 +54,7 @@ Index: gcc/libcpp/macro.c
  	  pfile->state.parsing_args = 0;
  	  pfile->keep_tokens--;
  	  pfile->state.prevent_expansion--;
-@@ -1256,6 +1258,8 @@
+@@ -1256,6 +1258,8 @@ cpp_get_token (cpp_reader *pfile)
        else
  	{
  	  _cpp_pop_context (pfile);
@@ -63,7 +63,7 @@ Index: gcc/libcpp/macro.c
  	  if (pfile->state.in_directive)
  	    continue;
  	  return &pfile->avoid_paste;
-@@ -1312,7 +1316,14 @@
+@@ -1312,7 +1316,14 @@ cpp_get_token (cpp_reader *pfile)
  		}
  	    }
  	  else
@@ -81,9 +81,9 @@ Index: gcc/libcpp/macro.c
  	      if (pfile->state.in_directive || ret == 2)
 Index: gcc/libcpp/directives.c
 ===================================================================
---- gcc.orig/libcpp/directives.c	2013-02-28 15:40:40.962466559 +0800
-+++ gcc/libcpp/directives.c	2013-02-28 15:40:42.844353406 +0800
-@@ -275,6 +275,9 @@
+--- gcc.orig/libcpp/directives.c
++++ gcc/libcpp/directives.c
+@@ -275,6 +275,9 @@ start_directive (cpp_reader *pfile)
  
    /* Some handlers need the position of the # for diagnostics.  */
    pfile->directive_line = pfile->line_table->highest_line;
@@ -93,7 +93,7 @@ Index: gcc/libcpp/directives.c
  }
  
  /* Called when leaving a directive, _Pragma or command-line directive.  */
-@@ -309,6 +312,9 @@
+@@ -309,6 +312,9 @@ end_directive (cpp_reader *pfile, int sk
    pfile->state.in_expression = 0;
    pfile->state.angled_headers = 0;
    pfile->directive = 0;
