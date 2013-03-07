@@ -258,16 +258,18 @@ static void __attribute__ ((used)) dump_includee (void)
 }
 
 static int
-file_get_fid_from_cache (const char *file_name)
+file_get_fid_from_db (const char *file_name)
 {
-  int ix;
-  include_unit *p;
-  FOR_EACH_VEC_ELT (include_unit, file.includee, ix, p)
-  {
-    if (strcmp (dyn_string_buf (p->name), file_name) == 0)
-      return p->id;
-  }
-  gcc_assert (false);
+  int ret = 0;
+  db_error (sqlite3_bind_text
+	    (file.select_chfile, 1, file_name, strlen (file_name),
+	     SQLITE_STATIC));
+  if (sqlite3_step (file.select_chfile) == SQLITE_ROW)
+    ret = sqlite3_column_int (file.select_chfile, 0);
+  else
+    gcc_assert (false);
+  revalidate_sql (file.select_chfile);
+  return ret;
 }
 
 static int
@@ -473,8 +475,7 @@ static struct
   int letFileID;
   int letOffset;
   int defFileID;
-  int defLine;
-  int defColumn;
+  int defFileOffset;
   dyn_string_t expandedTokens;
   dyn_string_t macroTokens;
   struct sqlite3_stmt *insert_macro;
@@ -524,13 +525,12 @@ mo_leave (void)
   if (mo.process == 2)
     {
       db_error (sqlite3_bind_int (mo.insert_macro, 1, mo.defFileID));
-      db_error (sqlite3_bind_int (mo.insert_macro, 2, mo.defLine));
-      db_error (sqlite3_bind_int (mo.insert_macro, 3, mo.defColumn));
+      db_error (sqlite3_bind_int (mo.insert_macro, 2, mo.defFileOffset));
       db_error (sqlite3_bind_text
-		(mo.insert_macro, 4, dyn_string_buf (mo.expandedTokens),
+		(mo.insert_macro, 3, dyn_string_buf (mo.expandedTokens),
 		 dyn_string_length (mo.expandedTokens), SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(mo.insert_macro, 5, dyn_string_buf (mo.macroTokens),
+		(mo.insert_macro, 4, dyn_string_buf (mo.macroTokens),
 		 dyn_string_length (mo.macroTokens), SQLITE_STATIC));
       execute_sql (mo.insert_macro);
       dyn_string_copy_cstr (mo.expandedTokens, "");
@@ -551,13 +551,13 @@ mo_enter (cpp_reader * pfile, cpp_token_p token)
       && token->file_offset == mo.letOffset)
     {
       cpp_macro *macro = token->val.node.node->value.macro;
+      int file_offset = macro->file_offset;
       source_location sl = macro->line;
       const struct line_map *lm = linemap_lookup (pfile->line_table, sl);
       if (strcmp (lm->to_file, "<command-line>") != 0)
 	{
-	  mo.defFileID = file_get_fid_from_cache (lm->to_file);
-	  mo.defLine = SOURCE_LINE (lm, sl);
-	  mo.defColumn = SOURCE_COLUMN (lm, sl);
+	  mo.defFileID = file_get_fid_from_db (canonical_path (lm->to_file));
+	  mo.defFileOffset = file_offset;
 	  mo.process = 2;
 	}
     }
@@ -662,7 +662,7 @@ mo_init (void)
   sqlite3_free_table (result);
 
   db_error (sqlite3_prepare_v2 (db,
-				"insert into Macro values (NULL, NULL, ?, ?, ?, ?, ?);",
+				"insert into Macro values (NULL, NULL, ?, ?, ?, ?);",
 				-1, &mo.insert_macro, 0));
   mo.expandedTokens = dyn_string_new (128);
   mo.macroTokens = dyn_string_new (128);

@@ -34,7 +34,7 @@ redo:
 	${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
 
 db:
-	rm -f gccsym.db && sqlite3 -init init.sql gccsym.db ""
+	rm -f gccsym.db && ./gs initdb ./
 
 format:
 	# GNU code standard
@@ -45,10 +45,3 @@ clean:
 	(cd test && ./run.sh clean)
 	:> log.gdb
 	rm -f *.db *.db-journal
-
-sync:
-	(cd ${GCC_SRC} && quilt refresh)
-	cp -u ${GCC_SRC}/patches/* gcc.patches
-
-quilt:
-	cd ${GCC_SRC}

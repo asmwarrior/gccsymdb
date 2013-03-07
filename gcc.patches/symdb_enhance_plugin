@@ -1,8 +1,8 @@
 Index: gcc/gcc/plugin.def
 ===================================================================
---- gcc.orig/gcc/plugin.def	2013-03-05 19:59:31.659979592 +0800
-+++ gcc/gcc/plugin.def	2013-03-05 19:59:50.437019340 +0800
-@@ -89,6 +89,37 @@
+--- gcc.orig/gcc/plugin.def
++++ gcc/gcc/plugin.def
+@@ -89,6 +89,37 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
  
@@ -42,9 +42,9 @@ Index: gcc/gcc/plugin.def
     PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
 Index: gcc/gcc/c-family/c-lex.c
 ===================================================================
---- gcc.orig/gcc/c-family/c-lex.c	2013-03-05 19:59:31.648831482 +0800
-+++ gcc/gcc/c-family/c-lex.c	2013-03-05 19:59:50.440813540 +0800
-@@ -36,6 +36,7 @@
+--- gcc.orig/gcc/c-family/c-lex.c
++++ gcc/gcc/c-family/c-lex.c
+@@ -36,6 +36,7 @@ along with GCC; see the file COPYING3.  
  #include "splay-tree.h"
  #include "debug.h"
  #include "target.h"
@@ -52,7 +52,7 @@ Index: gcc/gcc/c-family/c-lex.c
  
  /* We may keep statistics about how long which files took to compile.  */
  static int header_time, body_time;
-@@ -362,6 +363,7 @@
+@@ -362,6 +363,7 @@ c_lex_with_flags (tree *value, location_
  	    case CPP_STRING32:
  	    case CPP_UTF8STRING:
  	      type = lex_string (tok, value, true, true);
@@ -60,7 +60,7 @@ Index: gcc/gcc/c-family/c-lex.c
  	      break;
  
  	    case CPP_NAME:
-@@ -431,6 +433,7 @@
+@@ -431,6 +433,7 @@ c_lex_with_flags (tree *value, location_
  	{
  	  type = lex_string (tok, value, false,
  			     (lex_flags & C_LEX_STRING_NO_TRANSLATE) == 0);
@@ -68,7 +68,7 @@ Index: gcc/gcc/c-family/c-lex.c
  	  break;
  	}
        *value = build_string (tok->val.str.len, (const char *) tok->val.str.text);
-@@ -465,6 +468,7 @@
+@@ -465,6 +468,7 @@ c_lex_with_flags (tree *value, location_
      }
  
    timevar_pop (TV_CPP);
@@ -78,9 +78,9 @@ Index: gcc/gcc/c-family/c-lex.c
  }
 Index: gcc/gcc/c-parser.c
 ===================================================================
---- gcc.orig/gcc/c-parser.c	2013-03-05 19:59:31.661352625 +0800
-+++ gcc/gcc/c-parser.c	2013-03-05 20:23:58.061993071 +0800
-@@ -386,6 +386,7 @@
+--- gcc.orig/gcc/c-parser.c
++++ gcc/gcc/c-parser.c
+@@ -386,6 +386,7 @@ c_lex_one_token (c_parser *parser, c_tok
        break;
      }
    timevar_pop (TV_LEX);
@@ -88,7 +88,7 @@ Index: gcc/gcc/c-parser.c
  }
  
  /* Return a pointer to the next token from PARSER, reading it in if
-@@ -1329,6 +1330,7 @@
+@@ -1329,6 +1330,7 @@ c_parser_external_declaration (c_parser 
  	 an @interface or @protocol with prefix attributes).  We can
  	 only tell which after parsing the declaration specifiers, if
  	 any, and the first declarator.  */
@@ -96,7 +96,7 @@ Index: gcc/gcc/c-parser.c
        c_parser_declaration_or_fndef (parser, true, true, true, false, true, NULL);
        break;
      }
-@@ -1457,6 +1459,15 @@
+@@ -1457,6 +1459,15 @@ c_parser_declaration_or_fndef (c_parser 
        return;
      }
    finish_declspecs (specs);
@@ -112,7 +112,7 @@ Index: gcc/gcc/c-parser.c
    if (c_parser_next_token_is (parser, CPP_SEMICOLON))
      {
        if (empty_ok)
-@@ -1590,6 +1601,11 @@
+@@ -1590,6 +1601,11 @@ c_parser_declaration_or_fndef (c_parser 
  	{
  	  tree asm_name = NULL_TREE;
  	  tree postfix_attrs = NULL_TREE;
@@ -124,7 +124,7 @@ Index: gcc/gcc/c-parser.c
  	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
  	    {
  	      diagnosed_no_specs = true;
-@@ -1618,6 +1634,8 @@
+@@ -1618,6 +1634,8 @@ c_parser_declaration_or_fndef (c_parser 
  	      init_loc = c_parser_peek_token (parser)->location;
  	      init = c_parser_initializer (parser);
  	      finish_init ();
@@ -133,7 +133,7 @@ Index: gcc/gcc/c-parser.c
  	      if (d != error_mark_node)
  		{
  		  maybe_warn_string_init (TREE_TYPE (d), init);
-@@ -1709,11 +1727,15 @@
+@@ -1709,11 +1727,15 @@ c_parser_declaration_or_fndef (c_parser 
  	 declarator with a nonempty identifier list in a definition;
  	 and postfix attributes have never been accepted here in
  	 function definitions either.  */
@@ -149,7 +149,7 @@ Index: gcc/gcc/c-parser.c
        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
  	= c_parser_peek_token (parser)->location;
        fnbody = c_parser_compound_statement (parser);
-@@ -2211,6 +2233,7 @@
+@@ -2211,6 +2233,7 @@ c_parser_enum_specifier (c_parser *parse
  	    }
  	  token = c_parser_peek_token (parser);
  	  enum_id = token->value;
@@ -157,7 +157,7 @@ Index: gcc/gcc/c-parser.c
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
-@@ -6563,6 +6586,7 @@
+@@ -6563,6 +6586,7 @@ c_parser_postfix_expression_after_primar
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -165,7 +165,7 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-@@ -6706,6 +6730,7 @@
+@@ -6706,6 +6730,7 @@ c_parser_expression (c_parser *parser)
        expr.original_code = COMPOUND_EXPR;
        expr.original_type = next.original_type;
      }
@@ -175,9 +175,9 @@ Index: gcc/gcc/c-parser.c
  
 Index: gcc/gcc/plugin.c
 ===================================================================
---- gcc.orig/gcc/plugin.c	2013-03-05 19:59:31.657845088 +0800
-+++ gcc/gcc/plugin.c	2013-03-05 19:59:50.450009553 +0800
-@@ -438,6 +438,16 @@
+--- gcc.orig/gcc/plugin.c
++++ gcc/gcc/plugin.c
+@@ -438,6 +438,16 @@ register_callback (const char *plugin_na
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -194,7 +194,7 @@ Index: gcc/gcc/plugin.c
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -514,6 +524,16 @@
+@@ -514,6 +524,16 @@ invoke_plugin_callbacks_full (int event,
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -213,9 +213,9 @@ Index: gcc/gcc/plugin.c
               call it.  */
 Index: gcc/gcc/doc/plugins.texi
 ===================================================================
---- gcc.orig/gcc/doc/plugins.texi	2013-03-05 19:59:31.657845088 +0800
-+++ gcc/gcc/doc/plugins.texi	2013-03-05 19:59:50.450009553 +0800
-@@ -183,6 +183,25 @@
+--- gcc.orig/gcc/doc/plugins.texi
++++ gcc/gcc/doc/plugins.texi
+@@ -183,6 +183,25 @@ enum plugin_event
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
    PLUGIN_NEW_PASS,

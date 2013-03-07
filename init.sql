@@ -73,8 +73,7 @@ create table Macro (
 
 	-- result.
 	defFileID integer,
-	defLine integer,
-	defColumn integer,
+	defFileOffset integer,
 	expandedTokens text,
 	macroTokens text
 );
