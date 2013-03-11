@@ -12,6 +12,11 @@ INSERT INTO "Definition" VALUES(3,'c',5,257);
 INSERT INTO "Definition" VALUES(4,'d',5,272);
 INSERT INTO "Definition" VALUES(5,'u',6,554);
 INSERT INTO "Definition" VALUES(6,'anonv',1,618);
+INSERT INTO "Definition" VALUES(7,'X',5,633);
+INSERT INTO "Definition" VALUES(8,'x_t',4,665);
+INSERT INTO "Definition" VALUES(9,'y_t',4,698);
+INSERT INTO "Definition" VALUES(10,'Z',5,719);
+INSERT INTO "Definition" VALUES(11,'z_t',4,736);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
@@ -63,4 +68,10 @@ INSERT INTO "Offsetof" VALUES(5,'u2',0);
 INSERT INTO "Offsetof" VALUES(6,'',8);
 INSERT INTO "Offsetof" VALUES(6,'i',0);
 INSERT INTO "Offsetof" VALUES(6,'j',4);
+INSERT INTO "Offsetof" VALUES(7,'',4);
+INSERT INTO "Offsetof" VALUES(7,'i',0);
+INSERT INTO "Offsetof" VALUES(9,'',4);
+INSERT INTO "Offsetof" VALUES(9,'j',0);
+INSERT INTO "Offsetof" VALUES(10,'',4);
+INSERT INTO "Offsetof" VALUES(10,'k',0);
 COMMIT;

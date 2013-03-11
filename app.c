@@ -542,6 +542,8 @@ offset_of (const char *struct_name, const char *member)
   dyn_string_append_cstr (gbuf, " or flag = ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
   dyn_string_append_cstr (gbuf, " or flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_TYPEDEF));
+  dyn_string_append_cstr (gbuf, " or flag = ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_UNION));
   dyn_string_append_cstr (gbuf, ") and name = '");
   dyn_string_append_cstr (gbuf, struct_name);

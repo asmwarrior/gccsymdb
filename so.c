@@ -1694,7 +1694,7 @@ loop_struct (tree field, int base)
 	}
 
       if ((TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
-	  && !TYPE_CONTEXT (type))
+	  && !TYPE_FILE_SCOPE (type))
 	{
 	  /* Enumerate anonymous struct/union. */
 	  if (tmp != NULL)

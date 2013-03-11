@@ -113,11 +113,16 @@ use offsetof feature at all.
     ./gs offsetof s m.x
     ./gs offsetof s n.y
     ./gs offsetof s z
-The extern variable of an anonymous struct is supported.
+The extern variable or typedef of an anonymous struct are supported. Keep it
+in mind, if struct isn't anonymous, data will be linked to the struct itself.
     struct {
         int i;
     } anonv;
+    typedef struct {
+        int j;
+    } td;
     ./gs offsetof anonv i
+    ./gs offsetof td j
 // }])>
 
 // User Manual <([{

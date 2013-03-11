@@ -61,3 +61,16 @@ struct
 	int i;
 	int j;
 } anonv;
+
+struct X {
+	int i;
+};
+typedef struct X x_t;
+
+typedef struct {
+	int j;
+} y_t;
+
+typedef struct Z {
+    int k;
+} z_t;

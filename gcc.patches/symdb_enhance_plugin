@@ -105,7 +105,7 @@ Index: gcc/gcc/c-parser.c
 +    tree tmp = specs->type;
 +    /* mark external struct/union. */
 +    if (TREE_CODE (tmp) == RECORD_TYPE || TREE_CODE (tmp) == UNION_TYPE)
-+      TYPE_CONTEXT (tmp) = tmp;
++      TYPE_FILE_SCOPE (tmp) = true;
 +    if (!nested)
 +      invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, pair);
 +  }
@@ -241,3 +241,27 @@ Index: gcc/gcc/doc/plugins.texi
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
+Index: gcc/gcc/tree.h
+===================================================================
+--- gcc.orig/gcc/tree.h
++++ gcc/gcc/tree.h
+@@ -2327,6 +2327,10 @@ extern enum machine_mode vector_type_mod
+ #define TYPE_SYMTAB_IS_POINTER (1)
+ #define TYPE_SYMTAB_IS_DIE (2)
+ 
++/* To C, all record/union types has file-scope even it's defined inside other
++   record/union, for special usage, the field mark it.  */
++#define TYPE_FILE_SCOPE(NODE) (RECORD_OR_UNION_CHECK (NODE)->type.file_scope)
++
+ struct die_struct;
+ 
+ struct GTY(()) tree_type {
+@@ -2355,6 +2359,8 @@ struct GTY(()) tree_type {
+   unsigned lang_flag_5 : 1;
+   unsigned lang_flag_6 : 1;
+ 
++  bool file_scope;
++
+   unsigned int align;
+   alias_set_type alias_set;
+   tree pointer_to;
