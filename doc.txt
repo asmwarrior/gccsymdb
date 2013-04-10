@@ -164,30 +164,31 @@ Make database on linux-2.6.35 using crossng-mips:
 4) make
 
 Working with new database:
-1) cd /target.src
-2) vi
-3) execute `:source helper.vim'
-4) Using `CTRL-]' to search a definition.
-5) Using `CTRL-[' to search which functions calls the function.
-6) Using `CTRL-T' to jump back.
-7) Using `Gs def yoursymbol' to search a definition.
-8) Using `Gs callee yourfunction' to search function call relationship.
-Function alias can be showed at the same time.
-9) Using `Gs ifdef' to search see whether current position is skipped.
-10) Place cursor to a member-function-pointer such as `open', `Gs fdef open'
-to search where it is assigned and assigned-definition.
+cd /target.src
 
 Vim quickref:
-Since my database stores the file-offset of every token, so
-1) Using `:go fileoffset' to jump to the token.
-2) Using `g<CTRL-g>' on the char to get the file-offset.
+1) vi
+2) execute `:source helper.vim'
+3) Using `CTRL-]' to search a definition.
+4) Using `CTRL-[' to search which functions calls the function.
+5) Using `CTRL-T' to jump back.
+6) Using `Gs def yoursymbol' to search a definition.
+7) Using `Gs callee yourfunction' to search function call relationship.
+Function alias can be showed at the same time.
+8) Using `Gs ifdef' to search see whether current position is skipped.
+9) Place cursor to a member-function-pointer such as `open', `Gs fdef open' to
+search where it is assigned and assigned-definition.
+10) There's a brief in helper.vim for more usage.
+
+myplugin.src/gs usage:
+The executable is used to access the database, helper.vim is also dependent on
+it. `./gs help'.
+Currently, offsetof feature can be accessed by `myplugin.src/gs' only.
+
+To compile a cross-plugin, follow the instruction in `myplugin.src/Makefile'.
 
 Testing my plugin:
 1) cd test && ./run.sh
-
-More features -- `myplugin.src/gs'.
-
-To compile a cross-plugin, follow the instruction in `myplugin.src/Makefile'.
 // }])>
 
 // Multiple-results from my database and my solution <([{
@@ -292,7 +293,7 @@ plugin.
 combination command, try `:Gs falias open' and `:Gs def XXX' individually.
 // }])>
 
-For Developer
+For Developer, need to sychronize with the up-to-dated code.
 // New Token Type <([{
 In this section, I'll define some new token type which is available everywhere
 in my symdb, but before we go, we need go further into gcc internal on how gcc
