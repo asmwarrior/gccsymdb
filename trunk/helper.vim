@@ -156,8 +156,7 @@ echo s:str
 endfunction
 " }])>
 
-" GS_cmd <([{
-" Support only def/callee subcommand.
+" GS_cmd, `:Gs help' about how to use the script <([{
 function! s:GS_cmd(subcmd, ...)
 if a:subcmd == 'def'
 	let s:file_name = '--'
@@ -178,22 +177,23 @@ elseif a:subcmd == 'fdef'
 	let s:symbol = a:1
 	call s:GS_falias_def()
 else
-	echo 'Gs command:'
+	echo 'Gs command (all except ifdef accept only a param):'
 	echo 'def     : search a definition.'
 	echo 'callee  : where a function is called, member-function-pointer assignment is also searched cascadedly'
 	echo 'ifdef   : whether current position is skipped by ifdef/if.'
 	echo 'fdef    : where the member-function-pointer is assigned and assigned-definition.'
+	echo 'falias  : search symbol XX on .mfp = fundecl from two direction (.XX = fundecl or .mfp = XX), it just be the combination of fdef and callee.'
 endif
 endfunction
+
+command! -nargs=* Gs  call <SID>GS_cmd(<f-args>)
 " }])>
 
 " Note:
 " To walk through file by file-offset, try `:go file-offset'.
 " To see where char-offset is from file, try `g<CTRL-g>' on the char.
 
+" Some key-shortcuts overload vim symbol-tag commands.
 nmap <C-]> :call <SID>GS_def(0)<CR>
 nmap <C-[> :call <SID>GS_callee(0)<CR>
 nmap <C-T> :call <SID>GS_jumpback()<CR>
-
-" To `Gs' command of vim, filename is always `--'.
-command! -nargs=* Gs  call <SID>GS_cmd(<f-args>)

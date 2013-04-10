@@ -578,7 +578,10 @@ main (int argc, char **argv)
   int ret = EXIT_SUCCESS;
   gbuf = dyn_string_new (1024);
   list = dyn_string_new (256);
-  if (argc == 1)
+  if (argc == 1
+      || (argc == 2
+	  && (strcmp (argv[1], "--help") == 0 || strcmp (argv[1], "-h") == 0
+	      || strcmp (argv[1], "help") == 0)))
     {
       ret = usage ();
       return -1;
