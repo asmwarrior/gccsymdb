@@ -1,0 +1,60 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	fileoffset integer
+);
+INSERT INTO "Definition" VALUES(1,'M',3,12);
+INSERT INTO "Definition" VALUES(2,'funtd',4,30);
+INSERT INTO "Definition" VALUES(3,'funtdp',4,77);
+INSERT INTO "Definition" VALUES(4,'funpvar',1,98);
+INSERT INTO "Definition" VALUES(5,'itd',4,126);
+INSERT INTO "Definition" VALUES(6,'funtdpcomplex',4,146);
+INSERT INTO "Definition" VALUES(7,'arr',1,178);
+INSERT INTO "Definition" VALUES(8,'p',1,194);
+INSERT INTO "Definition" VALUES(9,'muldef',1,273);
+INSERT INTO "Definition" VALUES(10,'muldef',1,285);
+INSERT INTO "Definition" VALUES(11,'abc',5,301);
+INSERT INTO "Definition" VALUES(12,'v1',1,326);
+INSERT INTO "Definition" VALUES(13,'v2',1,341);
+INSERT INTO "Definition" VALUES(14,'enumx',8,356);
+INSERT INTO "Definition" VALUES(15,'enumy',8,368);
+INSERT INTO "Definition" VALUES(16,'def',5,408);
+INSERT INTO "Definition" VALUES(17,'tp',1,452);
+INSERT INTO "Definition" VALUES(18,'oldfun',2,462);
+INSERT INTO "Definition" VALUES(19,'foo',2,495);
+INSERT INTO "Definition" VALUES(20,'main',2,529);
+INSERT INTO "Definition" VALUES(21,'foo',9,664);
+INSERT INTO "Definition" VALUES(22,'c',1,679);
+INSERT INTO "Definition" VALUES(23,'ofo',2,710);
+INSERT INTO "Definition" VALUES(24,'fof',2,753);
+CREATE INDEX DefName on Definition (name);
+CREATE TRIGGER DelDefinition after delete on Definition
+begin
+	delete from FunctionRelationship where caller = old.id;
+	delete from Offsetof where structID = old.id;
+end;
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunctionRelationship (
+	caller bigint,
+	callee bigint
+);
+INSERT INTO "FunctionRelationship" VALUES(20,21);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDefinition (
+	fileID integer,
+	startDefID bigint,
+	endDefID bigint
+);
+INSERT INTO "FileDefinition" VALUES(1,1,24);
+CREATE TRIGGER DelFileDefition after delete on FileDefinition
+begin
+	delete from Definition where id >= old.startDefID and id <= old.endDefID;
+end;
+COMMIT;

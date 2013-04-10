@@ -1,0 +1,105 @@
+Index: gcc/libcpp/include/cpplib.h
+===================================================================
+--- gcc.orig/libcpp/include/cpplib.h
++++ gcc/libcpp/include/cpplib.h
+@@ -493,6 +493,25 @@ struct cpp_callbacks
+      be expanded.  */
+   cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
+ 
++  /* The more powerful function extracts token than cpp_get_token. Later
++   * callbacks show it. */
++  void (*lex_token) (cpp_reader *, const cpp_token*);
++  /* The pair is called when gcc expands macro. Enable lex_token in
++   * macro_start_expand, you can catch all macro tokens. The pair can be called
++   * nested. */
++  void (*macro_start_expand) (cpp_reader *, const cpp_token *,
++		  const cpp_hashnode *);
++  void (*macro_end_expand) (cpp_reader *);
++  /* Called when a function-like macro stops collecting macro parameters,
++   * cancel = true, macro expansion is canceled. */
++  void (*macro_end_arg) (cpp_reader *, bool cancel);
++  /* The pair is called when cpp directive (starting from `#', such as
++   * `#define M', `#endif' etc) is encountered and reaches end. When enable
++   * lex_token in start_directive, the sequence is lex_token("define"),
++   * lex_token("M") ... */
++  void (*start_directive) (cpp_reader *);
++  void (*end_directive) (cpp_reader *);
++
+   /* Called to emit a diagnostic.  This callback receives the
+      translated message.  */
+   bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
+Index: gcc/libcpp/lex.c
+===================================================================
+--- gcc.orig/libcpp/lex.c
++++ gcc/libcpp/lex.c
+@@ -1824,6 +1824,8 @@ _cpp_lex_token (cpp_reader *pfile)
+ 	}
+       else
+ 	result = _cpp_lex_direct (pfile);
++    if (pfile->cb.lex_token)
++      pfile->cb.lex_token (pfile, result);
+ 
+       if (result->flags & BOL)
+ 	{
+Index: gcc/libcpp/macro.c
+===================================================================
+--- gcc.orig/libcpp/macro.c
++++ gcc/libcpp/macro.c
+@@ -855,6 +855,8 @@ enter_macro_context (cpp_reader *pfile, 
+ 	  pfile->keep_tokens++;
+ 	  pfile->state.parsing_args = 1;
+ 	  buff = funlike_invocation_p (pfile, node, &pragma_buff);
++	  if (pfile->cb.macro_end_arg)
++	    pfile->cb.macro_end_arg (pfile, buff == NULL);
+ 	  pfile->state.parsing_args = 0;
+ 	  pfile->keep_tokens--;
+ 	  pfile->state.prevent_expansion--;
+@@ -1256,6 +1258,8 @@ cpp_get_token (cpp_reader *pfile)
+       else
+ 	{
+ 	  _cpp_pop_context (pfile);
++	  if (pfile->cb.macro_end_expand)
++	    pfile->cb.macro_end_expand (pfile);
+ 	  if (pfile->state.in_directive)
+ 	    continue;
+ 	  return &pfile->avoid_paste;
+@@ -1312,7 +1316,14 @@ cpp_get_token (cpp_reader *pfile)
+ 		}
+ 	    }
+ 	  else
+-	    ret = enter_macro_context (pfile, node, result);
++ 	    {
++	      if (pfile->cb.macro_start_expand)
++		pfile->cb.macro_start_expand (pfile, result, node);
++	  ret = enter_macro_context (pfile, node, result);
++    if (ret == 0 && pfile->cb.macro_end_expand)
++      /* macro expansion is canceled. */
++      pfile->cb.macro_end_expand (pfile);
++	    }
+ 	  if (ret)
+  	    {
+ 	      if (pfile->state.in_directive || ret == 2)
+Index: gcc/libcpp/directives.c
+===================================================================
+--- gcc.orig/libcpp/directives.c
++++ gcc/libcpp/directives.c
+@@ -275,6 +275,9 @@ start_directive (cpp_reader *pfile)
+ 
+   /* Some handlers need the position of the # for diagnostics.  */
+   pfile->directive_line = pfile->line_table->highest_line;
++
++  if (pfile->cb.start_directive)
++    pfile->cb.start_directive (pfile);
+ }
+ 
+ /* Called when leaving a directive, _Pragma or command-line directive.  */
+@@ -309,6 +312,9 @@ end_directive (cpp_reader *pfile, int sk
+   pfile->state.in_expression = 0;
+   pfile->state.angled_headers = 0;
+   pfile->directive = 0;
++
++  if (pfile->cb.end_directive)
++    pfile->cb.end_directive (pfile);
+ }
+ 
+ /* Prepare to handle the directive in pfile->directive.  */

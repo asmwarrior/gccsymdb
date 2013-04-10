@@ -1,0 +1,77 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Definition (
+	id integer primary key autoincrement,
+	name text,
+	flag integer,
+	fileoffset integer
+);
+INSERT INTO "Definition" VALUES(1,'MUL_DEFINITION',3,12);
+INSERT INTO "Definition" VALUES(2,'i',1,60);
+INSERT INTO "Definition" VALUES(3,'j',1,60);
+INSERT INTO "Definition" VALUES(4,'main',2,60);
+INSERT INTO "Definition" VALUES(5,'base',1,90);
+INSERT INTO "Definition" VALUES(6,'cancel',1,100);
+INSERT INTO "Definition" VALUES(7,'base',3,116);
+INSERT INTO "Definition" VALUES(8,'null',3,138);
+INSERT INTO "Definition" VALUES(9,'foo',2,151);
+INSERT INTO "Definition" VALUES(10,'cancel',3,171);
+INSERT INTO "Definition" VALUES(11,'cancel_inmacro',3,208);
+INSERT INTO "Definition" VALUES(12,'cascaded_head',3,264);
+INSERT INTO "Definition" VALUES(13,'foo',9,284);
+INSERT INTO "Definition" VALUES(14,'cascaded_head2',3,310);
+INSERT INTO "Definition" VALUES(15,'foo',9,334);
+INSERT INTO "Definition" VALUES(16,'cascaded_middle',3,358);
+INSERT INTO "Definition" VALUES(17,'cascaded_tail',3,413);
+INSERT INTO "Definition" VALUES(18,'foo',9,445);
+INSERT INTO "Definition" VALUES(19,'cascaded_tail2',3,471);
+INSERT INTO "Definition" VALUES(20,'foo',9,507);
+INSERT INTO "Definition" VALUES(21,'cascaded_func_head',3,531);
+INSERT INTO "Definition" VALUES(22,'foo',9,559);
+INSERT INTO "Definition" VALUES(23,'cascaded_func_tail',3,593);
+INSERT INTO "Definition" VALUES(24,'foo',9,632);
+INSERT INTO "Definition" VALUES(25,'c3_head',3,793);
+INSERT INTO "Definition" VALUES(26,'foo',9,816);
+INSERT INTO "Definition" VALUES(27,'c3_tail',3,836);
+INSERT INTO "Definition" VALUES(28,'foo',9,867);
+INSERT INTO "Definition" VALUES(29,'paste',3,888);
+INSERT INTO "Definition" VALUES(30,'foo',9,908);
+INSERT INTO "Definition" VALUES(31,'cond',3,976);
+INSERT INTO "Definition" VALUES(32,'cascaded_cond',3,994);
+INSERT INTO "Definition" VALUES(33,'args',3,1090);
+CREATE INDEX DefName on Definition (name);
+CREATE TRIGGER DelDefinition after delete on Definition
+begin
+	delete from FunctionRelationship where caller = old.id;
+	delete from Offsetof where structID = old.id;
+end;
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunctionRelationship (
+	caller bigint,
+	callee bigint
+);
+INSERT INTO "FunctionRelationship" VALUES(9,13);
+INSERT INTO "FunctionRelationship" VALUES(9,15);
+INSERT INTO "FunctionRelationship" VALUES(9,18);
+INSERT INTO "FunctionRelationship" VALUES(9,20);
+INSERT INTO "FunctionRelationship" VALUES(9,22);
+INSERT INTO "FunctionRelationship" VALUES(9,24);
+INSERT INTO "FunctionRelationship" VALUES(9,26);
+INSERT INTO "FunctionRelationship" VALUES(9,28);
+INSERT INTO "FunctionRelationship" VALUES(9,30);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FileDefinition (
+	fileID integer,
+	startDefID bigint,
+	endDefID bigint
+);
+INSERT INTO "FileDefinition" VALUES(1,1,33);
+CREATE TRIGGER DelFileDefition after delete on FileDefinition
+begin
+	delete from Definition where id >= old.startDefID and id <= old.endDefID;
+end;
+COMMIT;

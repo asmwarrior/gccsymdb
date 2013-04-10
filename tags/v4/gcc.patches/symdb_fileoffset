@@ -1,0 +1,220 @@
+Index: gcc/libcpp/include/cpplib.h
+===================================================================
+--- gcc.orig/libcpp/include/cpplib.h
++++ gcc/libcpp/include/cpplib.h
+@@ -208,10 +208,10 @@ struct GTY(()) cpp_identifier {
+        node;
+ };
+ 
+-/* A preprocessing token.  This has been carefully packed and should
+-   occupy 16 bytes on 32-bit hosts and 24 bytes on 64-bit hosts.  */
++/* A preprocessing token. */
+ struct GTY(()) cpp_token {
+   source_location src_loc;	/* Location of first char of token.  */
++  int file_offset;
+   ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
+   unsigned short flags;		/* flags - see above */
+ 
+Index: gcc/libcpp/lex.c
+===================================================================
+--- gcc.orig/libcpp/lex.c
++++ gcc/libcpp/lex.c
+@@ -51,7 +51,8 @@ static const struct token_spelling token
+ #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
+ #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
+ 
+-static void add_line_note (cpp_buffer *, const uchar *, unsigned int);
++static void add_line_note (cpp_buffer *, const uchar *, unsigned int,
++			   const uchar *);
+ static int skip_line_comment (cpp_reader *);
+ static void skip_whitespace (cpp_reader *, cppchar_t);
+ static void lex_string (cpp_reader *, cpp_token *, const uchar *);
+@@ -82,7 +83,8 @@ cpp_ideq (const cpp_token *token, const 
+ /* Record a note TYPE at byte POS into the current cleaned logical
+    line.  */
+ static void
+-add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type)
++add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type,
++	       const uchar * offset)
+ {
+   if (buffer->notes_used == buffer->notes_cap)
+     {
+@@ -93,6 +95,7 @@ add_line_note (cpp_buffer *buffer, const
+ 
+   buffer->notes[buffer->notes_used].pos = pos;
+   buffer->notes[buffer->notes_used].type = type;
++  buffer->notes[buffer->notes_used].adjust_offset = offset;
+   buffer->notes_used++;
+ }
+ 
+@@ -678,7 +681,7 @@ _cpp_clean_line (cpp_reader *pfile)
+ 		{
+ 		  /* Have a trigraph.  We may or may not have to convert
+ 		     it.  Add a line note regardless, for -Wtrigraphs.  */
+-		  add_line_note (buffer, s, s[2]);
++		  add_line_note (buffer, s, s[2], 0);
+ 		  if (CPP_OPTION (pfile, trigraphs))
+ 		    {
+ 		      /* We do, and that means we have to switch to the
+@@ -723,7 +726,7 @@ _cpp_clean_line (cpp_reader *pfile)
+ 
+       /* Have an escaped newline; process it and proceed to
+ 	 the slow path.  */
+-      add_line_note (buffer, p - 1, p != d ? ' ' : '\\');
++      add_line_note (buffer, p - 1, p != d ? ' ' : '\\', s + 1);
+       d = p - 2;
+       buffer->next_line = p - 1;
+ 
+@@ -748,14 +751,14 @@ _cpp_clean_line (cpp_reader *pfile)
+ 	      if (p == buffer->next_line || p[-1] != '\\')
+ 		break;
+ 
+-	      add_line_note (buffer, p - 1, p != d ? ' ': '\\');
++	      add_line_note (buffer, p - 1, p != d ? ' ': '\\', s + 1);
+ 	      d = p - 2;
+ 	      buffer->next_line = p - 1;
+ 	    }
+ 	  else if (c == '?' && s[1] == '?' && _cpp_trigraph_map[s[2]])
+ 	    {
+ 	      /* Add a note regardless, for the benefit of -Wtrigraphs.  */
+-	      add_line_note (buffer, d, s[2]);
++	      add_line_note (buffer, d, s[2], 0);
+ 	      if (CPP_OPTION (pfile, trigraphs))
+ 		{
+ 		  *d = _cpp_trigraph_map[s[2]];
+@@ -778,7 +781,7 @@ _cpp_clean_line (cpp_reader *pfile)
+  done:
+   *d = '\n';
+   /* A sentinel note that should never be processed.  */
+-  add_line_note (buffer, d + 1, '\n');
++  add_line_note (buffer, d + 1, '\n', s + 1);
+   buffer->next_line = s + 1;
+ }
+ 
+@@ -1983,6 +1986,17 @@ _cpp_lex_direct (cpp_reader *pfile)
+       _cpp_process_line_notes (pfile, false);
+       result->src_loc = pfile->line_table->highest_line;
+     }
++  if (buffer->cur_note != 0)
++    {
++      int index = buffer->cur_note - 1;
++      result->file_offset = buffer->cur - buffer->buf;
++      result->file_offset +=
++	buffer->notes[index].adjust_offset - buffer->notes[index].pos;
++    }
++  else
++    {
++      result->file_offset = buffer->cur - buffer->buf;
++    }
+   c = *buffer->cur++;
+ 
+   LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
+Index: gcc/libcpp/internal.h
+===================================================================
+--- gcc.orig/libcpp/internal.h
++++ gcc/libcpp/internal.h
+@@ -243,6 +243,11 @@ struct _cpp_line_note
+      intervening space, 0 represents a note that has already been handled,
+      and anything else is invalid.  */
+   unsigned int type;
++
++  /* file offset adjustment is recorded by add_line_note to adjust
++   * cpp_token::file_offset. The case is when some spaces are left after an
++   * escaped newline `\', cpp_token::file_offset becomes inexact. */
++  const unsigned char *adjust_offset;
+ };
+ 
+ /* Represents the contents of a file cpplib has read in.  */
+Index: gcc/libcpp/include/cpp-id-data.h
+===================================================================
+--- gcc.orig/libcpp/include/cpp-id-data.h
++++ gcc/libcpp/include/cpp-id-data.h
+@@ -52,6 +52,7 @@ struct GTY(()) cpp_macro {
+ 
+   /* Definition line number.  */
+   source_location line;
++  int file_offset;
+ 
+   /* Number of tokens in expansion, or bytes for traditional macros.  */
+   unsigned int count;
+Index: gcc/libcpp/directives.c
+===================================================================
+--- gcc.orig/libcpp/directives.c
++++ gcc/libcpp/directives.c
+@@ -105,7 +105,7 @@ static void push_conditional (cpp_reader
+ static unsigned int read_flag (cpp_reader *, unsigned int);
+ static bool strtolinenum (const uchar *, size_t, linenum_type *, bool *);
+ static void do_diagnostic (cpp_reader *, int, int, int);
+-static cpp_hashnode *lex_macro_node (cpp_reader *, bool);
++static cpp_hashnode *lex_macro_node (cpp_reader *, bool, int *);
+ static int undefine_macros (cpp_reader *, cpp_hashnode *, void *);
+ static void do_include_common (cpp_reader *, enum include_type);
+ static struct pragma_entry *lookup_pragma_entry (struct pragma_entry *,
+@@ -536,7 +536,7 @@ run_directive (cpp_reader *pfile, int di
+    processing a #define or #undefine directive, and false
+    otherwise.  */
+ static cpp_hashnode *
+-lex_macro_node (cpp_reader *pfile, bool is_def_or_undef)
++lex_macro_node (cpp_reader *pfile, bool is_def_or_undef, int *file_offset)
+ {
+   const cpp_token *token = _cpp_lex_token (pfile);
+ 
+@@ -555,6 +555,8 @@ lex_macro_node (cpp_reader *pfile, bool 
+ 	cpp_error (pfile, CPP_DL_ERROR,
+ 		   "\"defined\" cannot be used as a macro name");
+       else if (! (node->flags & NODE_POISONED))
++      if (file_offset)
++        *file_offset = token->file_offset;
+ 	return node;
+     }
+   else if (token->flags & NAMED_OP)
+@@ -574,7 +576,8 @@ lex_macro_node (cpp_reader *pfile, bool 
+ static void
+ do_define (cpp_reader *pfile)
+ {
+-  cpp_hashnode *node = lex_macro_node (pfile, true);
++  int file_offset;
++  cpp_hashnode *node = lex_macro_node (pfile, true, &file_offset);
+ 
+   if (node)
+     {
+@@ -587,8 +590,12 @@ do_define (cpp_reader *pfile)
+ 	pfile->cb.before_define (pfile);
+ 
+       if (_cpp_create_definition (pfile, node))
++        {
++	cpp_macro *macro = node->value.macro;
++	macro->file_offset = file_offset;
+ 	if (pfile->cb.define)
+ 	  pfile->cb.define (pfile, pfile->directive_line, node);
++        }
+ 
+       node->flags &= ~NODE_USED;
+     }
+@@ -598,7 +605,7 @@ do_define (cpp_reader *pfile)
+ static void
+ do_undef (cpp_reader *pfile)
+ {
+-  cpp_hashnode *node = lex_macro_node (pfile, true);
++  cpp_hashnode *node = lex_macro_node (pfile, true, NULL);
+ 
+   if (node)
+     {
+@@ -1821,7 +1828,7 @@ do_ifdef (cpp_reader *pfile)
+ 
+   if (! pfile->state.skipping)
+     {
+-      cpp_hashnode *node = lex_macro_node (pfile, false);
++      cpp_hashnode *node = lex_macro_node (pfile, false, NULL);
+ 
+       if (node)
+ 	{
+@@ -1867,7 +1874,7 @@ do_ifndef (cpp_reader *pfile)
+ 
+   if (! pfile->state.skipping)
+     {
+-      node = lex_macro_node (pfile, false);
++      node = lex_macro_node (pfile, false, NULL);
+ 
+       if (node)
+ 	{

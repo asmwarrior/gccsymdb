@@ -1,0 +1,16 @@
+The file records some legal declaration about my patch `gcc symbol database'
+abbr. symdb.
+
+All of the patch is finished by myself individually, I means everything --
+database design, documentation, code and patch conception etc. The patch is
+applied on gcc 4.4.0 and need sqlite 3.6.10 as I firstly published at
+http://gcc.gnu.org/ml/gcc-patches/2009-11/msg01325.html. However sqlite itself
+doesn't belong to gcc organization -- www.sqlite.org for more!
+
+All code, database initialization file (init.sql) are published on <GNU
+GENERAL PUBLIC LICENSE Version 3, 29 June 2007>, see gcc.source/COPYING3.
+Document symdb.txt, also at gcc/doc/symdb.txt is applied to <GNU Free
+Documentation License Version 1.3, 3 November 2008>, see
+http://www.gnu.org/prep/maintain/html_node/GNU-Free-Documentation-License.html#GNU-Free-Documentation-License.
+
+My mail is `Yunfeng ZHANG <zyf.zeroos@gmail.com>'.

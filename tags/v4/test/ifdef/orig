@@ -1,0 +1,41 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE chFile (
+	id integer primary key autoincrement,
+	name text,
+	mtime bigint,
+	sysHeader boolean
+);
+INSERT INTO "chFile" VALUES(1,'test/ifdef/a.c',1325350860,'f');
+INSERT INTO "chFile" VALUES(2,'test/ifdef/a.h',1325350860,'f');
+CREATE INDEX FileName on chFile (name);
+CREATE TRIGGER DelFile after delete on chFile
+begin
+	delete from FileDependence where chFileID = old.id;
+	delete from FileDefinition where fileID = old.id;
+	delete from Ifdef where fileID = old.id;
+	delete from FunpAlias where fileID = old.id;
+end;
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE Ifdef (
+	fileID integer,
+	flag integer,
+	startOffset integer,
+	endOffset integer
+);
+INSERT INTO "Ifdef" VALUES(2,3,0,8);
+INSERT INTO "Ifdef" VALUES(2,1,8,15);
+INSERT INTO "Ifdef" VALUES(2,3,15,24);
+INSERT INTO "Ifdef" VALUES(2,1,24,29);
+INSERT INTO "Ifdef" VALUES(2,3,29,268435456);
+INSERT INTO "Ifdef" VALUES(2,2,15,24);
+INSERT INTO "Ifdef" VALUES(1,3,0,51);
+INSERT INTO "Ifdef" VALUES(1,1,51,55);
+INSERT INTO "Ifdef" VALUES(1,2,55,76);
+INSERT INTO "Ifdef" VALUES(1,1,76,80);
+INSERT INTO "Ifdef" VALUES(1,3,80,101);
+INSERT INTO "Ifdef" VALUES(1,1,101,106);
+INSERT INTO "Ifdef" VALUES(1,3,106,268435456);
+COMMIT;

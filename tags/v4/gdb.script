@@ -1,0 +1,53 @@
+# vim: foldmarker=<([{,}])> foldmethod=marker
+# gdb -x gdb.script
+define bug
+end
+
+# >>>> To avoid problem, call `make db' before execute the script.
+define dlc
+set logging overwrite
+set logging file ~/src/symdb.gcc/log.gdb
+set logging off
+cd ~/src/symdb.gcc/
+target exec /home/zyf/gcc/host-i686-pc-linux-gnu/gcc/xgcc
+file /home/zyf/gcc/host-i686-pc-linux-gnu/gcc/xgcc
+set args -B/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/ a.c --sysroot=/home/zyf/src/symdb.gcc//test -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
+b main
+r
+set follow-fork-mode child
+c
+adv do_compile
+end
+
+define gccmo
+set $zzzz = $arg0
+p *$zzzz
+printf ">>>>param<<<<\n"
+set $zzzzi = 0
+while $zzzzi < $zzzz.paramc
+	p $zzzz.params[$zzzzi].ident.str
+	set $zzzzi = $zzzzi + 1
+end
+printf ">>>>content<<<<\n"
+set $zzzzi = 0
+while $zzzzi < $zzzz.count
+	set $zzzztmp = $zzzz.exp.tokens[$zzzzi]
+	if $zzzztmp.flags & (1 << 2)
+		printf "STRINGIFY_ARG, "
+	end
+	if $zzzztmp.flags & (1 << 3)
+		printf "PASTE_LEFT, "
+	end
+	if $zzzztmp.type == CPP_MACRO_ARG
+		printf "[%d], ", $zzzztmp.val.macro_arg.arg_no
+	end
+	if $zzzztmp.type == CPP_NAME
+		printf "(%s)", $zzzztmp.val.node.node.ident.str
+	end
+	p $zzzztmp.type
+	set $zzzzi = $zzzzi + 1
+end
+end
+document gccmo
+Argument type is cpp_macro*. When in cb_macro_start, sample is `gccmo node.value.macro'.
+end
