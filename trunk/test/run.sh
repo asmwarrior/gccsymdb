@@ -32,6 +32,7 @@ test_it ()
 {
 (cd ../ && ./gs initdb ./)
 (cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
+(cd ../ && ./gs enddb ./)
 (cd ../ && cat > abc123 << "EOF"
 .output log.gdb
 uvwxyz

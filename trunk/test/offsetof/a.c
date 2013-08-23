@@ -15,7 +15,7 @@ struct b
 	int b : 3;
 	int i __attribute__((packed));
 	int b2 : 7 __attribute__((packed));
-	short s;
+	short s __attribute__((aligned(16)));
 	char arr[3];
 	int z;
 };

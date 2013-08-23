@@ -3,6 +3,7 @@
 #include"include/dyn-string.h"
 #include"include/libiberty.h"
 #include<sys/stat.h>
+#include<time.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
@@ -24,6 +25,7 @@ static struct
     DEF_ENUM_MEMBER,
     DEF_CALLED_FUNC,
     DEF_CALLED_POINTER,
+    DEF_USER,
   } flag;
   const char *str;
 } def_flags[] =
@@ -87,8 +89,8 @@ usage (void)
   printf ("    gs macro\n");
   printf ("    gs sizeof struct\n");
   printf ("    gs offsetof struct member\n");
-  printf ("    gs initdb prjpath\n");
-  printf ("    gs vacuumdb prjpath\n");
+  printf ("    gs initdb prjpath user-defined-info\n");
+  printf ("    gs enddb prjpath\n");
   printf ("    gs relocate prjpath\n");
   printf ("    gs infodb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
@@ -281,7 +283,7 @@ addsym (const char *root_fn, const char *def, const char *fileoffset)
   dyn_string_copy_cstr (gbuf, "insert into Definition values (NULL, '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "', ");
-  dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
+  dyn_string_append_cstr (gbuf, lltoa (DEF_USER));
   dyn_string_append_cstr (gbuf, ", ");
   dyn_string_append_cstr (gbuf, fileoffset);
   dyn_string_append_cstr (gbuf, ");");
@@ -335,7 +337,7 @@ rmsym (const char *root_fn, const char *def, const char *fileoffset)
 }
 
 static void
-initdb (const char *path)
+initdb (const char *path, const char *user_def)
 {
   dyn_string_copy_cstr (gbuf, "rm -f ");
   dyn_string_append_cstr (gbuf, path);
@@ -354,19 +356,27 @@ initdb (const char *path)
   dyn_string_append_cstr (gbuf, "pluginVersion = 'svn-<@b@>', ");
   dyn_string_append_cstr (gbuf, "sqliteVersion = '");
   dyn_string_append_cstr (gbuf, sqlite3_libversion ());
+  dyn_string_append_cstr (gbuf, "', userDefInfo = '");
+  dyn_string_append_cstr (gbuf, user_def);
   dyn_string_append_cstr (gbuf, "', projectRootPath = '");
   dyn_string_append_cstr (gbuf, str);
-  dyn_string_append_cstr (gbuf, "/';\"");
+  dyn_string_append_cstr (gbuf, "', initdbTime = ");
+  dyn_string_append_cstr (gbuf, lltoa (time (NULL)));
+  dyn_string_append_cstr (gbuf, ";\"");
   system (dyn_string_buf (gbuf));
   free (str);
 }
 
 static void
-vacuumdb (const char *path)
+enddb (const char *path)
 {
   dyn_string_copy_cstr (gbuf, "sqlite3 ");
   dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf, "/gccsym.db \"vacuum;\"");
+  dyn_string_append_cstr (gbuf, "/gccsym.db ");
+  dyn_string_append_cstr (gbuf, "\"update ProjectOverview set ");
+  dyn_string_append_cstr (gbuf, "enddbTime = ");
+  dyn_string_append_cstr (gbuf, lltoa (time (NULL)));
+  dyn_string_append_cstr (gbuf, "; vacuum;\"");
   system (dyn_string_buf (gbuf));
 }
 
@@ -567,6 +577,28 @@ infodb (const char *path)
   dyn_string_append_cstr (gbuf, path);
   dyn_string_append_cstr (gbuf, "/gccsym.db \".du ProjectOverview\"");
   system (dyn_string_buf (gbuf));
+  dyn_string_copy_cstr (gbuf, "sqlite3 ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf,
+			  "/gccsym.db \"select count(*) from Definition;\"");
+  printf ("Definition count is ");
+  fflush (NULL);
+  system (dyn_string_buf (gbuf));
+  dyn_string_copy_cstr (gbuf, "sqlite3 ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf,
+			  "/gccsym.db \"select count(*) from chFile;\"");
+  printf ("File count is ");
+  fflush (NULL);
+  system (dyn_string_buf (gbuf));
+  dyn_string_copy_cstr (gbuf, "sqlite3 ");
+  dyn_string_append_cstr (gbuf, path);
+  dyn_string_append_cstr (gbuf, "/gccsym.db \""
+			  "select name, count(name) from definition "
+			  "group by (name) order by count(name) desc limit 1;\"");
+  printf ("Duplication of definition name ");
+  fflush (NULL);
+  system (dyn_string_buf (gbuf));
   free (str);
 }
 
@@ -586,17 +618,17 @@ main (int argc, char **argv)
       ret = usage ();
       return -1;
     }
-  if (argc == 3 && strcmp (argv[1], "initdb") == 0)
+  if (strcmp (argv[1], "initdb") == 0)
     {
-      initdb (argv[2]);
+      initdb (argv[2], argc == 3 ? "" : argv[3]);
       goto done;
     }
-  if (argc == 3 && strcmp (argv[1], "vacuumdb") == 0)
+  if (strcmp (argv[1], "enddb") == 0)
     {
-      vacuumdb (argv[2]);
+      enddb (argv[2]);
       goto done;
     }
-  if (argc == 3 && strcmp (argv[1], "infodb") == 0)
+  if (strcmp (argv[1], "infodb") == 0)
     {
       infodb (argv[2]);
       goto done;
