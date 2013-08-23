@@ -146,8 +146,9 @@ Compiling plugin by patched gcc (cd myplugin.src/):
 
 Make database on gcc-4.6.3:
 1) cp gs helper.vim init.sql symdb.so gcc.src/ && cd gcc.src/
-2) ./gs initdb ./ # Initialize database. If you want to custom the plugin,
-update plugin-control-fields of database:ProjectOverview.
+2) ./gs initdb 'additional info defined by user (such as svn revision)' ./ #
+Initialize database. If you want to custom the plugin, update
+plugin-control-fields of database:ProjectOverview.
 4) make STAGE2_CFLAGS="-fplugin=/path/to/symdb.so
 -fplugin-arg-symdb-dbfile=/path/to/gccsym.db" STAGE2_CONFIGURE_FLAGS=
 all-stage2
@@ -155,7 +156,7 @@ all-stage2
 compare whether a token has been inserted into database and multi-core can't
 help you -- sqlite doesn't support access database simultaneously, do it
 overnight.
-6) ./gs vacuumdb ./ # Rearrange and defrag your database.
+6) ./gs enddb ./ # Rearrange and defrag your database.
 Make database on linux-2.6.35 using crossng-mips:
 1) cp gs helper.vim init.sql symdb.so linux.src/ && cd linux.src/
 2) Open linux.src/Makefile.
@@ -264,15 +265,16 @@ linux-2.6.35 (mips):
 // Know Issues <([{
 1) Be careful if you updated a file and try to re-update my database. Here is
 a case
-    -------------------------------- a.c
+    -------------------------------- a.c (before)
     #include<config.h>
-    -------------------------------- a.c
-    // config.h is updated, such enable PREEMPT option.
-a.c maybe includes some old definitions caused by new option because from
-database, definitions are linked to file and are updated only if the file is
-updated.
-By the way, control the feature by init.sql:ProjectOverview::canUpdateFile.
-Of course, don't forget call `gs vacuumdb ./' if too much files are updated.
+    #include<...>
+    -------------------------------- a.c (after)
+    // config.h is updated, such as enabling PREEMPT option.
+all header files after config.h maybe includes some old definitions not
+belonging to new option because from database, definitions are linked to file
+and are updated only if the file is updated.
+By the way, control the feature by init.sql:ProjectOverview::canUpdateFile,
+the default is 'off', I recommend recreate the database totally.
 2) Currently, my plugin doesn't support nested functions but if a nested
 function calls other functions, all of them are treated as the callees of
 outest function.

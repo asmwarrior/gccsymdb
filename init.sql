@@ -5,10 +5,14 @@ create table ProjectOverview (
 	gccVersion text,
 	sqliteVersion text,
 	projectRootPath text,
+	initdbTime bigint, -- unit is second.
+	enddbTime bigint,
+	-- User-defined info, such as the svn revision of code.
+	userDefInfo text,
 	-- plugin control parameters.
 	canUpdateFile boolean
 );
-insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 't');
+insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 0, 0, "user data", 't');
 
 -- chFile is the root of all tables, see trigger fold for more, delete the table will delete all things in the file.
 

@@ -997,6 +997,7 @@ __extension__ enum definition_flag
   DEF_ENUM_MEMBER,
   DEF_CALLED_FUNC,
   DEF_CALLED_POINTER,
+  DEF_USER,
 };
 
 static struct
@@ -1615,7 +1616,7 @@ symdb_cpp_token (void *gcc_data, void *user_data)
 static void
 symdb_c_token (void *gcc_data, void *user_data)
 {
-  c_token *token = gcc_data;
+  c_token_p token = gcc_data;
   if (in_pragma)
     return;
   cache_append_itoken_c_stage (token);
