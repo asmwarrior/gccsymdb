@@ -39,7 +39,8 @@ static struct
     [DEF_ENUM].str = "DEF_ENUM",
     [DEF_ENUM_MEMBER].str = "DEF_ENUM_MEMBER",
     [DEF_CALLED_FUNC].str = "DEF_CALLED_FUNC",
-    [DEF_CALLED_POINTER].str = "DEF_CALLED_POINTER",};
+    [DEF_CALLED_POINTER].str = "DEF_CALLED_POINTER",
+    [DEF_USER].str = "DEF_USER",};
 
 enum
 {
@@ -360,7 +361,7 @@ initdb (const char *path, const char *user_def)
   dyn_string_append_cstr (gbuf, user_def);
   dyn_string_append_cstr (gbuf, "', projectRootPath = '");
   dyn_string_append_cstr (gbuf, str);
-  dyn_string_append_cstr (gbuf, "', initdbTime = ");
+  dyn_string_append_cstr (gbuf, "/', initdbTime = ");
   dyn_string_append_cstr (gbuf, lltoa (time (NULL)));
   dyn_string_append_cstr (gbuf, ";\"");
   system (dyn_string_buf (gbuf));
@@ -595,8 +596,8 @@ infodb (const char *path)
   dyn_string_append_cstr (gbuf, path);
   dyn_string_append_cstr (gbuf, "/gccsym.db \""
 			  "select name, count(name) from definition "
-			  "group by (name) order by count(name) desc limit 1;\"");
-  printf ("Duplication of definition name ");
+			  "group by (name) having count(name) > 1 limit 1;\"");
+  printf ("Duplication of definition name, one of them: ");
   fflush (NULL);
   system (dyn_string_buf (gbuf));
   free (str);

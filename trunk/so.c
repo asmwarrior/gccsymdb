@@ -466,8 +466,6 @@ static struct
   /* expanded_count field is updated for debug only. */
   int expanded_count;
   int macro_count;
-  bool cancel;
-  bool cascaded;
   bool valid;
 
   /* For Macro table of init.sql */
@@ -481,7 +479,7 @@ static struct
   struct sqlite3_stmt *insert_macro;
 } mo =
 {
-0, 0, false, false, false, false};
+0, 0, false};
 
 static void
 mo_append_expanded_token (cpp_token_p token)
@@ -538,7 +536,6 @@ mo_leave (void)
       mo.process = 1;
     }
   mo.expanded_count = mo.macro_count = 0;
-  mo.cancel = mo.cascaded = false;
   gcc_assert (mo.valid == true);
   mo.valid = false;
 }
@@ -570,79 +567,6 @@ static bool
 mo_isvalid (void)
 {
   return mo.valid;
-}
-
-static bool
-mo_maybe_cascaded (cpp_reader * pfile, bool func)
-{
-  cpp_context *context = pfile->context;
-  gcc_assert (context->prev != NULL);
-  if (!func)
-    return false;
-  do
-    {
-      /* I places a lots of assert to make sure gcc internal data is compatible
-       * with my plugin. */
-      if (context->macro == NULL)
-	{
-	  /* Three cases: 1) expand_args; 2) paste_all_tokens; 3)
-	   * enter_macro_context handles pragma. However, only paste_all_tokens
-	   * calls _cpp_push_token_context. */
-	  if (context->direct_p)
-	    {
-	      /* And paste_all_tokens only push a token to the context. */
-	      gcc_assert (FIRST (context).token == LAST (context).token);
-	      continue;
-	    }
-	  return false;
-	}
-      cpp_macro *macro = context->macro->value.macro;
-      if (!context->direct_p)
-	{
-	  gcc_assert (macro->paramc != 0);
-	  /* replace_args. */
-	  if (FIRST (context).ptoken + 1 == LAST (context).ptoken &&
-	      *FIRST (context).ptoken == &pfile->avoid_paste)
-	    /* The case is macro argument is the tail of macro content. */
-	    continue;
-	  if (FIRST (context).ptoken == LAST (context).ptoken)
-	    continue;
-	}
-      else
-	{
-	  gcc_assert (macro->paramc == 0);
-	  /* The macro isn't funlike. */
-	  if (FIRST (context).token == LAST (context).token)
-	    continue;
-	}
-      return false;
-    }
-  while ((context = context->prev) && context->prev != NULL);
-  mo.cascaded = func;
-  return true;
-}
-
-static bool
-mo_cascaded (void)
-{
-  if (mo.cascaded)
-    {
-      mo.cascaded = false;
-      return true;
-    }
-  return false;
-}
-
-static void
-mo_maybe_cancel (bool cancel)
-{
-  mo.cancel = cancel;
-}
-
-static bool
-mo_cancel (void)
-{
-  return mo.cancel;
 }
 
 static void
@@ -841,15 +765,6 @@ cache_tag_let (cpp_token_p token)
   gcc_assert (token->type == CPP_NAME);
   p->leader.flag = CPP_NAME | C_TYPE_MASK;
   print_token (token, p->leader.value);
-}
-
-static void
-cache_cancel_last_let (void)
-{
-  gcc_assert (VEC_length (let, cache.auxiliary) != 0);
-  let *p = VEC_last (let, cache.auxiliary);
-  dyn_string_delete (p->leader.value);
-  VEC_pop (let, cache.auxiliary);
 }
 
 static void
@@ -1441,7 +1356,7 @@ cb_start_directive (cpp_reader * pfile)
 }
 
 static void cb_macro_start (cpp_reader *, cpp_token_p, const cpp_hashnode *);
-static void cb_macro_end (cpp_reader *);
+static void cb_macro_end (cpp_reader *, bool);
 static void
 cb_end_directive (cpp_reader * pfile)
 {
@@ -1454,53 +1369,31 @@ cb_end_directive (cpp_reader * pfile)
 }
 
 static void
-cb_end_arg (cpp_reader * pfile, bool cancel)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (pfile);
-  mo_maybe_cancel (cancel);
-  cb->macro_end_arg = NULL;
-}
-
-static void
 cb_macro_start (cpp_reader * pfile, cpp_token_p token,
 		const cpp_hashnode * node)
 {
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
   gcc_assert (token->val.node.node == node);
-  bool fun_like = false;
-  if (!(node->flags & NODE_BUILTIN))
-    fun_like = node->value.macro->fun_like;
-  if (pfile->context->prev == NULL)
+  cb->lex_token = cb_lex_token;
+  cb->macro_end_expand = cb_macro_end;
+  if (pfile->context->prev == NULL && !mo_isvalid ())
     {
       bug_trap_token (token->file_offset);
       mo_enter (pfile, token);
       cache_tag_let (token);
-    reinit:
-      if (fun_like)
-	{
-	  cb->macro_end_arg = cb_end_arg;
-	  cb->lex_token = cb_lex_token;
-	}
-    }
-  else
-    {
-      if (mo_maybe_cascaded (pfile, fun_like))
-	goto reinit;
     }
 }
 
 static void
-cb_macro_end (cpp_reader * pfile)
+cb_macro_end (cpp_reader * pfile, bool in_expansion)
 {
-  if (pfile->context->prev == NULL)
+  cpp_callbacks *cb = cpp_get_callbacks (pfile);
+  if (!in_expansion)
     {
-      if (mo_cascaded ())
-	return;
-      if (mo_cancel ())
-	cache_cancel_last_let ();
-      else
-	cache_end_let ();
+      cache_end_let ();
       mo_leave ();
+      cb->lex_token = NULL;
+      cb->macro_end_expand = NULL;
     }
 }
 
