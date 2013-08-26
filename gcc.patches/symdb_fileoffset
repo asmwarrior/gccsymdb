@@ -91,7 +91,7 @@ Index: gcc/libcpp/lex.c
    buffer->next_line = s + 1;
  }
  
-@@ -1983,6 +1986,17 @@ _cpp_lex_direct (cpp_reader *pfile)
+@@ -1981,6 +1984,17 @@ _cpp_lex_direct (cpp_reader *pfile)
        _cpp_process_line_notes (pfile, false);
        result->src_loc = pfile->line_table->highest_line;
      }
@@ -150,7 +150,7 @@ Index: gcc/libcpp/directives.c
  static int undefine_macros (cpp_reader *, cpp_hashnode *, void *);
  static void do_include_common (cpp_reader *, enum include_type);
  static struct pragma_entry *lookup_pragma_entry (struct pragma_entry *,
-@@ -536,7 +536,7 @@ run_directive (cpp_reader *pfile, int di
+@@ -530,7 +530,7 @@ run_directive (cpp_reader *pfile, int di
     processing a #define or #undefine directive, and false
     otherwise.  */
  static cpp_hashnode *
@@ -159,7 +159,7 @@ Index: gcc/libcpp/directives.c
  {
    const cpp_token *token = _cpp_lex_token (pfile);
  
-@@ -555,6 +555,8 @@ lex_macro_node (cpp_reader *pfile, bool 
+@@ -549,6 +549,8 @@ lex_macro_node (cpp_reader *pfile, bool 
  	cpp_error (pfile, CPP_DL_ERROR,
  		   "\"defined\" cannot be used as a macro name");
        else if (! (node->flags & NODE_POISONED))
@@ -168,7 +168,7 @@ Index: gcc/libcpp/directives.c
  	return node;
      }
    else if (token->flags & NAMED_OP)
-@@ -574,7 +576,8 @@ lex_macro_node (cpp_reader *pfile, bool 
+@@ -568,7 +570,8 @@ lex_macro_node (cpp_reader *pfile, bool 
  static void
  do_define (cpp_reader *pfile)
  {
@@ -178,7 +178,7 @@ Index: gcc/libcpp/directives.c
  
    if (node)
      {
-@@ -587,8 +590,12 @@ do_define (cpp_reader *pfile)
+@@ -581,8 +584,12 @@ do_define (cpp_reader *pfile)
  	pfile->cb.before_define (pfile);
  
        if (_cpp_create_definition (pfile, node))
@@ -191,7 +191,7 @@ Index: gcc/libcpp/directives.c
  
        node->flags &= ~NODE_USED;
      }
-@@ -598,7 +605,7 @@ do_define (cpp_reader *pfile)
+@@ -592,7 +599,7 @@ do_define (cpp_reader *pfile)
  static void
  do_undef (cpp_reader *pfile)
  {
@@ -200,7 +200,7 @@ Index: gcc/libcpp/directives.c
  
    if (node)
      {
-@@ -1821,7 +1828,7 @@ do_ifdef (cpp_reader *pfile)
+@@ -1815,7 +1822,7 @@ do_ifdef (cpp_reader *pfile)
  
    if (! pfile->state.skipping)
      {
@@ -209,7 +209,7 @@ Index: gcc/libcpp/directives.c
  
        if (node)
  	{
-@@ -1867,7 +1874,7 @@ do_ifndef (cpp_reader *pfile)
+@@ -1861,7 +1868,7 @@ do_ifndef (cpp_reader *pfile)
  
    if (! pfile->state.skipping)
      {

@@ -146,9 +146,9 @@ Compiling plugin by patched gcc (cd myplugin.src/):
 
 Make database on gcc-4.6.3:
 1) cp gs helper.vim init.sql symdb.so gcc.src/ && cd gcc.src/
-2) ./gs initdb 'additional info defined by user (such as svn revision)' ./ #
-Initialize database. If you want to custom the plugin, update
-plugin-control-fields of database:ProjectOverview.
+2) ./gs initdb ./ 'user data (such as svn revision)' ./ # Initialize database.
+If you want to custom the plugin, update plugin-control-fields of
+database:ProjectOverview.
 4) make STAGE2_CFLAGS="-fplugin=/path/to/symdb.so
 -fplugin-arg-symdb-dbfile=/path/to/gccsym.db" STAGE2_CONFIGURE_FLAGS=
 all-stage2
@@ -278,20 +278,11 @@ the default is 'off', I recommend recreate the database totally.
 2) Currently, my plugin doesn't support nested functions but if a nested
 function calls other functions, all of them are treated as the callees of
 outest function.
-3) Current macro code has a bug, here is the case, not-matched pairs.
-    #define Y(a) a
-    #define X(p) p + Y(
-    int main(void)
-    {
-        return X(1)2);
-    }
-The code can make my plugin crashed even code is correct. The priority of the
-bug is low, and by in_macro_expansion_p of gcc-4.8.x, the bug can be fixed.
-4) About port the plugin to g++, there's a major different between g++ and
+3) About port the plugin to g++, there's a major different between g++ and
 gcc on converting tokens from cpp stage to c/c++ stage -- g++ tries to convert
 all cpp_tokens to cp_tokens at one time, it violates the architecture of my
 plugin.
-5) Execute `:Gs fdef open' by vim in linux.src is slow, in fact, it is a
+4) Execute `:Gs fdef open' by vim in linux.src is slow, in fact, it is a
 combination command, try `:Gs falias open' and `:Gs def XXX' individually.
 // }])>
 
