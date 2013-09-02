@@ -57,6 +57,10 @@ int foo(void)
 	// macro expansion in macro args.
 #define args(x, y) 1
 	args(base, cascaded_head(1));
+
+	// Case just for torture purpose.
+#define torture(p) p + base(
+	torture(1)2);
 	return 0;
 }
 //*/

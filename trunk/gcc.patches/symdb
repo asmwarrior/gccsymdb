@@ -1,0 +1,990 @@
+Index: gcc/gcc/c-family/c-lex.c
+===================================================================
+--- gcc.orig/gcc/c-family/c-lex.c
++++ gcc/gcc/c-family/c-lex.c
+@@ -36,6 +36,7 @@ along with GCC; see the file COPYING3.  
+ #include "splay-tree.h"
+ #include "debug.h"
+ #include "target.h"
++#include "plugin.h"
+ 
+ /* We may keep statistics about how long which files took to compile.  */
+ static int header_time, body_time;
+@@ -289,8 +290,8 @@ cb_undef (cpp_reader * ARG_UNUSED (pfile
+    non-NULL.  */
+ 
+ enum cpp_ttype
+-c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
+-		  int lex_flags)
++c_lex_with_flags (tree *value, location_t *loc, int *off,
++        unsigned char *cpp_flags, int lex_flags)
+ {
+   static bool no_more_pch;
+   const cpp_token *tok;
+@@ -299,7 +300,7 @@ c_lex_with_flags (tree *value, location_
+ 
+   timevar_push (TV_CPP);
+  retry:
+-  tok = cpp_get_token_with_location (parse_in, loc);
++  tok = cpp_get_token_with_location (parse_in, loc, off);
+   type = tok->type;
+ 
+  retry_after_at:
+@@ -349,7 +350,7 @@ c_lex_with_flags (tree *value, location_
+ 	  location_t newloc;
+ 
+ 	retry_at:
+-	  tok = cpp_get_token_with_location (parse_in, &newloc);
++	  tok = cpp_get_token_with_location (parse_in, &newloc, off);
+ 	  type = tok->type;
+ 	  switch (type)
+ 	    {
+@@ -362,6 +363,7 @@ c_lex_with_flags (tree *value, location_
+ 	    case CPP_STRING32:
+ 	    case CPP_UTF8STRING:
+ 	      type = lex_string (tok, value, true, true);
++		  tok = NULL;
+ 	      break;
+ 
+ 	    case CPP_NAME:
+@@ -431,6 +433,7 @@ c_lex_with_flags (tree *value, location_
+ 	{
+ 	  type = lex_string (tok, value, false,
+ 			     (lex_flags & C_LEX_STRING_NO_TRANSLATE) == 0);
++	  tok = NULL;
+ 	  break;
+ 	}
+       *value = build_string (tok->val.str.len, (const char *) tok->val.str.text);
+@@ -465,6 +468,7 @@ c_lex_with_flags (tree *value, location_
+     }
+ 
+   timevar_pop (TV_CPP);
++  invoke_plugin_callbacks (PLUGIN_CPP_TOKEN, tok);
+ 
+   return type;
+ }
+Index: gcc/gcc/c-family/c-ppoutput.c
+===================================================================
+--- gcc.orig/gcc/c-family/c-ppoutput.c
++++ gcc/gcc/c-family/c-ppoutput.c
+@@ -171,8 +171,8 @@ scan_translation_unit (cpp_reader *pfile
+   print.source = NULL;
+   for (;;)
+     {
+-      source_location loc;
+-      const cpp_token *token = cpp_get_token_with_location (pfile, &loc);
++      source_location loc; int off;
++      const cpp_token *token = cpp_get_token_with_location (pfile, &loc, &off);
+ 
+       if (token->type == CPP_PADDING)
+ 	{
+Index: gcc/gcc/c-family/c-pragma.h
+===================================================================
+--- gcc.orig/gcc/c-family/c-pragma.h
++++ gcc/gcc/c-family/c-pragma.h
+@@ -108,8 +108,8 @@ extern enum cpp_ttype pragma_lex (tree *
+ /* This is not actually available to pragma parsers.  It's merely a
+    convenient location to declare this function for c-lex, after
+    having enum cpp_ttype declared.  */
+-extern enum cpp_ttype c_lex_with_flags (tree *, location_t *, unsigned char *,
+-					int);
++extern enum cpp_ttype c_lex_with_flags (tree *, location_t *, int *, unsigned
++		char *, int);
+ 
+ extern void c_pp_lookup_pragma (unsigned int, const char **, const char **);
+ 
+Index: gcc/gcc/c-parser.c
+===================================================================
+--- gcc.orig/gcc/c-parser.c
++++ gcc/gcc/c-parser.c
+@@ -156,6 +156,8 @@ typedef struct GTY (()) c_token {
+   ENUM_BITFIELD (pragma_kind) pragma_kind : 8;
+   /* The location at which this token was found.  */
+   location_t location;
++  /* The file offset of the token.  */
++  int file_offset;
+   /* The value associated with this token, if any.  */
+   tree value;
+ } c_token;
+@@ -213,8 +215,8 @@ c_lex_one_token (c_parser *parser, c_tok
+ {
+   timevar_push (TV_LEX);
+ 
+-  token->type = c_lex_with_flags (&token->value, &token->location, NULL,
+-				  (parser->lex_untranslated_string
++  token->type = c_lex_with_flags (&token->value, &token->location,
++          &token->file_offset, NULL, (parser->lex_untranslated_string
+ 				   ? C_LEX_STRING_NO_TRANSLATE : 0));
+   token->id_kind = C_ID_NONE;
+   token->keyword = RID_MAX;
+@@ -386,6 +388,7 @@ c_lex_one_token (c_parser *parser, c_tok
+       break;
+     }
+   timevar_pop (TV_LEX);
++  invoke_plugin_callbacks (PLUGIN_C_TOKEN, token);
+ }
+ 
+ /* Return a pointer to the next token from PARSER, reading it in if
+@@ -1329,6 +1332,7 @@ c_parser_external_declaration (c_parser 
+ 	 an @interface or @protocol with prefix attributes).  We can
+ 	 only tell which after parsing the declaration specifiers, if
+ 	 any, and the first declarator.  */
++      invoke_plugin_callbacks (PLUGIN_EXTERN_DECL, NULL);
+       c_parser_declaration_or_fndef (parser, true, true, true, false, true, NULL);
+       break;
+     }
+@@ -1457,6 +1461,16 @@ c_parser_declaration_or_fndef (c_parser 
+       return;
+     }
+   finish_declspecs (specs);
++  {
++    tree tmp = specs->type;
++    /* mark external struct/union. */
++    if (!nested && (TREE_CODE (tmp) == RECORD_TYPE
++                || TREE_CODE (tmp) == UNION_TYPE))
++      TYPE_FILE_SCOPE (tmp) = true;
++    if (!nested)
++      invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, specs);
++    TYPE_FILE_OFFSET (tmp) = -1;
++  }
+   if (c_parser_next_token_is (parser, CPP_SEMICOLON))
+     {
+       if (empty_ok)
+@@ -1590,6 +1604,11 @@ c_parser_declaration_or_fndef (c_parser 
+ 	{
+ 	  tree asm_name = NULL_TREE;
+ 	  tree postfix_attrs = NULL_TREE;
++	  {
++	    void* pair[2]; pair[0] = specs; pair[1] = declarator;
++        if (!nested)
++          invoke_plugin_callbacks (PLUGIN_EXTERN_VAR, pair);
++	  }
+ 	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
+ 	    {
+ 	      diagnosed_no_specs = true;
+@@ -1618,6 +1637,8 @@ c_parser_declaration_or_fndef (c_parser 
+ 	      init_loc = c_parser_peek_token (parser)->location;
+ 	      init = c_parser_initializer (parser);
+ 	      finish_init ();
++          if (!nested)
++        invoke_plugin_callbacks (PLUGIN_FUNP_ALIAS, init.value);
+ 	      if (d != error_mark_node)
+ 		{
+ 		  maybe_warn_string_init (TREE_TYPE (d), init);
+@@ -1714,6 +1735,8 @@ c_parser_declaration_or_fndef (c_parser 
+ 	c_parser_declaration_or_fndef (parser, false, false, false,
+ 				       true, false, NULL);
+       store_parm_decls ();
++      if (!nested)
++        invoke_plugin_callbacks (PLUGIN_EXTERN_FUNC, declarator);
+       DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
+ 	= c_parser_peek_token (parser)->location;
+       fnbody = c_parser_compound_statement (parser);
+@@ -2168,6 +2191,7 @@ c_parser_enum_specifier (c_parser *parse
+   tree attrs;
+   tree ident = NULL_TREE;
+   location_t enum_loc;
++  int file_offset;
+   location_t ident_loc = UNKNOWN_LOCATION;  /* Quiet warning.  */
+   gcc_assert (c_parser_next_token_is_keyword (parser, RID_ENUM));
+   enum_loc = c_parser_peek_token (parser)->location;
+@@ -2180,6 +2204,7 @@ c_parser_enum_specifier (c_parser *parse
+     {
+       ident = c_parser_peek_token (parser)->value;
+       ident_loc = c_parser_peek_token (parser)->location;
++      file_offset = c_parser_peek_token (parser)->file_offset;
+       enum_loc = ident_loc;
+       c_parser_consume_token (parser);
+     }
+@@ -2192,6 +2217,7 @@ c_parser_enum_specifier (c_parser *parse
+       /* We chain the enumerators in reverse order, then put them in
+ 	 forward order at the end.  */
+       tree values = NULL_TREE;
++      TYPE_FILE_OFFSET (type) = file_offset;
+       c_parser_consume_token (parser);
+       while (true)
+ 	{
+@@ -2214,6 +2240,7 @@ c_parser_enum_specifier (c_parser *parse
+ 	  /* Set the location in case we create a decl now.  */
+ 	  c_parser_set_source_position_from_token (token);
+ 	  decl_loc = value_loc = token->location;
++	  file_offset = token->file_offset;
+ 	  c_parser_consume_token (parser);
+ 	  if (c_parser_next_token_is (parser, CPP_EQ))
+ 	    {
+@@ -2226,6 +2253,8 @@ c_parser_enum_specifier (c_parser *parse
+ 	  enum_decl = build_enumerator (decl_loc, value_loc,
+ 	      				&the_enum, enum_id, enum_value);
+ 	  TREE_CHAIN (enum_decl) = values;
++	  DECL_FILE_OFFSET (TREE_PURPOSE (enum_decl)) = file_offset;
++      invoke_plugin_callbacks (PLUGIN_ENUMERATOR, enum_decl);
+ 	  values = enum_decl;
+ 	  seen_comma = false;
+ 	  if (c_parser_next_token_is (parser, CPP_COMMA))
+@@ -2324,6 +2353,7 @@ c_parser_struct_or_union_specifier (c_pa
+   tree attrs;
+   tree ident = NULL_TREE;
+   location_t struct_loc;
++  int file_offset = -1;
+   location_t ident_loc = UNKNOWN_LOCATION;
+   enum tree_code code;
+   switch (c_parser_peek_token (parser)->keyword)
+@@ -2348,6 +2378,7 @@ c_parser_struct_or_union_specifier (c_pa
+     {
+       ident = c_parser_peek_token (parser)->value;
+       ident_loc = c_parser_peek_token (parser)->location;
++      file_offset = c_parser_peek_token (parser)->file_offset;
+       struct_loc = ident_loc;
+       c_parser_consume_token (parser);
+     }
+@@ -2369,6 +2400,7 @@ c_parser_struct_or_union_specifier (c_pa
+ 	 so we'll be minimizing the number of node traversals required
+ 	 by chainon.  */
+       tree contents = NULL_TREE;
++      TYPE_FILE_OFFSET (type) = file_offset;
+       c_parser_consume_token (parser);
+       /* Handle the Objective-C @defs construct,
+ 	 e.g. foo(sizeof(struct{ @defs(ClassName) }));.  */
+@@ -2857,6 +2889,7 @@ c_parser_direct_declarator (c_parser *pa
+       struct c_declarator *inner
+ 	= build_id_declarator (c_parser_peek_token (parser)->value);
+       *seen_id = true;
++      inner->file_offset = c_parser_peek_token (parser)->file_offset;
+       inner->id_loc = c_parser_peek_token (parser)->location;
+       c_parser_consume_token (parser);
+       return c_parser_direct_declarator_inner (parser, *seen_id, inner);
+@@ -6563,6 +6596,12 @@ c_parser_postfix_expression_after_primar
+ 	  break;
+ 	case CPP_OPEN_PAREN:
+ 	  /* Function call.  */
++	  {
++        void* pair[2];
++		pair[0] = expr.value;
++		pair[1] = (void*) c_parser_peek_token (parser)->file_offset;
++        invoke_plugin_callbacks (PLUGIN_CALL_FUNCTION, pair);
++	  }
+ 	  c_parser_consume_token (parser);
+ 	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
+ 	    exprlist = NULL;
+@@ -6706,6 +6745,7 @@ c_parser_expression (c_parser *parser)
+       expr.original_code = COMPOUND_EXPR;
+       expr.original_type = next.original_type;
+     }
++  invoke_plugin_callbacks (PLUGIN_FUNP_ALIAS, expr.value);
+   return expr;
+ }
+ 
+Index: gcc/gcc/c-tree.h
+===================================================================
+--- gcc.orig/gcc/c-tree.h
++++ gcc/gcc/c-tree.h
+@@ -329,6 +329,7 @@ struct c_declarator {
+   /* The kind of declarator.  */
+   enum c_declarator_kind kind;
+   location_t id_loc; /* Currently only set for cdk_id, cdk_array. */
++  int file_offset; /* Currently only set for cdk_id. */
+   /* Except for cdk_id, the contained declarator.  For cdk_id, NULL.  */
+   struct c_declarator *declarator;
+   union {
+Index: gcc/gcc/cp/parser.c
+===================================================================
+--- gcc.orig/gcc/cp/parser.c
++++ gcc/gcc/cp/parser.c
+@@ -545,8 +545,8 @@ cp_lexer_get_preprocessor_token (cp_lexe
+ 
+    /* Get a new token from the preprocessor.  */
+   token->type
+-    = c_lex_with_flags (&token->u.value, &token->location, &token->flags,
+-			lexer == NULL ? 0 : C_LEX_STRING_NO_JOIN);
++    = c_lex_with_flags (&token->u.value, &token->location, NULL,
++            &token->flags, lexer == NULL ? 0 : C_LEX_STRING_NO_JOIN);
+   token->keyword = RID_MAX;
+   token->pragma_kind = PRAGMA_NONE;
+ 
+Index: gcc/gcc/doc/plugins.texi
+===================================================================
+--- gcc.orig/gcc/doc/plugins.texi
++++ gcc/gcc/doc/plugins.texi
+@@ -183,6 +183,22 @@ enum plugin_event
+   PLUGIN_EARLY_GIMPLE_PASSES_END,
+   /* Called when a pass is first instantiated.  */
+   PLUGIN_NEW_PASS,
++  PLUGIN_CPP_TOKEN,                /* Called when GCC gets a cpp token. */
++  PLUGIN_C_TOKEN,                  /* Called when GCC gets a c token. */
++  /* An extern declaration (file-scope) is encounted. */
++  PLUGIN_EXTERN_DECL,
++  /* An extern function definition is parsed. */
++  PLUGIN_EXTERN_FUNC,
++  /* An extern variable definition is parsed. */
++  PLUGIN_EXTERN_VAR,
++  /* An extern declaration specifier definition is parsed. */
++  PLUGIN_EXTERN_DECLSPECS,
++  /* A function is called. */
++  PLUGIN_CALL_FUNCTION,
++  /* An enumerator is parsed. */
++  PLUGIN_ENUMERATOR,
++  /* Function pointer is assigned. */
++  PLUGIN_FUNP_ALIAS,
+ 
+   PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
+                                    array.  */
+Index: gcc/gcc/plugin.c
+===================================================================
+--- gcc.orig/gcc/plugin.c
++++ gcc/gcc/plugin.c
+@@ -438,6 +438,15 @@ register_callback (const char *plugin_na
+       case PLUGIN_EARLY_GIMPLE_PASSES_START:
+       case PLUGIN_EARLY_GIMPLE_PASSES_END:
+       case PLUGIN_NEW_PASS:
++      case PLUGIN_CPP_TOKEN:
++      case PLUGIN_C_TOKEN:
++      case PLUGIN_EXTERN_DECL:
++      case PLUGIN_EXTERN_FUNC:
++      case PLUGIN_EXTERN_VAR:
++      case PLUGIN_EXTERN_DECLSPECS:
++      case PLUGIN_CALL_FUNCTION:
++      case PLUGIN_ENUMERATOR:
++      case PLUGIN_FUNP_ALIAS:
+         {
+           struct callback_info *new_callback;
+           if (!callback)
+@@ -514,6 +523,15 @@ invoke_plugin_callbacks_full (int event,
+       case PLUGIN_EARLY_GIMPLE_PASSES_START:
+       case PLUGIN_EARLY_GIMPLE_PASSES_END:
+       case PLUGIN_NEW_PASS:
++      case PLUGIN_CPP_TOKEN:
++      case PLUGIN_C_TOKEN:
++      case PLUGIN_EXTERN_DECL:
++      case PLUGIN_EXTERN_FUNC:
++      case PLUGIN_EXTERN_VAR:
++      case PLUGIN_EXTERN_DECLSPECS:
++      case PLUGIN_CALL_FUNCTION:
++      case PLUGIN_ENUMERATOR:
++      case PLUGIN_FUNP_ALIAS:
+         {
+           /* Iterate over every callback registered with this event and
+              call it.  */
+Index: gcc/gcc/plugin.def
+===================================================================
+--- gcc.orig/gcc/plugin.def
++++ gcc/gcc/plugin.def
+@@ -89,6 +89,33 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
+ /* Called when a pass is first instantiated.  */
+ DEFEVENT (PLUGIN_NEW_PASS)
+ 
++/* Called when a cpp token is extracted.  */
++DEFEVENT (PLUGIN_CPP_TOKEN)
++
++/* Called when a c token is extracted.  */
++DEFEVENT (PLUGIN_C_TOKEN)
++
++/* An extern declaration (file-scope) is encounted. */
++DEFEVENT (PLUGIN_EXTERN_DECL)
++
++/* Called when an extern function definition is parsed. */
++DEFEVENT (PLUGIN_EXTERN_FUNC)
++
++/* Called when an extern variable definition is parsed. */
++DEFEVENT (PLUGIN_EXTERN_VAR)
++
++/* An extern declaration specifier definition is parsed. */
++DEFEVENT (PLUGIN_EXTERN_DECLSPECS)
++
++/* A function is called. */
++DEFEVENT (PLUGIN_CALL_FUNCTION)
++
++/* Called when an enumerator is parsed. */
++DEFEVENT (PLUGIN_ENUMERATOR)
++
++/* Function pointer is assigned. */
++DEFEVENT (PLUGIN_FUNP_ALIAS)
++
+ /* After the hard-coded events above, plugins can dynamically allocate events
+    at run time.
+    PLUGIN_EVENT_FIRST_DYNAMIC only appears as last enum element.  */
+Index: gcc/gcc/print-tree.c
+===================================================================
+--- gcc.orig/gcc/print-tree.c
++++ gcc/gcc/print-tree.c
+@@ -503,6 +503,7 @@ print_node (FILE *file, const char *pref
+       xloc = expand_location (DECL_SOURCE_LOCATION (node));
+       fprintf (file, " file %s line %d col %d", xloc.file, xloc.line,
+ 	       xloc.column);
++      fprintf (file, " offset %d", DECL_FILE_OFFSET (node));
+ 
+       if (CODE_CONTAINS_STRUCT (code, TS_DECL_COMMON))
+ 	{
+@@ -599,6 +600,10 @@ print_node (FILE *file, const char *pref
+       break;
+ 
+     case tcc_type:
++      if (TREE_CODE (node) == RECORD_TYPE || TREE_CODE (node) == UNION_TYPE)
++        fprintf (file, " file scope %d, file offset %d",
++              TYPE_FILE_SCOPE (node), TYPE_FILE_OFFSET (node));
++
+       if (TYPE_UNSIGNED (node))
+ 	fputs (" unsigned", file);
+ 
+Index: gcc/gcc/tree.h
+===================================================================
+--- gcc.orig/gcc/tree.h
++++ gcc/gcc/tree.h
+@@ -2327,10 +2327,21 @@ extern enum machine_mode vector_type_mod
+ #define TYPE_SYMTAB_IS_POINTER (1)
+ #define TYPE_SYMTAB_IS_DIE (2)
+ 
++/* Return the file offset of tree type definition. Currently, type declaration
++ * and definition share the same tree, change it is too difficult to me, so I
++ * reset it to -1 after plugin used it. */
++#define TYPE_FILE_OFFSET(NODE) \
++  (TYPE_CHECK (NODE)->type.file_offset)
++
++/* To C, all record/union types has file-scope even it's defined inside other
++   record/union, for special usage, the field mark it.  */
++#define TYPE_FILE_SCOPE(NODE) (RECORD_OR_UNION_CHECK (NODE)->type.file_scope)
++
+ struct die_struct;
+ 
+ struct GTY(()) tree_type {
+   struct tree_common common;
++  int file_offset;
+   tree values;
+   tree size;
+   tree size_unit;
+@@ -2355,6 +2366,8 @@ struct GTY(()) tree_type {
+   unsigned lang_flag_5 : 1;
+   unsigned lang_flag_6 : 1;
+ 
++  bool file_scope;
++
+   unsigned int align;
+   alias_set_type alias_set;
+   tree pointer_to;
+@@ -2561,6 +2574,8 @@ struct function;
+ #define DECL_SOURCE_LINE(NODE) LOCATION_LINE (DECL_SOURCE_LOCATION (NODE))
+ #define DECL_IS_BUILTIN(DECL) \
+   (DECL_SOURCE_LOCATION (DECL) <= BUILTINS_LOCATION)
++#define DECL_FILE_OFFSET(NODE) \
++  (DECL_MINIMAL_CHECK (NODE)->decl_minimal.file_offset)
+ 
+ /*  For FIELD_DECLs, this is the RECORD_TYPE, UNION_TYPE, or
+     QUAL_UNION_TYPE node that the field is a member of.  For VAR_DECL,
+@@ -2579,6 +2594,7 @@ struct function;
+ struct GTY(()) tree_decl_minimal {
+   struct tree_common common;
+   location_t locus;
++  int file_offset;
+   unsigned int uid;
+   tree name;
+   tree context;
+Index: gcc/libcpp/directives.c
+===================================================================
+--- gcc.orig/libcpp/directives.c
++++ gcc/libcpp/directives.c
+@@ -105,7 +105,7 @@ static void push_conditional (cpp_reader
+ static unsigned int read_flag (cpp_reader *, unsigned int);
+ static bool strtolinenum (const uchar *, size_t, linenum_type *, bool *);
+ static void do_diagnostic (cpp_reader *, int, int, int);
+-static cpp_hashnode *lex_macro_node (cpp_reader *, bool);
++static cpp_hashnode *lex_macro_node (cpp_reader *, bool, int *);
+ static int undefine_macros (cpp_reader *, cpp_hashnode *, void *);
+ static void do_include_common (cpp_reader *, enum include_type);
+ static struct pragma_entry *lookup_pragma_entry (struct pragma_entry *,
+@@ -275,6 +275,9 @@ start_directive (cpp_reader *pfile)
+ 
+   /* Some handlers need the position of the # for diagnostics.  */
+   pfile->directive_line = pfile->line_table->highest_line;
++
++  if (pfile->cb.start_directive)
++    pfile->cb.start_directive (pfile);
+ }
+ 
+ /* Called when leaving a directive, _Pragma or command-line directive.  */
+@@ -309,6 +312,9 @@ end_directive (cpp_reader *pfile, int sk
+   pfile->state.in_expression = 0;
+   pfile->state.angled_headers = 0;
+   pfile->directive = 0;
++
++  if (pfile->cb.end_directive)
++    pfile->cb.end_directive (pfile);
+ }
+ 
+ /* Prepare to handle the directive in pfile->directive.  */
+@@ -530,7 +536,7 @@ run_directive (cpp_reader *pfile, int di
+    processing a #define or #undefine directive, and false
+    otherwise.  */
+ static cpp_hashnode *
+-lex_macro_node (cpp_reader *pfile, bool is_def_or_undef)
++lex_macro_node (cpp_reader *pfile, bool is_def_or_undef, int *file_offset)
+ {
+   const cpp_token *token = _cpp_lex_token (pfile);
+ 
+@@ -549,6 +555,8 @@ lex_macro_node (cpp_reader *pfile, bool 
+ 	cpp_error (pfile, CPP_DL_ERROR,
+ 		   "\"defined\" cannot be used as a macro name");
+       else if (! (node->flags & NODE_POISONED))
++      if (file_offset)
++        *file_offset = token->file_offset;
+ 	return node;
+     }
+   else if (token->flags & NAMED_OP)
+@@ -568,7 +576,8 @@ lex_macro_node (cpp_reader *pfile, bool 
+ static void
+ do_define (cpp_reader *pfile)
+ {
+-  cpp_hashnode *node = lex_macro_node (pfile, true);
++  int file_offset;
++  cpp_hashnode *node = lex_macro_node (pfile, true, &file_offset);
+ 
+   if (node)
+     {
+@@ -581,8 +590,12 @@ do_define (cpp_reader *pfile)
+ 	pfile->cb.before_define (pfile);
+ 
+       if (_cpp_create_definition (pfile, node))
++        {
++	cpp_macro *macro = node->value.macro;
++	macro->file_offset = file_offset;
+ 	if (pfile->cb.define)
+ 	  pfile->cb.define (pfile, pfile->directive_line, node);
++        }
+ 
+       node->flags &= ~NODE_USED;
+     }
+@@ -592,7 +605,7 @@ do_define (cpp_reader *pfile)
+ static void
+ do_undef (cpp_reader *pfile)
+ {
+-  cpp_hashnode *node = lex_macro_node (pfile, true);
++  cpp_hashnode *node = lex_macro_node (pfile, true, NULL);
+ 
+   if (node)
+     {
+@@ -1815,7 +1828,7 @@ do_ifdef (cpp_reader *pfile)
+ 
+   if (! pfile->state.skipping)
+     {
+-      cpp_hashnode *node = lex_macro_node (pfile, false);
++      cpp_hashnode *node = lex_macro_node (pfile, false, NULL);
+ 
+       if (node)
+ 	{
+@@ -1861,7 +1874,7 @@ do_ifndef (cpp_reader *pfile)
+ 
+   if (! pfile->state.skipping)
+     {
+-      node = lex_macro_node (pfile, false);
++      node = lex_macro_node (pfile, false, NULL);
+ 
+       if (node)
+ 	{
+Index: gcc/libcpp/include/cpp-id-data.h
+===================================================================
+--- gcc.orig/libcpp/include/cpp-id-data.h
++++ gcc/libcpp/include/cpp-id-data.h
+@@ -52,6 +52,7 @@ struct GTY(()) cpp_macro {
+ 
+   /* Definition line number.  */
+   source_location line;
++  int file_offset;
+ 
+   /* Number of tokens in expansion, or bytes for traditional macros.  */
+   unsigned int count;
+Index: gcc/libcpp/include/cpplib.h
+===================================================================
+--- gcc.orig/libcpp/include/cpplib.h
++++ gcc/libcpp/include/cpplib.h
+@@ -208,10 +208,10 @@ struct GTY(()) cpp_identifier {
+        node;
+ };
+ 
+-/* A preprocessing token.  This has been carefully packed and should
+-   occupy 16 bytes on 32-bit hosts and 24 bytes on 64-bit hosts.  */
++/* A preprocessing token. */
+ struct GTY(()) cpp_token {
+   source_location src_loc;	/* Location of first char of token.  */
++  int file_offset;
+   ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
+   unsigned short flags;		/* flags - see above */
+ 
+@@ -493,6 +493,22 @@ struct cpp_callbacks
+      be expanded.  */
+   cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
+ 
++  /* The more powerful function extracts token than cpp_get_token. Later
++   * callbacks show it. */
++  void (*lex_token) (cpp_reader *, const cpp_token*);
++  /* The pair is called when gcc expands macro. Enable lex_token in
++   * macro_start_expand, you can catch all macro tokens. The pair can be called
++   * nested. */
++  void (*macro_start_expand) (cpp_reader *, const cpp_token *,
++		  const cpp_hashnode *);
++  void (*macro_end_expand) (cpp_reader *, bool);
++  /* The pair is called when cpp directive (starting from `#', such as
++   * `#define M', `#endif' etc) is encountered and reaches end. When enable
++   * lex_token in start_directive, the sequence is lex_token("define"),
++   * lex_token("M") ... */
++  void (*start_directive) (cpp_reader *);
++  void (*end_directive) (cpp_reader *);
++
+   /* Called to emit a diagnostic.  This callback receives the
+      translated message.  */
+   bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
+@@ -729,7 +745,7 @@ extern int cpp_avoid_paste (cpp_reader *
+ 			    const cpp_token *);
+ extern const cpp_token *cpp_get_token (cpp_reader *);
+ extern const cpp_token *cpp_get_token_with_location (cpp_reader *,
+-						     source_location *);
++						     source_location *, int *);
+ extern const unsigned char *cpp_macro_definition (cpp_reader *,
+ 						  cpp_hashnode *);
+ extern void _cpp_backup_tokens (cpp_reader *, unsigned int);
+Index: gcc/libcpp/internal.h
+===================================================================
+--- gcc.orig/libcpp/internal.h
++++ gcc/libcpp/internal.h
+@@ -243,6 +243,11 @@ struct _cpp_line_note
+      intervening space, 0 represents a note that has already been handled,
+      and anything else is invalid.  */
+   unsigned int type;
++
++  /* file offset adjustment is recorded by add_line_note to adjust
++   * cpp_token::file_offset. The case is when some spaces are left after an
++   * escaped newline `\', cpp_token::file_offset becomes inexact. */
++  const unsigned char *adjust_offset;
+ };
+ 
+ /* Represents the contents of a file cpplib has read in.  */
+@@ -365,6 +370,17 @@ struct cpp_reader
+      macro invocation.  */
+   source_location invocation_location;
+ 
++  /* When expanding a macro at top-level, this is the file-offset of the
++     macro invocation.  */
++  int invocation_file_offset;
++
++  /* Nonzero if we are about to expand a macro.  Note that if we are
++     really expanding a macro, cpp_context::macro returns the macro being
++     expanded and this flag is set to false.  Client code should use the
++     function in_macro_expansion_p to know if we are either about to expand a
++     macro, or are actually expanding one.  */
++  bool about_to_expand_macro_p;
++
+   /* True if this call to cpp_get_token should consider setting
+      invocation_location.  */
+   bool set_invocation_location;
+Index: gcc/libcpp/lex.c
+===================================================================
+--- gcc.orig/libcpp/lex.c
++++ gcc/libcpp/lex.c
+@@ -51,7 +51,8 @@ static const struct token_spelling token
+ #define TOKEN_SPELL(token) (token_spellings[(token)->type].category)
+ #define TOKEN_NAME(token) (token_spellings[(token)->type].name)
+ 
+-static void add_line_note (cpp_buffer *, const uchar *, unsigned int);
++static void add_line_note (cpp_buffer *, const uchar *, unsigned int,
++			   const uchar *);
+ static int skip_line_comment (cpp_reader *);
+ static void skip_whitespace (cpp_reader *, cppchar_t);
+ static void lex_string (cpp_reader *, cpp_token *, const uchar *);
+@@ -82,7 +83,8 @@ cpp_ideq (const cpp_token *token, const 
+ /* Record a note TYPE at byte POS into the current cleaned logical
+    line.  */
+ static void
+-add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type)
++add_line_note (cpp_buffer *buffer, const uchar *pos, unsigned int type,
++	       const uchar * offset)
+ {
+   if (buffer->notes_used == buffer->notes_cap)
+     {
+@@ -93,6 +95,7 @@ add_line_note (cpp_buffer *buffer, const
+ 
+   buffer->notes[buffer->notes_used].pos = pos;
+   buffer->notes[buffer->notes_used].type = type;
++  buffer->notes[buffer->notes_used].adjust_offset = offset;
+   buffer->notes_used++;
+ }
+ 
+@@ -678,7 +681,7 @@ _cpp_clean_line (cpp_reader *pfile)
+ 		{
+ 		  /* Have a trigraph.  We may or may not have to convert
+ 		     it.  Add a line note regardless, for -Wtrigraphs.  */
+-		  add_line_note (buffer, s, s[2]);
++		  add_line_note (buffer, s, s[2], 0);
+ 		  if (CPP_OPTION (pfile, trigraphs))
+ 		    {
+ 		      /* We do, and that means we have to switch to the
+@@ -723,7 +726,7 @@ _cpp_clean_line (cpp_reader *pfile)
+ 
+       /* Have an escaped newline; process it and proceed to
+ 	 the slow path.  */
+-      add_line_note (buffer, p - 1, p != d ? ' ' : '\\');
++      add_line_note (buffer, p - 1, p != d ? ' ' : '\\', s + 1);
+       d = p - 2;
+       buffer->next_line = p - 1;
+ 
+@@ -748,14 +751,14 @@ _cpp_clean_line (cpp_reader *pfile)
+ 	      if (p == buffer->next_line || p[-1] != '\\')
+ 		break;
+ 
+-	      add_line_note (buffer, p - 1, p != d ? ' ': '\\');
++	      add_line_note (buffer, p - 1, p != d ? ' ': '\\', s + 1);
+ 	      d = p - 2;
+ 	      buffer->next_line = p - 1;
+ 	    }
+ 	  else if (c == '?' && s[1] == '?' && _cpp_trigraph_map[s[2]])
+ 	    {
+ 	      /* Add a note regardless, for the benefit of -Wtrigraphs.  */
+-	      add_line_note (buffer, d, s[2]);
++	      add_line_note (buffer, d, s[2], 0);
+ 	      if (CPP_OPTION (pfile, trigraphs))
+ 		{
+ 		  *d = _cpp_trigraph_map[s[2]];
+@@ -778,7 +781,7 @@ _cpp_clean_line (cpp_reader *pfile)
+  done:
+   *d = '\n';
+   /* A sentinel note that should never be processed.  */
+-  add_line_note (buffer, d + 1, '\n');
++  add_line_note (buffer, d + 1, '\n', s + 1);
+   buffer->next_line = s + 1;
+ }
+ 
+@@ -1824,6 +1827,8 @@ _cpp_lex_token (cpp_reader *pfile)
+ 	}
+       else
+ 	result = _cpp_lex_direct (pfile);
++    if (pfile->cb.lex_token)
++      pfile->cb.lex_token (pfile, result);
+ 
+       if (result->flags & BOL)
+ 	{
+@@ -1981,6 +1986,17 @@ _cpp_lex_direct (cpp_reader *pfile)
+       _cpp_process_line_notes (pfile, false);
+       result->src_loc = pfile->line_table->highest_line;
+     }
++  if (buffer->cur_note != 0)
++    {
++      int index = buffer->cur_note - 1;
++      result->file_offset = buffer->cur - buffer->buf;
++      result->file_offset +=
++	buffer->notes[index].adjust_offset - buffer->notes[index].pos;
++    }
++  else
++    {
++      result->file_offset = buffer->cur - buffer->buf;
++    }
+   c = *buffer->cur++;
+ 
+   LINEMAP_POSITION_FOR_COLUMN (result->src_loc, pfile->line_table,
+Index: gcc/libcpp/macro.c
+===================================================================
+--- gcc.orig/libcpp/macro.c
++++ gcc/libcpp/macro.c
+@@ -58,7 +58,7 @@ static bool paste_tokens (cpp_reader *, 
+ static void replace_args (cpp_reader *, cpp_hashnode *, cpp_macro *,
+ 			  macro_arg *);
+ static _cpp_buff *funlike_invocation_p (cpp_reader *, cpp_hashnode *,
+-					_cpp_buff **);
++					_cpp_buff **, const cpp_token *);
+ static bool create_iso_definition (cpp_reader *, cpp_macro *);
+ 
+ /* #define directive parsing and handling.  */
+@@ -768,7 +768,7 @@ collect_args (cpp_reader *pfile, const c
+    argument is the same as in collect_args.  */
+ static _cpp_buff *
+ funlike_invocation_p (cpp_reader *pfile, cpp_hashnode *node,
+-		      _cpp_buff **pragma_buff)
++		      _cpp_buff **pragma_buff, const cpp_token* head)
+ {
+   const cpp_token *token, *padding = NULL;
+ 
+@@ -785,6 +785,8 @@ funlike_invocation_p (cpp_reader *pfile,
+   if (token->type == CPP_OPEN_PAREN)
+     {
+       pfile->state.parsing_args = 2;
++      if (pfile->cb.macro_start_expand)
++        pfile->cb.macro_start_expand (pfile, head, node);
+       return collect_args (pfile, node, pragma_buff);
+     }
+ 
+@@ -830,6 +832,8 @@ enter_macro_context (cpp_reader *pfile, 
+   /* The presence of a macro invalidates a file's controlling macro.  */
+   pfile->mi_valid = false;
+ 
++  pfile->about_to_expand_macro_p = true;
++
+   pfile->state.angled_headers = false;
+ 
+   if ((node->flags & NODE_BUILTIN) && !(node->flags & NODE_USED))
+@@ -854,7 +858,7 @@ enter_macro_context (cpp_reader *pfile, 
+ 	  pfile->state.prevent_expansion++;
+ 	  pfile->keep_tokens++;
+ 	  pfile->state.parsing_args = 1;
+-	  buff = funlike_invocation_p (pfile, node, &pragma_buff);
++	  buff = funlike_invocation_p (pfile, node, &pragma_buff, result);
+ 	  pfile->state.parsing_args = 0;
+ 	  pfile->keep_tokens--;
+ 	  pfile->state.prevent_expansion--;
+@@ -869,6 +873,7 @@ enter_macro_context (cpp_reader *pfile, 
+ 	      if (pragma_buff)
+ 		_cpp_release_buff (pfile, pragma_buff);
+ 
++	      pfile->about_to_expand_macro_p = false;
+ 	      return 0;
+ 	    }
+ 
+@@ -893,8 +898,12 @@ enter_macro_context (cpp_reader *pfile, 
+       macro->used = 1;
+ 
+       if (macro->paramc == 0)
+-	_cpp_push_token_context (pfile, node, macro->exp.tokens,
++	{
++      if (pfile->cb.macro_start_expand)
++        pfile->cb.macro_start_expand (pfile, result, node);
++	  _cpp_push_token_context (pfile, node, macro->exp.tokens,
+ 				 macro_real_token_count (macro));
++	}
+ 
+       if (pragma_buff)
+ 	{
+@@ -912,12 +921,15 @@ enter_macro_context (cpp_reader *pfile, 
+ 	      pragma_buff = tail;
+ 	    }
+ 	  while (pragma_buff != NULL);
++	  pfile->about_to_expand_macro_p = false;
+ 	  return 2;
+ 	}
+ 
++	  pfile->about_to_expand_macro_p = false;
+       return 1;
+     }
+ 
++  pfile->about_to_expand_macro_p = false;
+   /* Handle built-in macros and the _Pragma operator.  */
+   return builtin_macro (pfile, node);
+ }
+@@ -1123,8 +1135,12 @@ void
+ _cpp_push_token_context (cpp_reader *pfile, cpp_hashnode *macro,
+ 			 const cpp_token *first, unsigned int count)
+ {
+-  cpp_context *context = next_context (pfile);
++  cpp_context *context;
+ 
++  if (macro == NULL)
++    macro = pfile->context->macro;
++
++  context = next_context (pfile);
+   context->direct_p = true;
+   context->macro = macro;
+   context->buff = NULL;
+@@ -1195,6 +1211,18 @@ expand_arg (cpp_reader *pfile, macro_arg
+   CPP_WTRADITIONAL (pfile) = saved_warn_trad;
+ }
+ 
++/* Return TRUE iff we are expanding a macro or are about to start
++   expanding one. */
++static bool
++in_macro_expansion_p (cpp_reader *pfile)
++{
++  if (pfile == NULL)
++    return false;
++
++  return (pfile->about_to_expand_macro_p
++      || pfile->context->macro);
++}
++
+ /* Pop the current context off the stack, re-enabling the macro if the
+    context represented a macro's replacement list.  The context
+    structure is not freed so that we can re-use it later.  */
+@@ -1210,6 +1238,9 @@ _cpp_pop_context (cpp_reader *pfile)
+     _cpp_release_buff (pfile, context->buff);
+ 
+   pfile->context = context->prev;
++
++  if (pfile->cb.macro_end_expand)
++    pfile->cb.macro_end_expand (pfile, in_macro_expansion_p (pfile));
+ }
+ 
+ /* External routine to get a token.  Also used nearly everywhere
+@@ -1228,6 +1259,7 @@ cpp_get_token (cpp_reader *pfile)
+ {
+   const cpp_token *result;
+   bool can_set = pfile->set_invocation_location;
++  bool saved_about_to_expand_macro_p = pfile->about_to_expand_macro_p;
+   pfile->set_invocation_location = false;
+ 
+   for (;;)
+@@ -1250,7 +1282,8 @@ cpp_get_token (cpp_reader *pfile)
+ 	      paste_all_tokens (pfile, result);
+ 	      if (pfile->state.in_directive)
+ 		continue;
+-	      return padding_token (pfile, result);
++	      result = padding_token (pfile, result);
++	      goto out;
+ 	    }
+ 	}
+       else
+@@ -1258,7 +1291,8 @@ cpp_get_token (cpp_reader *pfile)
+ 	  _cpp_pop_context (pfile);
+ 	  if (pfile->state.in_directive)
+ 	    continue;
+-	  return &pfile->avoid_paste;
++	  result = &pfile->avoid_paste;
++	  goto out;
+ 	}
+ 
+       if (pfile->state.in_directive && result->type == CPP_COMMENT)
+@@ -1278,7 +1312,10 @@ cpp_get_token (cpp_reader *pfile)
+ 	  /* If not in a macro context, and we're going to start an
+ 	     expansion, record the location.  */
+ 	  if (can_set && !context->macro)
++	  {
+ 	    pfile->invocation_location = result->src_loc;
++		pfile->invocation_file_offset = result->file_offset;
++	  }
+ 	  if (pfile->state.prevent_expansion)
+ 	    break;
+ 
+@@ -1317,7 +1354,8 @@ cpp_get_token (cpp_reader *pfile)
+  	    {
+ 	      if (pfile->state.in_directive || ret == 2)
+ 		continue;
+-	      return padding_token (pfile, result);
++	      result = padding_token (pfile, result);
++	      goto out;
+ 	    }
+ 	}
+       else
+@@ -1334,6 +1372,8 @@ cpp_get_token (cpp_reader *pfile)
+       break;
+     }
+ 
++out:
++  pfile->about_to_expand_macro_p = saved_about_to_expand_macro_p;
+   return result;
+ }
+ 
+@@ -1344,16 +1384,22 @@ cpp_get_token (cpp_reader *pfile)
+    will indicate where the macro is defined, but *LOC will be the
+    location of the start of the expansion.  */
+ const cpp_token *
+-cpp_get_token_with_location (cpp_reader *pfile, source_location *loc)
++cpp_get_token_with_location (cpp_reader *pfile, source_location *loc, int* off)
+ {
+   const cpp_token *result;
+ 
+   pfile->set_invocation_location = true;
+   result = cpp_get_token (pfile);
+   if (pfile->context->macro)
++  {
+     *loc = pfile->invocation_location;
++    *off = pfile->invocation_file_offset;
++  }
+   else
++  {
+     *loc = result->src_loc;
++    *off = result->file_offset;
++  }
+ 
+   return result;
+ }

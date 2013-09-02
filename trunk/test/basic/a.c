@@ -46,6 +46,8 @@ int main(void)
 }
 
 char c __attribute__((unused));
+int ofo(int);
 int ofo(int i __attribute__((unused))) {}
+int ofo(int);
 int* fof(int i __attribute__((unused))) {}
 //*/
