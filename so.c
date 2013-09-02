@@ -47,6 +47,7 @@
 #include "tree.h"
 #include "gcc/c-tree.h"
 #include "c-family/c-common.h"
+#include "c-family/c-pragma.h"
 #include "input.h"
 #include "dyn-string.h"
 #include <sys/stat.h>
@@ -54,12 +55,10 @@
 #include "libcpp/include/cpplib.h"
 #include "libcpp/internal.h"
 #include <sqlite3.h>
-#include "gcc/c-parser.c"
 /* }])> */
 
 /* common <([{ */
 typedef const struct cpp_token *cpp_token_p;
-typedef const struct c_token *c_token_p;
 
 typedef struct
 {
@@ -786,41 +785,8 @@ cache_append_itoken_cpp_stage (cpp_token_p token)
 }
 
 static void
-cache_append_itoken_c_stage (c_token_p token)
+cache_append_itoken_c_stage (void /* c_token_p token */ )
 {
-  int keyword = 0;
-  if (token->type != CPP_EOF)
-    {
-      if (token->id_kind == C_ID_ID)
-	{
-	  /* It's a user-defined identifier. */
-	  gcc_assert (TREE_CODE (token->value) == IDENTIFIER_NODE);
-	  gcc_assert (token->type == CPP_NAME);
-	}
-      else
-	{
-	  if (token->id_kind == C_ID_NONE && token->keyword != RID_MAX)
-	    {
-	      /* The cpp token (CPP_NAME) is a C keyword. */
-	      gcc_assert (token->type == CPP_KEYWORD);
-	    }
-	  else
-	    /* token->type is the remain CPP_*. */
-	    return;
-	}
-    }
-  else
-    return;
-  if (token->type == CPP_KEYWORD)
-    keyword = ~token->keyword;
-  keyword = (keyword << C_TYPE_SHIFT) & C_TYPE_MASK;
-  cache.last_cpp_token->flag ^= keyword;
-}
-
-static int
-cache_get_itoken_size (void)
-{
-  return VEC_length (db_token, cache.itokens);
 }
 
 static inline int
@@ -833,12 +799,6 @@ static db_token *
 cache_get (int index)
 {
   return VEC_index (db_token, cache.itokens, revert_index (index));
-}
-
-static int
-cache_record_itoken_position (void)
-{
-  return VEC_length (db_token, cache.itokens);
 }
 
 static db_token *
@@ -858,43 +818,6 @@ cache_itoken_to_chtoken (int index)
   else
     result = cache_get (index);
   return result;
-}
-
-static int
-cache_skip_match_pair (int index, char c)
-{
-  int recurse = 1;
-  int result = revert_index (index) - 1;
-  char *from, *to;
-  switch (c)
-    {
-    case ')':
-      from = "(";
-      to = ")";
-      break;
-    case ']':
-      from = "[";
-      to = "]";
-      break;
-    case '}':
-      from = "{";
-      to = "}";
-      break;
-    }
-  while (true)
-    {
-      db_token *p = VEC_index (db_token, cache.itokens, result);
-      if (strcmp (dyn_string_buf (p->value), from) == 0)
-	{
-	  recurse--;
-	  if (recurse == 0)
-	    break;
-	}
-      if (strcmp (dyn_string_buf (p->value), to) == 0)
-	recurse++;
-      result--;
-    }
-  return VEC_length (db_token, cache.itokens) - 1 - (result - 1);
 }
 
 /* }])> */
@@ -977,57 +900,6 @@ def_append (enum definition_flag flag, dyn_string_t str, int offset)
     insert_defrel (defid);
   file_insert_defid (defid);
   return defid;
-}
-
-static inline void
-def_demangle_type (db_token * token, int *cpp_type, int *c_type)
-{
-  enum symdb_flag flag = token->flag;
-  *cpp_type = flag & CPP_TYPE_MASK;
-  *c_type = (flag & C_TYPE_MASK) >> C_TYPE_SHIFT;
-}
-
-static inline bool
-def_is_uid (db_token * token)
-{
-  int cpp_type, c_type;
-  def_demangle_type (token, &cpp_type, &c_type);
-  return cpp_type == CPP_NAME && c_type == 0xffff;
-}
-
-static int
-def_strip_paren (int index)
-{
-  while (true)
-    {
-      int cpp_type, c_type;
-      db_token *tmp = cache_get (index++);
-      def_demangle_type (tmp, &cpp_type, &c_type);
-      if (cpp_type != CPP_CLOSE_PAREN)
-	break;
-    }
-  return index - 1;
-}
-
-static long long
-def_append_chk (int index, enum definition_flag flag, const char *p)
-{
-  db_token *token;
-  dyn_string_t str;
-  token = cache_get (index);
-  str = token->value;
-  if (p != NULL)
-    {
-      dyn_string_copy_cstr (gbuf, p);
-      dyn_string_append_cstr (gbuf, "::");
-      dyn_string_append (gbuf, token->value);
-    }
-  else
-    dyn_string_copy (gbuf, str);
-  gcc_assert (def_is_uid (token));
-  token = cache_itoken_to_chtoken (index);
-  gcc_assert (def_is_uid (token));
-  return def_append (flag, gbuf, token->file_offset);
 }
 
 static void
@@ -1427,9 +1299,6 @@ static struct
 
 /* in_pragma is used by symdb_cpp_token and symdb_c_token. */
 static bool in_pragma = false;
-/* func_old_param is used by symdb_extern_func_old_param and symdb_extern_func.
- * */
-static int func_old_param = 0;
 
 static void plugin_tini (void *gcc_data, void *user_data);
 static void
@@ -1509,10 +1378,10 @@ symdb_cpp_token (void *gcc_data, void *user_data)
 static void
 symdb_c_token (void *gcc_data, void *user_data)
 {
-  c_token_p token = gcc_data;
+  // c_token_p token = gcc_data;
   if (in_pragma)
     return;
-  cache_append_itoken_c_stage (token);
+  cache_append_itoken_c_stage ( /* token */ );
 }
 
 static bool
@@ -1642,10 +1511,9 @@ struct_offsetof (long long dbid, tree node)
 static void
 symdb_call_func (void *gcc_data, void *user_data)
 {
-  tree decl = (tree) gcc_data, type = NULL, member;
-  db_token *token;
-  int cpp_type, c_type;
-  int index;
+  void **pair = (void **) gcc_data;
+  tree decl = (tree) pair[0], type = NULL, member;
+  int file_offset = (int) pair[1];
   enum definition_flag df = DEF_CALLED_FUNC;
   if (block_list.call_func)
     return;
@@ -1666,15 +1534,20 @@ symdb_call_func (void *gcc_data, void *user_data)
       else
 	goto done;
     }
-  token = cache_get (0);
-  def_demangle_type (token, &cpp_type, &c_type);
-  gcc_assert (cpp_type == CPP_OPEN_PAREN);
-  // Strip inner parens.
-  index = def_strip_paren (1);
-  def_append_chk (index, df, type != NULL ? get_typename (type) : NULL);
+  if (df == DEF_CALLED_POINTER)
+    {
+      if (type != NULL)
+	dyn_string_copy_cstr (gbuf, get_typename (type));
+      else
+	dyn_string_copy_cstr (gbuf, "");
+      dyn_string_append_cstr (gbuf, "::");
+      dyn_string_append_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (member)));
+    }
+  else
+    dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (decl)));
+  def_append (df, gbuf, file_offset);
 
-done:
-  cache_reset (0);
+done:;
 }
 
 /*
@@ -1688,22 +1561,15 @@ done:
 static void
 symdb_enumerator (void *gcc_data, void *user_data)
 {
+  tree enum_decl = (tree) gcc_data;
+
   if (block_list.enum_spec)
     return;
-  def_append_chk (0, DEF_ENUM_MEMBER, NULL);
-  /* Don't call cache_reset(0) here, since enum specifier hasn't been parsed,
-   * see symdb_declspecs. */
-}
 
-static void
-symdb_extern_func_old_param (void *gcc_data, void *user_data)
-{
-  db_token *token;
-  int cpp_type, c_type;
-  token = cache_get (1);
-  def_demangle_type (token, &cpp_type, &c_type);
-  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
-  func_old_param = cache_record_itoken_position ();
+  tree tmp = TREE_PURPOSE (enum_decl);
+  gcc_assert (TREE_CODE (tmp) == CONST_DECL);
+  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
+  def_append (DEF_ENUM_MEMBER, gbuf, DECL_FILE_OFFSET (tmp));
 }
 
 /*
@@ -1722,60 +1588,22 @@ symdb_extern_func_old_param (void *gcc_data, void *user_data)
  *   parameter-list , parameter-declaration
  * parameter-declaration:
  *   declaration-specifiers declarator attributes[opt]
- *
- * We also includes outer/inner-paren cases, see symdb_extern_var.
  */
 static void
 symdb_extern_func (void *gcc_data, void *user_data)
 {
-  db_token *token;
-  int cpp_type, c_type;
-  int index;
-  if (func_old_param != cache_record_itoken_position ())
-    {
-      /* We encounter old-style parameter declaration of function. */
-      index = cache_record_itoken_position () - func_old_param + 1;
-    }
-  else
-    {
-      token = cache_get (0);
-      def_demangle_type (token, &cpp_type, &c_type);
-      gcc_assert (cpp_type == CPP_OPEN_BRACE);
-      index = 1;
-    }
+  const struct c_declarator *da = (const struct c_declarator *) gcc_data;
 
-  token = cache_get (index);
-  def_demangle_type (token, &cpp_type, &c_type);
-  gcc_assert (cpp_type == CPP_CLOSE_PAREN);
-  // here are some cases (tokens in `' are just you've seen in class cache).
-  //    1) ... int `(foo(int i __attribute__((unused)))) {' ...
-  //    2) ... int `*(foo(int i __attribute__((unused)))) {' ...
-  // which includes outer paren, parameter-type-list, variable attribute.
-  if (cache_skip_match_pair (index, ')') == cache_get_itoken_size ())
-    // case 1, adjust `index' to avoid overflow cache.itokens.
-    index++;
-  // strip outer parens.
-  while (true)
-    {
-      int tmp;
-      tmp = cache_skip_match_pair (index, ')');
-      token = cache_get (tmp);
-      def_demangle_type (token, &cpp_type, &c_type);
-      if ((cpp_type == CPP_NAME && c_type == 0xffff) ||
-	  cpp_type == CPP_CLOSE_PAREN)
-	{
-	  index = tmp;
-	  break;
-	}
-      index++;
-    }
-  // strip inner parens.
-  index = def_strip_paren (index);
-  def_append_chk (index, DEF_FUNC, NULL);
+  for (; da->kind == cdk_pointer; da = da->declarator);
+  gcc_assert (da->kind == cdk_function);
+  da = da->declarator;
+  gcc_assert (da->kind == cdk_id);
+
+  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id));
+  def_append (DEF_FUNC, gbuf, da->file_offset);
 
   block_list.enum_spec = true;
   block_list.call_func = false;
-  cache_reset (0);
 }
 
 /*
@@ -1804,28 +1632,6 @@ symdb_extern_func (void *gcc_data, void *user_data)
 * also don't care about function-declaration. So 
 *   direct-declarator ( parameter-type-list )
 * only are available to function pointer.
-*
-* Case `( attributes[opt] declarator )' is called paren cases, see
-* test/paren_declarator/a.c. There're three -- outer, middle and inner cases.
-* `int *(*(*(*(funpvar))[3])(void));'
-* function pointer includes all of them, from left to right.
-* `int ((arr)[3][2]);'
-* includes outer and inner cases. To simple, later code calls outer as middle.
-* And the remain variable types and typedef include only inner cases.
-*
-* To function pointer
-* 1) int (*fun[2])(void); correct.
-* 2) int (*fun)(void)[2]; wrong.
-* Which means `[' is closer than `(void)' to `fun'.
-*
-* Here is a trap to function pointer.
-* int ((*fun[2])(int i __attribute__((unused))));
-* which includes outer paren, parameter-type-list, variable attribute. So just
-* stripping parens from backward to forwared is wrong.
-*
-* Syntax comes from c-parser.c:c_parser_declarator, but later case is also ok?
-* char c __attribute__((unused));
-* To the case, class cache snapshot is `c __attribute__'.
 */
 static void
 symdb_extern_var (void *gcc_data, void *user_data)
@@ -1833,77 +1639,34 @@ symdb_extern_var (void *gcc_data, void *user_data)
   void **pair = (void **) gcc_data;
   const struct c_declspecs *ds = pair[0];
   const struct c_declarator *da = pair[1];
-  db_token *token;
-  int cpp_type, c_type;
-  int index = 1;
-  int funp = 0;
-  int td = 0;
-  int arr = 0;
+  enum definition_flag df = DEF_VAR;
 
   if (ds->storage_class == csc_extern)
     /* User needn't the kind of definition at all. */
     goto done;
   else if (ds->storage_class == csc_typedef)
-    td = 1;
+    df = DEF_TYPEDEF;
 
-  while (da->declarator != NULL)
+  for (; da->declarator != NULL; da = da->declarator)
     {
       if (da->kind == cdk_function)
 	{
-	  if (da->declarator->kind != cdk_pointer && td == 0)
+	  if (da->declarator->kind != cdk_pointer && df != DEF_TYPEDEF)
 	    // Just function declaration.
 	    goto done;
-	  funp = 1;
 	}
-      if (da->kind == cdk_array)
-	arr = 1;
-      da = da->declarator;
+
+      if (da->kind == cdk_id)
+	break;
     }
 
-  if (funp)
-    {
-      if (cache_skip_match_pair (index, ')') == cache_get_itoken_size ())
-	// trap case, adjust `index' to avoid overflow cache.itokens.
-	index++;
-      // strip outer parens.
-      while (true)
-	{
-	  int tmp;
-	  tmp = cache_skip_match_pair (index, ')');
-	  token = cache_get (tmp);
-	  def_demangle_type (token, &cpp_type, &c_type);
-	  if ((cpp_type == CPP_NAME && c_type == 0xffff) ||
-	      cpp_type == CPP_CLOSE_PAREN)
-	    {
-	      index = tmp;
-	      break;
-	    }
-	  index++;
-	}
-    }
-  // strip middle parens.
-  index = def_strip_paren (index);
-  if (arr)
-    {
-      while (1)
-	{
-	  token = cache_get (index);
-	  def_demangle_type (token, &cpp_type, &c_type);
-	  if (cpp_type == CPP_CLOSE_SQUARE)
-	    index = cache_skip_match_pair (index, ']');
-	  else
-	    break;
-	}
-    }
-  // strip inner parens.
-  index = def_strip_paren (index);
-  long long id = def_append_chk (index, td ? DEF_TYPEDEF : DEF_VAR, NULL);
+  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id));
+  long long id = def_append (df, gbuf, da->file_offset);
 
   if (is_anonymous_type (ds->type))
     struct_offsetof (id, ds->type);
 
-done:
-  cache_reset (0);
+done:;
 }
 
 /*
@@ -1934,64 +1697,42 @@ done:
 static void
 symdb_declspecs (void *gcc_data, void *user_data)
 {
-  void **pair = (void **) gcc_data;
-  const struct c_declspecs *ds = pair[0];
-  // Here pair[1] is very important since to gcc intern
-  //    int i;
-  // In the function, class cache snapshot is `int i', so symdb_declspecs >>
-  // cache_reset must make sure later symdb_extern_var will not crashed.
-  int index = (int) pair[1];
-  enum definition_flag flag;
-  db_token *token;
-  int cpp_type, c_type;
+  const struct c_declspecs *ds = (const struct c_declspecs *) gcc_data;
+  enum definition_flag df;
+  tree type = ds->type;
+
+  if (TYPE_FILE_OFFSET (type) == -1)
+    /* Not definition. */
+    goto done;
 
   if (ds->typespec_kind == ctsk_typeof)
     goto done;
 
-  while (true)
-    {
-      token = cache_get (index);
-      def_demangle_type (token, &cpp_type, &c_type);
-      if (cpp_type != CPP_CLOSE_PAREN)
-	break;
-      index = cache_skip_match_pair (index, ')');
-      token = cache_get (index);
-      def_demangle_type (token, &cpp_type, &c_type);
-      gcc_assert (cpp_type == CPP_NAME && c_type == RID_ATTRIBUTE);
-      index++;
-    }
-
-  token = cache_get (index);
-  def_demangle_type (token, &cpp_type, &c_type);
-  if (cpp_type != CPP_CLOSE_BRACE)
-    goto done;
-
-  switch (TREE_CODE (ds->type))
+  switch (TREE_CODE (type))
     {
     case ENUMERAL_TYPE:
-      flag = DEF_ENUM;
+      df = DEF_ENUM;
       break;
     case RECORD_TYPE:
-      flag = DEF_STRUCT;
+      df = DEF_STRUCT;
       break;
     case UNION_TYPE:
-      flag = DEF_UNION;
+      df = DEF_UNION;
       break;
     default:
       goto done;
     }
 
-  index = cache_skip_match_pair (index, '}');
-  token = cache_get (index);
-  if (def_is_uid (token))
+  const char *str = get_typename (type);
+  if (strcmp (str, "") != 0)
     {
-      long long id = def_append_chk (index, flag, NULL);
-      struct_offsetof (id, ds->type);
+      dyn_string_copy_cstr (gbuf, str);
+      long long id = def_append (df, gbuf, TYPE_FILE_OFFSET (type));
+      struct_offsetof (id, type);
     }
   /* else is anonymous struct/union/enum. */
 
-done:
-  cache_reset ((int) pair[1]);
+done:;
 }
 
 static void
@@ -2136,7 +1877,6 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_EXTERN_DECL);
   unregister_callback ("symdb", PLUGIN_CALL_FUNCTION);
   unregister_callback ("symdb", PLUGIN_ENUMERATOR);
-  unregister_callback ("symdb", PLUGIN_EXTERN_FUNC_OLD_PARAM);
   unregister_callback ("symdb", PLUGIN_EXTERN_FUNC);
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
   unregister_callback ("symdb", PLUGIN_EXTERN_DECLSPECS);
@@ -2173,8 +1913,6 @@ plugin_init (struct plugin_name_args *plugin_info,
   register_callback ("symdb", PLUGIN_EXTERN_DECL, &symdb_extern_decl, NULL);
   register_callback ("symdb", PLUGIN_CALL_FUNCTION, &symdb_call_func, NULL);
   register_callback ("symdb", PLUGIN_ENUMERATOR, &symdb_enumerator, NULL);
-  register_callback ("symdb", PLUGIN_EXTERN_FUNC_OLD_PARAM,
-		     &symdb_extern_func_old_param, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_FUNC, &symdb_extern_func, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_VAR, &symdb_extern_var, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_DECLSPECS,

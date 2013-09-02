@@ -71,13 +71,10 @@ if a:from != 1
 	call s:noInput()
 endif
 
-" Call gs, to linux.src, using './gs def filename xx' is slow.
 " let s:str = system('./gs def ' . s:file_name . ' ' . s:symbol)
-let s:str = ''
+let s:str = system('./gs def -- ' . s:symbol)
 if s:str == ''
-	let s:str = system('./gs def -- ' . s:symbol)
-endif
-if s:str == ''
+	echo "Not found."
 	return
 endif
 
@@ -105,6 +102,7 @@ for s:element in s:alist
 	let s:str = s:str . system('./gs callee ' . s:blist[2] . ' ' . s:blist[3])
 endfor
 if s:str == ''
+	echo "Not found."
 	return
 endif
 
@@ -138,6 +136,7 @@ for s:element in s:alist
 	let s:prevalias = s:blist[3]
 endfor
 if s:str == ''
+	echo "Not found."
 	return
 endif
 

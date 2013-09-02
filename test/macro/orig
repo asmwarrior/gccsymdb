@@ -39,6 +39,8 @@ INSERT INTO "Definition" VALUES(30,'foo',9,908);
 INSERT INTO "Definition" VALUES(31,'cond',3,976);
 INSERT INTO "Definition" VALUES(32,'cascaded_cond',3,994);
 INSERT INTO "Definition" VALUES(33,'args',3,1090);
+INSERT INTO "Definition" VALUES(34,'torture',3,1178);
+INSERT INTO "Definition" VALUES(35,'foo',9,1200);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
@@ -61,6 +63,7 @@ INSERT INTO "FunctionRelationship" VALUES(9,24);
 INSERT INTO "FunctionRelationship" VALUES(9,26);
 INSERT INTO "FunctionRelationship" VALUES(9,28);
 INSERT INTO "FunctionRelationship" VALUES(9,30);
+INSERT INTO "FunctionRelationship" VALUES(9,35);
 COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -69,7 +72,7 @@ CREATE TABLE FileDefinition (
 	startDefID bigint,
 	endDefID bigint
 );
-INSERT INTO "FileDefinition" VALUES(1,1,33);
+INSERT INTO "FileDefinition" VALUES(1,1,35);
 CREATE TRIGGER DelFileDefition after delete on FileDefinition
 begin
 	delete from Definition where id >= old.startDefID and id <= old.endDefID;

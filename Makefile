@@ -1,4 +1,4 @@
-.PHONY: default clean format db redo
+.PHONY: default clean format redo
 
 # If only compile the plugin, you can ignore any error from `redo' target.
 
@@ -27,15 +27,12 @@ default:
 	rm _app.c
 	# selinux specific!
 	# chcon -t texrel_shlib_t symdb.so
-	make db
 	make redo
 
 redo:
+	./gs initdb ./
 	${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb || true
 	./gs enddb ./
-
-db:
-	rm -f gccsym.db && ./gs initdb ./
 
 format:
 	# GNU code standard
@@ -46,3 +43,6 @@ clean:
 	(cd test && ./run.sh clean)
 	:> log.gdb
 	rm -f *.db *.db-journal
+
+quilt:
+	cd ${GCC_SRC} && QUILT_DIFF_OPTS=-pu quilt refresh --no-timestamps --sort

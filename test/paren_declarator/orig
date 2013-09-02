@@ -19,7 +19,7 @@ INSERT INTO "Definition" VALUES(10,'enumy',8,223);
 INSERT INTO "Definition" VALUES(11,'oldfun',2,239);
 INSERT INTO "Definition" VALUES(12,'foo',2,274);
 INSERT INTO "Definition" VALUES(13,'main',2,310);
-INSERT INTO "Definition" VALUES(14,'foo',9,356);
+INSERT INTO "Definition" VALUES(14,'foo',9,360);
 INSERT INTO "Definition" VALUES(15,'oof',2,372);
 INSERT INTO "Definition" VALUES(16,'fof',2,389);
 INSERT INTO "Definition" VALUES(17,'fun',1,435);

@@ -40,13 +40,13 @@ INSERT INTO "Definition" VALUES(13,'abc',5,291);
 INSERT INTO "Definition" VALUES(14,'x',1,394);
 INSERT INTO "Definition" VALUES(15,'jump',1,679);
 INSERT INTO "Definition" VALUES(16,'main',2,690);
-INSERT INTO "Definition" VALUES(17,'abc::mem',10,740);
-INSERT INTO "Definition" VALUES(18,'abc::mem',10,757);
-INSERT INTO "Definition" VALUES(19,'abc::mem',10,773);
-INSERT INTO "Definition" VALUES(20,'def::eme',10,791);
-INSERT INTO "Definition" VALUES(21,'def::eme',10,811);
-INSERT INTO "Definition" VALUES(22,'def::eme',10,825);
-INSERT INTO "Definition" VALUES(23,'def::eme',10,841);
+INSERT INTO "Definition" VALUES(17,'abc::mem',10,744);
+INSERT INTO "Definition" VALUES(18,'abc::mem',10,761);
+INSERT INTO "Definition" VALUES(19,'abc::mem',10,777);
+INSERT INTO "Definition" VALUES(20,'def::eme',10,795);
+INSERT INTO "Definition" VALUES(21,'def::eme',10,815);
+INSERT INTO "Definition" VALUES(22,'def::eme',10,829);
+INSERT INTO "Definition" VALUES(23,'def::eme',10,845);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
