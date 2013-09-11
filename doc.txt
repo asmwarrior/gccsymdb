@@ -284,6 +284,7 @@ all cpp_tokens to cp_tokens at one time, it violates the architecture of my
 plugin.
 4) Execute `:Gs fdef open' by vim in linux.src is slow, in fact, it is a
 combination command, try `:Gs falias open' and `:Gs def XXX' individually.
+5) omp extension and objc of gcc aren't supported.
 // }])>
 
 For Developer, need to sychronize with the up-to-dated code.

@@ -7,13 +7,15 @@ CREATE TABLE FunpAlias (
 	funDecl text,
 	offset integer
 );
-INSERT INTO "FunpAlias" VALUES(1,'','u_mem','foo',255);
-INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo',664);
-INSERT INTO "FunpAlias" VALUES(1,'abc','ff','foo',664);
-INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof',664);
-INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo_expr',983);
-INSERT INTO "FunpAlias" VALUES(1,'abc','ff','foo_expr',1070);
-INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof_expr',1091);
+INSERT INTO "FunpAlias" VALUES(1,'','u_mem','foo',238);
+INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo',398);
+INSERT INTO "FunpAlias" VALUES(1,'abc','ff','foo',398);
+INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof',398);
+INSERT INTO "FunpAlias" VALUES(1,'ghi','mem','foo',728);
+INSERT INTO "FunpAlias" VALUES(1,'def','eme','foo',728);
+INSERT INTO "FunpAlias" VALUES(1,'abc','mem','foo_expr',1015);
+INSERT INTO "FunpAlias" VALUES(1,'abc','ff','foo_expr',1116);
+INSERT INTO "FunpAlias" VALUES(1,'def','eme','oof_expr',1134);
 CREATE INDEX Alias on FunpAlias (member, funDecl);
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -39,14 +41,16 @@ INSERT INTO "Definition" VALUES(12,'def',5,266);
 INSERT INTO "Definition" VALUES(13,'abc',5,291);
 INSERT INTO "Definition" VALUES(14,'x',1,394);
 INSERT INTO "Definition" VALUES(15,'jump',1,679);
-INSERT INTO "Definition" VALUES(16,'main',2,690);
-INSERT INTO "Definition" VALUES(17,'abc::mem',10,744);
-INSERT INTO "Definition" VALUES(18,'abc::mem',10,761);
-INSERT INTO "Definition" VALUES(19,'abc::mem',10,777);
-INSERT INTO "Definition" VALUES(20,'def::eme',10,795);
-INSERT INTO "Definition" VALUES(21,'def::eme',10,815);
-INSERT INTO "Definition" VALUES(22,'def::eme',10,829);
-INSERT INTO "Definition" VALUES(23,'def::eme',10,845);
+INSERT INTO "Definition" VALUES(16,'ghi',5,693);
+INSERT INTO "Definition" VALUES(17,'y',1,724);
+INSERT INTO "Definition" VALUES(18,'main',2,751);
+INSERT INTO "Definition" VALUES(19,'abc::mem',10,805);
+INSERT INTO "Definition" VALUES(20,'abc::mem',10,822);
+INSERT INTO "Definition" VALUES(21,'abc::mem',10,838);
+INSERT INTO "Definition" VALUES(22,'def::eme',10,856);
+INSERT INTO "Definition" VALUES(23,'def::eme',10,876);
+INSERT INTO "Definition" VALUES(24,'def::eme',10,890);
+INSERT INTO "Definition" VALUES(25,'def::eme',10,906);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
