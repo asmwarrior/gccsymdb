@@ -504,18 +504,6 @@ mo_append_macro_token (cpp_token_p token)
   mo.macro_count++;
 }
 
-static int
-mo_get_macro_count (void)
-{
-  return mo.macro_count;
-}
-
-static void
-mo_substract_macro_count (int value)
-{
-  mo.macro_count -= value;
-}
-
 static void
 mo_leave (void)
 {
@@ -597,227 +585,6 @@ mo_tini (void)
   dyn_string_delete (mo.macroTokens);
   dyn_string_delete (mo.expandedTokens);
   sqlite3_finalize (mo.insert_macro);
-}
-
-/* }])> */
-
-/* cache <([{ */
-__extension__ enum symdb_flag
-{
-  CPP_TYPE_SHIFT = 0,
-  CPP_TYPE_MASK = 0xff,
-  C_TYPE_SHIFT = 8,
-  C_TYPE_MASK = 0xffff00,
-};
-
-typedef struct
-{
-  enum symdb_flag flag;
-  dyn_string_t value;
-  int file_offset;
-} db_token;
-DEF_VEC_O (db_token);
-DEF_VEC_ALLOC_O (db_token, heap);
-
-typedef struct
-{
-  /* leader expanded token. */
-  db_token leader;
-  lpair scope;
-} let;
-DEF_VEC_O (let);
-DEF_VEC_ALLOC_O (let, heap);
-
-static struct
-{
-  VEC (db_token, heap) * itokens;
-  VEC (let, heap) * auxiliary;
-  db_token *last_cpp_token;
-} cache;
-
-/* debug purpose. */
-static void __attribute__ ((used)) dump_cache (void)
-{
-  int ix;
-  db_token *p;
-  printf ("cache.itokens ----------------\n");
-  FOR_EACH_VEC_ELT (db_token, cache.itokens, ix, p)
-  {
-    printf ("[%d]: %s, %d\n", ix, dyn_string_buf (p->value), p->file_offset);
-  }
-  printf ("cache.auxiliary ----------------\n");
-  let *p2;
-  FOR_EACH_VEC_ELT (let, cache.auxiliary, ix, p2)
-  {
-    printf ("[%d]: (%s:%d), %d, %d\n", ix, dyn_string_buf (p2->leader.value),
-	    p2->leader.file_offset, (int) p2->scope.start,
-	    (int) p2->scope.length);
-  }
-  printf ("\n");
-}
-
-static void
-cache_init (void)
-{
-  cache.itokens = VEC_alloc (db_token, heap, 10);
-  cache.auxiliary = VEC_alloc (let, heap, 10);
-}
-
-static void
-vec_pop_front (void *vec, int reserve)
-{
-  int ix;
-  if (vec == cache.itokens)
-    {
-      db_token *a, *b;
-      if (VEC_length (db_token, cache.itokens) == reserve)
-	return;
-      /* Don't accept overlap case. */
-      gcc_assert (VEC_length (db_token, cache.itokens) >= reserve * 2);
-      for (ix = 0; ix < reserve; ix++)
-	{
-	  a = VEC_index (db_token, cache.itokens, ix);
-	  dyn_string_delete (a->value);
-	}
-      for (ix = 0; ix < reserve; ix++)
-	{
-	  a = VEC_index (db_token, cache.itokens, ix);
-	  b =
-	    VEC_index (db_token, cache.itokens,
-		       VEC_length (db_token, cache.itokens) - reserve + ix);
-	  *a = *b;
-	}
-      for (ix = reserve; ix < VEC_length (db_token, cache.itokens) - reserve;
-	   ix++)
-	{
-	  a = VEC_index (db_token, cache.itokens, ix);
-	  dyn_string_delete (a->value);
-	}
-      VEC_truncate (db_token, cache.itokens, reserve);
-    }
-  else if (vec == cache.auxiliary)
-    {
-      let *a, *b;
-      gcc_assert (VEC_length (let, cache.auxiliary) >= reserve);
-      if (VEC_length (let, cache.auxiliary) == reserve)
-	return;
-      for (ix = 0; ix < reserve; ix++)
-	{
-	  a = VEC_index (let, cache.auxiliary, ix);
-	  dyn_string_delete (a->leader.value);
-	}
-      for (ix = 0; ix < reserve; ix++)
-	{
-	  a = VEC_index (let, cache.auxiliary, ix);
-	  b =
-	    VEC_index (let, cache.auxiliary,
-		       VEC_length (let, cache.auxiliary) - reserve + ix);
-	  *a = *b;
-	}
-      for (ix = reserve; ix < VEC_length (let, cache.auxiliary) - reserve;
-	   ix++)
-	{
-	  a = VEC_index (let, cache.auxiliary, ix);
-	  dyn_string_delete (a->leader.value);
-	}
-      VEC_truncate (let, cache.auxiliary, reserve);
-    }
-}
-
-// Release cache as soon as possible.
-static void
-cache_reset (int reserve)
-{
-  if (mo_isvalid ())
-    {
-      /* Deal with multiple definitions are in a macro internal. */
-      let *p2 = VEC_last (let, cache.auxiliary);
-      mo_substract_macro_count (VEC_length (db_token, cache.itokens) -
-				reserve - p2->scope.start);
-      p2->scope.start = 0;
-      p2->scope.length = 0x1fffffff;
-      vec_pop_front (cache.auxiliary, 1);
-    }
-  else
-    vec_pop_front (cache.auxiliary, 0);
-  vec_pop_front (cache.itokens, reserve);
-}
-
-static void
-cache_tini (void)
-{
-  cache_reset (0);
-  VEC_free (db_token, heap, cache.itokens);
-  VEC_free (let, heap, cache.auxiliary);
-}
-
-static void
-cache_tag_let (cpp_token_p token)
-{
-  let *p = VEC_safe_push (let, heap, cache.auxiliary, NULL);
-  p->leader.value = dyn_string_new (32);
-  p->scope.start = VEC_length (db_token, cache.itokens);
-  /* Here, the length is initialized as 0x1fffffff for tag all following cache.itokens
-   * belong to the macro. */
-  p->scope.length = 0x1fffffff;
-  p->leader.file_offset = token->file_offset;
-  gcc_assert (token->type == CPP_NAME);
-  p->leader.flag = CPP_NAME | C_TYPE_MASK;
-  print_token (token, p->leader.value);
-}
-
-static void
-cache_end_let (void)
-{
-  let *p = VEC_last (let, cache.auxiliary);
-  p->scope.length = mo_get_macro_count ();
-}
-
-static void
-cache_append_itoken_cpp_stage (cpp_token_p token)
-{
-  db_token *p = VEC_safe_push (db_token, heap, cache.itokens, NULL);
-  p->value = dyn_string_new (32);
-  p->flag = token->type | C_TYPE_MASK;
-  p->file_offset = token->file_offset;
-  print_token (token, p->value);
-  cache.last_cpp_token = p;
-}
-
-static void
-cache_append_itoken_c_stage (void /* c_token_p token */ )
-{
-}
-
-static inline int
-revert_index (int index)
-{
-  return VEC_length (db_token, cache.itokens) - 1 - index;
-}
-
-static db_token *
-cache_get (int index)
-{
-  return VEC_index (db_token, cache.itokens, revert_index (index));
-}
-
-static db_token *
-cache_itoken_to_chtoken (int index)
-{
-  db_token *result = NULL;
-  int ix;
-  let *p;
-  int tmp = revert_index (index);
-  FOR_EACH_VEC_ELT_REVERSE (let, cache.auxiliary, ix, p)
-  {
-    if (p->scope.start <= tmp && tmp < p->scope.start + p->scope.length)
-      break;
-  }
-  if (ix != -1)
-    result = &VEC_index (let, cache.auxiliary, ix)->leader;
-  else
-    result = cache_get (index);
-  return result;
 }
 
 /* }])> */
@@ -1099,11 +866,10 @@ static struct
 
 void
 funp_alias_append (const char *struct_name, const char *mem_name,
-		   const char *fun_decl)
+		   const char *fun_decl, int offset)
 {
   // sprintf (stderr, "falias %s::%s = %s\n", struct_name, mem_name, fun_decl);
   int fileid = file_get_current_fid ();
-  int offset = cache_itoken_to_chtoken (0)->file_offset;
   db_error (sqlite3_bind_int (funp_alias.select_funpalias, 1, fileid));
   db_error (sqlite3_bind_text
 	    (funp_alias.select_funpalias, 2, struct_name, -1, SQLITE_STATIC));
@@ -1252,7 +1018,6 @@ cb_macro_start (cpp_reader * pfile, cpp_token_p token,
     {
       bug_trap_token (token->file_offset);
       mo_enter (pfile, token);
-      cache_tag_let (token);
     }
 }
 
@@ -1262,7 +1027,6 @@ cb_macro_end (cpp_reader * pfile, bool in_expansion)
   cpp_callbacks *cb = cpp_get_callbacks (pfile);
   if (!in_expansion)
     {
-      cache_end_let ();
       mo_leave ();
       cb->lex_token = NULL;
       cb->macro_end_expand = NULL;
@@ -1322,7 +1086,6 @@ symdb_unit_init (void *gcc_data, void *user_data)
 
   gbuf = dyn_string_new (1024);
   control_panel_init (main_input_filename);
-  cache_init ();
   offsetof_init ();
   ifdef_init ();
   file_init (main_input_filename);
@@ -1340,7 +1103,6 @@ symdb_unit_tini (void *gcc_data, void *user_data)
   file_tini ();
   ifdef_tini ();
   offsetof_tini ();
-  cache_tini ();
   control_panel_tini ();
   dyn_string_delete (gbuf);
 
@@ -1370,7 +1132,6 @@ symdb_cpp_token (void *gcc_data, void *user_data)
       return;
     }
   bug_trap_token (token->file_offset);
-  cache_append_itoken_cpp_stage (token);
   if (mo_isvalid ())
     mo_append_macro_token (token);
 }
@@ -1381,7 +1142,6 @@ symdb_c_token (void *gcc_data, void *user_data)
   // c_token_p token = gcc_data;
   if (in_pragma)
     return;
-  cache_append_itoken_c_stage ( /* token */ );
 }
 
 static bool
@@ -1743,7 +1503,7 @@ symdb_extern_decl (void *gcc_data, void *user_data)
 }
 
 static void
-constructor_loop (tree node)
+constructor_loop (tree node, int offset)
 {
   tree type = TREE_TYPE (node);
   if (TREE_CODE (type) != RECORD_TYPE && TREE_CODE (type) != UNION_TYPE)
@@ -1777,15 +1537,15 @@ constructor_loop (tree node)
 	const char *a = IDENTIFIER_POINTER (DECL_NAME (index));
 	const char *b = IDENTIFIER_POINTER (DECL_NAME (arg0));
 	const char *c = get_typename (type);
-	funp_alias_append (c, a, b);
+	funp_alias_append (c, a, b, offset);
       }
     else if (TREE_CODE (value) == CONSTRUCTOR)
-      constructor_loop (value);
+      constructor_loop (value, offset);
   }
 }
 
 static void
-modify_expr (tree node)
+modify_expr (tree node, int offset)
 {
   if (!is_fun_p (node))
     return;
@@ -1809,7 +1569,7 @@ modify_expr (tree node)
   const char *a = IDENTIFIER_POINTER (DECL_NAME (member));
   const char *b = IDENTIFIER_POINTER (DECL_NAME (funcdecl));
   const char *c = get_typename (type);
-  funp_alias_append (c, a, b);
+  funp_alias_append (c, a, b, offset);
 }
 
 /*
@@ -1836,19 +1596,21 @@ modify_expr (tree node)
  * designator:
  *   . identifier
  *
- * And you member-function-pointer can't be 2-level function pointer or array.
+ * And you mfp can't be 2-level function pointer or array.
  */
 static void
 symdb_funp_alias (void *gcc_data, void *user_data)
 {
-  tree node = (tree) gcc_data;
+  void **pair = (void **) gcc_data;
+  tree node = (tree) pair[0];
+  int file_offset = (int) pair[1];
   switch (TREE_CODE (node))
     {
     case CONSTRUCTOR:
-      constructor_loop (node);
+      constructor_loop (node, file_offset);
       break;
     case MODIFY_EXPR:
-      modify_expr (node);
+      modify_expr (node, file_offset);
       break;
     default:
       break;
@@ -1880,7 +1642,9 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_EXTERN_FUNC);
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
   unregister_callback ("symdb", PLUGIN_EXTERN_DECLSPECS);
-  unregister_callback ("symdb", PLUGIN_FUNP_ALIAS);
+  unregister_callback ("symdb", PLUGIN_EXTERN_INITIALIZER);
+  // unregister_callback ("symdb", PLUGIN_BEGIN_EXPRESSION);
+  unregister_callback ("symdb", PLUGIN_END_EXPRESSION);
 }
 
 int
@@ -1917,7 +1681,10 @@ plugin_init (struct plugin_name_args *plugin_info,
   register_callback ("symdb", PLUGIN_EXTERN_VAR, &symdb_extern_var, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_DECLSPECS,
 		     &symdb_declspecs, NULL);
-  register_callback ("symdb", PLUGIN_FUNP_ALIAS, &symdb_funp_alias, NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_INITIALIZER, &symdb_funp_alias,
+		     NULL);
+  // register_callback ("symdb", PLUGIN_BEGIN_EXPRESSION, &symdb_funp_alias, NULL);
+  register_callback ("symdb", PLUGIN_END_EXPRESSION, &symdb_funp_alias, NULL);
 
   cpp_callbacks *cb = cpp_get_callbacks (parse_in);
   cb->macro_start_expand = cb_macro_start;

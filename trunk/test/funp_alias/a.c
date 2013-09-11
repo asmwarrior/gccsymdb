@@ -46,6 +46,12 @@ struct abc
 };
 struct abc* jump;
 
+struct ghi
+{
+	F mem;
+	struct def y;
+} y = { foo, { foo } };
+
 int main(void)
 {
 	jump = &x;

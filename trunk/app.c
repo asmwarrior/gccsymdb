@@ -597,7 +597,7 @@ infodb (const char *path)
   dyn_string_append_cstr (gbuf, "/gccsym.db \""
 			  "select name, count(name) from definition "
 			  "group by (name) having count(name) > 1 limit 1;\"");
-  printf ("Duplication of definition name, one of them: ");
+  printf ("Duplication of definition name, one of them|count is: ");
   fflush (NULL);
   system (dyn_string_buf (gbuf));
   free (str);
