@@ -2,34 +2,35 @@ PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE Definition (
 	id integer primary key autoincrement,
+	fileID integer references chFile (id),
 	name text,
 	flag integer,
 	fileoffset integer
 );
-INSERT INTO "Definition" VALUES(1,'M',3,12);
-INSERT INTO "Definition" VALUES(2,'funtd',4,30);
-INSERT INTO "Definition" VALUES(3,'funtdp',4,77);
-INSERT INTO "Definition" VALUES(4,'funpvar',1,98);
-INSERT INTO "Definition" VALUES(5,'itd',4,126);
-INSERT INTO "Definition" VALUES(6,'funtdpcomplex',4,146);
-INSERT INTO "Definition" VALUES(7,'arr',1,178);
-INSERT INTO "Definition" VALUES(8,'p',1,194);
-INSERT INTO "Definition" VALUES(9,'muldef',1,273);
-INSERT INTO "Definition" VALUES(10,'muldef',1,285);
-INSERT INTO "Definition" VALUES(11,'abc',5,301);
-INSERT INTO "Definition" VALUES(12,'v1',1,326);
-INSERT INTO "Definition" VALUES(13,'v2',1,341);
-INSERT INTO "Definition" VALUES(14,'enumx',8,356);
-INSERT INTO "Definition" VALUES(15,'enumy',8,368);
-INSERT INTO "Definition" VALUES(16,'def',5,408);
-INSERT INTO "Definition" VALUES(17,'tp',1,452);
-INSERT INTO "Definition" VALUES(18,'oldfun',2,462);
-INSERT INTO "Definition" VALUES(19,'foo',2,495);
-INSERT INTO "Definition" VALUES(20,'main',2,529);
-INSERT INTO "Definition" VALUES(21,'foo',9,667);
-INSERT INTO "Definition" VALUES(22,'c',1,679);
-INSERT INTO "Definition" VALUES(23,'ofo',2,724);
-INSERT INTO "Definition" VALUES(24,'fof',2,781);
+INSERT INTO "Definition" VALUES(1,1,'M',3,12);
+INSERT INTO "Definition" VALUES(2,1,'funtd',4,30);
+INSERT INTO "Definition" VALUES(3,1,'funtdp',4,77);
+INSERT INTO "Definition" VALUES(4,1,'funpvar',1,98);
+INSERT INTO "Definition" VALUES(5,1,'itd',4,126);
+INSERT INTO "Definition" VALUES(6,1,'funtdpcomplex',4,146);
+INSERT INTO "Definition" VALUES(7,1,'arr',1,178);
+INSERT INTO "Definition" VALUES(8,1,'p',1,194);
+INSERT INTO "Definition" VALUES(9,1,'muldef',1,273);
+INSERT INTO "Definition" VALUES(10,1,'muldef',1,285);
+INSERT INTO "Definition" VALUES(11,1,'abc',5,301);
+INSERT INTO "Definition" VALUES(12,1,'v1',1,326);
+INSERT INTO "Definition" VALUES(13,1,'v2',1,341);
+INSERT INTO "Definition" VALUES(14,1,'enumx',8,356);
+INSERT INTO "Definition" VALUES(15,1,'enumy',8,368);
+INSERT INTO "Definition" VALUES(16,1,'def',5,408);
+INSERT INTO "Definition" VALUES(17,1,'tp',1,452);
+INSERT INTO "Definition" VALUES(18,1,'oldfun',2,462);
+INSERT INTO "Definition" VALUES(19,1,'foo',2,495);
+INSERT INTO "Definition" VALUES(20,1,'main',2,529);
+INSERT INTO "Definition" VALUES(21,1,'foo',9,667);
+INSERT INTO "Definition" VALUES(22,1,'c',1,679);
+INSERT INTO "Definition" VALUES(23,1,'ofo',2,724);
+INSERT INTO "Definition" VALUES(24,1,'fof',2,781);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
@@ -44,17 +45,4 @@ CREATE TABLE FunctionRelationship (
 	callee bigint
 );
 INSERT INTO "FunctionRelationship" VALUES(20,21);
-COMMIT;
-PRAGMA foreign_keys=OFF;
-BEGIN TRANSACTION;
-CREATE TABLE FileDefinition (
-	fileID integer,
-	startDefID bigint,
-	endDefID bigint
-);
-INSERT INTO "FileDefinition" VALUES(1,1,24);
-CREATE TRIGGER DelFileDefition after delete on FileDefinition
-begin
-	delete from Definition where id >= old.startDefID and id <= old.endDefID;
-end;
 COMMIT;

@@ -14,7 +14,7 @@ CREATE INDEX FileName on chFile (name);
 CREATE TRIGGER DelFile after delete on chFile
 begin
 	delete from FileDependence where chID = old.id;
-	delete from FileDefinition where fileID = old.id;
+	delete from Definition where fileID = old.id;
 	delete from Ifdef where fileID = old.id;
 	delete from FunpAlias where fileID = old.id;
 end;
@@ -24,7 +24,7 @@ BEGIN TRANSACTION;
 CREATE TABLE FileDependence (
 	chID integer references chFile (id),
 	hID integer references chFile (id),
-	offset integer
+	offset integer -- `#include' token file-offset.
 );
 INSERT INTO "FileDependence" VALUES(1,2,8);
 INSERT INTO "FileDependence" VALUES(2,3,8);
