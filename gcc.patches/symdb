@@ -527,7 +527,13 @@ Index: gcc/libcpp/directives.c
 ===================================================================
 --- gcc.orig/libcpp/directives.c
 +++ gcc/libcpp/directives.c
-@@ -105,7 +105,7 @@ static void push_conditional (cpp_reader
+@@ -100,12 +100,12 @@ static void directive_diagnostics (cpp_r
+ static void run_directive (cpp_reader *, int, const char *, size_t);
+ static char *glue_header_name (cpp_reader *);
+ static const char *parse_include (cpp_reader *, int *, const cpp_token ***,
+-				  source_location *);
++				  source_location *, int *);
+ static void push_conditional (cpp_reader *, int, int, const cpp_hashnode *);
  static unsigned int read_flag (cpp_reader *, unsigned int);
  static bool strtolinenum (const uchar *, size_t, linenum_type *, bool *);
  static void do_diagnostic (cpp_reader *, int, int, int);
@@ -606,7 +612,62 @@ Index: gcc/libcpp/directives.c
  
    if (node)
      {
-@@ -1815,7 +1828,7 @@ do_ifdef (cpp_reader *pfile)
+@@ -693,7 +706,8 @@ glue_header_name (cpp_reader *pfile)
+ 
+ static const char *
+ parse_include (cpp_reader *pfile, int *pangle_brackets,
+-	       const cpp_token ***buf, source_location *location)
++		   const cpp_token ***buf, source_location *location,
++	       int *token_offset)
+ {
+   char *fname;
+   const cpp_token *header;
+@@ -701,6 +715,7 @@ parse_include (cpp_reader *pfile, int *p
+   /* Allow macro expansion.  */
+   header = get_token_no_padding (pfile);
+   *location = header->src_loc;
++  *token_offset = header->file_offset;
+   if ((header->type == CPP_STRING && header->val.str.text[0] != 'R')
+       || header->type == CPP_HEADER_NAME)
+     {
+@@ -752,12 +767,14 @@ do_include_common (cpp_reader *pfile, en
+   int angle_brackets;
+   const cpp_token **buf = NULL;
+   source_location location;
++  int token_offset;
+ 
+   /* Re-enable saving of comments if requested, so that the include
+      callback can dump comments which follow #include.  */
+   pfile->state.save_comments = ! CPP_OPTION (pfile, discard_comments);
+ 
+-  fname = parse_include (pfile, &angle_brackets, &buf, &location);
++  fname = parse_include (pfile, &angle_brackets, &buf, &location,
++		  &token_offset);
+   if (!fname)
+     {
+       if (buf)
+@@ -789,7 +806,7 @@ do_include_common (cpp_reader *pfile, en
+ 			   pfile->directive->name, fname, angle_brackets,
+ 			   buf);
+ 
+-      _cpp_stack_include (pfile, fname, angle_brackets, type);
++      _cpp_stack_include (pfile, fname, angle_brackets, type, token_offset);
+     }
+ 
+   XDELETEVEC (fname);
+@@ -1607,8 +1624,10 @@ do_pragma_dependency (cpp_reader *pfile)
+   const char *fname;
+   int angle_brackets, ordering;
+   source_location location;
++  int token_offset;
+ 
+-  fname = parse_include (pfile, &angle_brackets, NULL, &location);
++  fname = parse_include (pfile, &angle_brackets, NULL, &location,
++		  &token_offset);
+   if (!fname)
+     return;
+ 
+@@ -1815,7 +1834,7 @@ do_ifdef (cpp_reader *pfile)
  
    if (! pfile->state.skipping)
      {
@@ -615,7 +676,7 @@ Index: gcc/libcpp/directives.c
  
        if (node)
  	{
-@@ -1861,7 +1874,7 @@ do_ifndef (cpp_reader *pfile)
+@@ -1861,7 +1880,7 @@ do_ifndef (cpp_reader *pfile)
  
    if (! pfile->state.skipping)
      {
@@ -624,6 +685,38 @@ Index: gcc/libcpp/directives.c
  
        if (node)
  	{
+Index: gcc/libcpp/files.c
+===================================================================
+--- gcc.orig/libcpp/files.c
++++ gcc/libcpp/files.c
+@@ -907,7 +907,7 @@ dir_name_of_file (_cpp_file *file)
+    Returns true if a buffer was stacked.  */
+ bool
+ _cpp_stack_include (cpp_reader *pfile, const char *fname, int angle_brackets,
+-		    enum include_type type)
++		    enum include_type type, int token_offset)
+ {
+   struct cpp_dir *dir;
+   _cpp_file *file;
+@@ -918,6 +918,9 @@ _cpp_stack_include (cpp_reader *pfile, c
+ 
+   file = _cpp_find_file (pfile, fname, dir, false, angle_brackets);
+ 
++  if (pfile->cb.direct_include)
++    pfile->cb.direct_include (token_offset, file->path, angle_brackets);
++
+   /* Compensate for the increment in linemap_add that occurs in
+      _cpp_stack_file.  In the case of a normal #include, we're
+      currently at the start of the line *following* the #include.  A
+@@ -1347,7 +1350,7 @@ _cpp_compare_file_date (cpp_reader *pfil
+ bool
+ cpp_push_include (cpp_reader *pfile, const char *fname)
+ {
+-  return _cpp_stack_include (pfile, fname, false, IT_CMDLINE);
++  return _cpp_stack_include (pfile, fname, false, IT_CMDLINE, -1);
+ }
+ 
+ /* Do appropriate cleanup when a file INC's buffer is popped off the
 Index: gcc/libcpp/include/cpp-id-data.h
 ===================================================================
 --- gcc.orig/libcpp/include/cpp-id-data.h
@@ -653,10 +746,12 @@ Index: gcc/libcpp/include/cpplib.h
    ENUM_BITFIELD(cpp_ttype) type : CHAR_BIT;  /* token type */
    unsigned short flags;		/* flags - see above */
  
-@@ -493,6 +493,22 @@ struct cpp_callbacks
+@@ -493,6 +493,24 @@ struct cpp_callbacks
       be expanded.  */
    cpp_hashnode * (*macro_to_expand) (cpp_reader *, const cpp_token *);
  
++  /* direct_include shows where a file is founded from `#include' clause. */
++  void (*direct_include) (int, const char *, bool);
 +  /* The more powerful function extracts token than cpp_get_token. Later
 +   * callbacks show it. */
 +  void (*lex_token) (cpp_reader *, const cpp_token*);
@@ -676,7 +771,7 @@ Index: gcc/libcpp/include/cpplib.h
    /* Called to emit a diagnostic.  This callback receives the
       translated message.  */
    bool (*error) (cpp_reader *, int, int, source_location, unsigned int,
-@@ -729,7 +745,7 @@ extern int cpp_avoid_paste (cpp_reader *
+@@ -729,7 +747,7 @@ extern int cpp_avoid_paste (cpp_reader *
  			    const cpp_token *);
  extern const cpp_token *cpp_get_token (cpp_reader *);
  extern const cpp_token *cpp_get_token_with_location (cpp_reader *,
@@ -719,6 +814,15 @@ Index: gcc/libcpp/internal.h
    /* True if this call to cpp_get_token should consider setting
       invocation_location.  */
    bool set_invocation_location;
+@@ -575,7 +591,7 @@ extern void _cpp_mark_file_once_only (cp
+ extern void _cpp_fake_include (cpp_reader *, const char *);
+ extern bool _cpp_stack_file (cpp_reader *, _cpp_file*, bool);
+ extern bool _cpp_stack_include (cpp_reader *, const char *, int,
+-				enum include_type);
++				enum include_type, int);
+ extern int _cpp_compare_file_date (cpp_reader *, const char *, int);
+ extern void _cpp_report_missing_guards (cpp_reader *);
+ extern void _cpp_init_files (cpp_reader *);
 Index: gcc/libcpp/lex.c
 ===================================================================
 --- gcc.orig/libcpp/lex.c

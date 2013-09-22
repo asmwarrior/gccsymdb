@@ -222,7 +222,7 @@ DEF_VEC_ALLOC_O (include_unit, heap);
 static struct
 {
   VEC (lpair, heap) * scopes;	/* for FileDefinition table. */
-  VEC (include_unit, heap) * includee;
+  VEC (include_unit, heap) * includee;	/* file-depend stack. */
 
   struct sqlite3_stmt *select_chfile;
   struct sqlite3_stmt *insert_chfile;
@@ -278,17 +278,18 @@ file_get_current_fid (void)
 }
 
 static void
-insert_filedep (int hid)
+insert_filedep (int hid, int offset)
 {
   int previd = file_get_current_fid ();
-  if (previd == hid)
-    return;
+  gcc_assert (previd != hid);
   db_error (sqlite3_bind_int (file.select_filedep, 1, previd));
   db_error (sqlite3_bind_int (file.select_filedep, 2, hid));
+  db_error (sqlite3_bind_int (file.select_filedep, 3, offset));
   if (sqlite3_step (file.select_filedep) != SQLITE_ROW)
     {
       db_error (sqlite3_bind_int (file.insert_filedep, 1, previd));
       db_error (sqlite3_bind_int (file.insert_filedep, 2, hid));
+      db_error (sqlite3_bind_int (file.insert_filedep, 3, offset));
       execute_sql (file.insert_filedep);
     }
   revalidate_sql (file.select_filedep);
@@ -380,6 +381,15 @@ flush_scopes (void)
   VEC_truncate (lpair, file.scopes, 0);
 }
 
+static void
+file_insert_filedep (int token_offset, const char *fname, bool sys)
+{
+  int id;
+  long long mtime;
+  insert_file (fname, &id, &mtime, sys);
+  insert_filedep (id, token_offset);
+}
+
 static bool mo_isvalid (void);
 static void ifdef_push (void);
 static void
@@ -392,7 +402,6 @@ file_push (const char *f, bool sys)
   if (VEC_length (include_unit, file.includee) != 0)
     {
       flush_scopes ();
-      insert_filedep (id);
     }
   include_unit *p = VEC_safe_push (include_unit, heap, file.includee, NULL);
   p->id = id;
@@ -426,10 +435,10 @@ file_init (const char *main_file)
 				"insert into chFile values (NULL, ?, ?, ?);",
 				-1, &file.insert_chfile, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"select rowid from FileDependence where chFileID = ? and hID = ?;",
+				"select rowid from FileDependence where chID = ? and hID = ? and offset = ?;",
 				-1, &file.select_filedep, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into FileDependence values (?, ?);",
+				"insert into FileDependence values (?, ?, ?);",
 				-1, &file.insert_filedep, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FileDefinition "
@@ -637,7 +646,7 @@ insert_def (enum definition_flag flag, dyn_string_t str, int offset)
       defid = sqlite3_last_insert_rowid (db);
     }
   else
-    defid = sqlite3_column_int64 (def.helper, 1);
+    defid = sqlite3_column_int64 (def.helper, 0);
   revalidate_sql (def.helper);
   return defid;
 }
@@ -784,17 +793,17 @@ DEF_VEC_ALLOC_P (const_char_p, heap);
 static struct
 {
   VEC (const_char_p, heap) * prefix;
-  long long structid;
+  int structid;
 
   struct sqlite3_stmt *select_offsetof;
   struct sqlite3_stmt *insert_offsetof;
 } offsetof;
 
 static bool
-offsetof_prepare (long long structid)
+offsetof_prepare (int structid)
 {
   offsetof.structid = structid;
-  db_error (sqlite3_bind_int64
+  db_error (sqlite3_bind_int
 	    (offsetof.select_offsetof, 1, offsetof.structid));
   bool result = sqlite3_step (offsetof.select_offsetof) != SQLITE_ROW;
   revalidate_sql (offsetof.select_offsetof);
@@ -825,7 +834,7 @@ offsetof_commit (const char *member, int offset)
     dyn_string_append_cstr (gbuf, ".");
   }
   dyn_string_append_cstr (gbuf, member);
-  db_error (sqlite3_bind_int64
+  db_error (sqlite3_bind_int
 	    (offsetof.insert_offsetof, 1, offsetof.structid));
   db_error (sqlite3_bind_text
 	    (offsetof.insert_offsetof, 2, dyn_string_buf (gbuf),
@@ -1033,6 +1042,19 @@ cb_macro_end (cpp_reader * pfile, bool in_expansion)
     }
 }
 
+/* Here, cb_file_change isn't enought because it's fail to notice us when a
+ * standard header which has a guard macro generally (a.h) is included
+ * repeatedly.
+ *     ---- a.h ----
+ *     #ifndef A_H
+ *     #define A_H
+ *     ...
+ *     #endif
+ *     ---- a.c ----
+ *     #include "a.h"
+ *     #include "a.h"
+ * So we need cb_direct_include.
+ */
 typedef void (*CB_FILE_CHANGE) (cpp_reader *, const struct line_map *);
 static CB_FILE_CHANGE orig_file_change;
 static void
@@ -1047,6 +1069,12 @@ cb_file_change (cpp_reader * pfile, const struct line_map *map)
     }
   if (orig_file_change != NULL)
     orig_file_change (pfile, map);
+}
+
+static void
+cb_direct_include (int file_offset, const char *fname, bool sys)
+{
+  file_insert_filedep (file_offset, fname, sys);
 }
 
 /* }])> */
@@ -1231,10 +1259,10 @@ loop_struct (tree field, int base)
 }
 
 static void
-struct_offsetof (long long dbid, tree node)
+struct_offsetof (int structid, tree node)
 {
   tree field;
-  if (!offsetof_prepare (dbid))
+  if (!offsetof_prepare (structid))
     return;
 
   /* From sizeof stack snapshot.
@@ -1691,6 +1719,8 @@ plugin_init (struct plugin_name_args *plugin_info,
   cb->macro_end_expand = cb_macro_end;
   cb->start_directive = cb_start_directive;
   cb->end_directive = cb_end_directive;
+  cb->direct_include = cb_direct_include;
+  /* cb->lex_token is loaded/unloaded dynamically in my plugin. */
   /* Note: cb->file_change callback is delayed to install in symdb_unit_init
    * for there's an inner hook -- cb_file_change of gcc/c-family/c-opts.c. */
   return 0;
