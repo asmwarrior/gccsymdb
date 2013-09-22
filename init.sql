@@ -29,13 +29,14 @@ create table chFile (
 create table FileDependence (
 	chID integer references chFile (id),
 	hID integer references chFile (id),
-	offset integer
+	offset integer -- `#include' token file-offset.
 );
 -- }])>
 
 -- Definition tables <([{
 create table Definition (
 	id integer primary key autoincrement,
+	fileID integer references chFile (id),
 	name text,
 	flag integer,
 	fileoffset integer
@@ -44,12 +45,6 @@ create table Definition (
 create table FunctionRelationship (
 	caller bigint,
 	callee bigint
-);
-
-create table FileDefinition (
-	fileID integer,
-	startDefID bigint,
-	endDefID bigint
 );
 -- }])>
 
@@ -100,10 +95,9 @@ select * from
 select
 	f.id as fileID, f.name as fileName, fileoffset, d.id as defID, d.name as defName, flag
 from
-	chFile f, Definition as d, FileDefinition fd
+	chFile f, Definition as d
 where
-	fd.fileID = f.id and
-	fd.startDefID <= d.id and fd.endDefID >= d.id
+	d.fileID = f.id
 );
 
 -- Search function-call relationship.
@@ -116,11 +110,10 @@ select
 	d2.fileOffset as calleeFileOffset, callee as calleeID, d2.name as calleeName,
 	d2.flag
 from
-	FunctionRelationship dr, chFile f, FileDefinition fd, Definition as d1, Definition as d2
+	FunctionRelationship dr, chFile f, Definition as d1, Definition as d2
 where
 	dr.caller = d1.id and dr.callee = d2.id and
-	fd.fileID = f.id and
-	fd.startDefID <= dr.caller and fd.endDefID >= dr.caller
+	d1.fileID = f.id
 );
 -- }])>
 
@@ -140,15 +133,10 @@ begin
 	delete from Offsetof where structID = old.id;
 end;
 
-create trigger DelFileDefition after delete on FileDefinition
-begin
-	delete from Definition where id >= old.startDefID and id <= old.endDefID;
-end;
-
 create trigger DelFile after delete on chFile
 begin
 	delete from FileDependence where chID = old.id;
-	delete from FileDefinition where fileID = old.id;
+	delete from Definition where fileID = old.id;
 	delete from Ifdef where fileID = old.id;
 	delete from FunpAlias where fileID = old.id;
 end;

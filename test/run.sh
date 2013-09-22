@@ -11,7 +11,7 @@ dump_helper ()
 	if [ "$1" = "file" ]; then
 		sed 's/uvwxyz/.du chFile\n.du FileDependence/' abc123 > 123abc
 	elif [ "$1" = "def" ]; then
-		sed 's/uvwxyz/.du Definition\n.du FunctionRelationship\n.du FileDefinition/' abc123 > 123abc
+		sed 's/uvwxyz/.du Definition\n.du FunctionRelationship/' abc123 > 123abc
 	elif [ "$1" = "ifdef" ]; then
 		sed 's/uvwxyz/.du chFile\n.du Ifdef/' abc123 > 123abc
 	elif [ "$1" = "falias" ]; then

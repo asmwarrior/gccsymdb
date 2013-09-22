@@ -24,8 +24,7 @@
  *   for class macro, DEF_MACRO and file dependence.
  *   5) Class def: cooperate plugin-callbacks to parse definition in
  *   cache.itokens and is in charge of Definition fold of init.sql.
- *   6) Class file: is in charge of File fold and FileDefinition table of
- *   init.sql.
+ *   6) Class file: is in charge of File fold of init.sql.
  *   7) Class ifdef: is in charge of Ifdef table of init.sql.
  *   8) Class funp_alias: is in charge of FunpAlias table of init.sql.
  *   9) Class mo: now, is also charge of Macro table.
@@ -210,7 +209,7 @@ print_token (cpp_token_p token, dyn_string_t str)
 /* }])> */
 
 /* file <([{ */
-/* The class is in charge of file tables and FileDefinition table. */
+/* The class is in charge of file and FileDependence table. */
 typedef struct
 {
   int id;
@@ -221,15 +220,12 @@ DEF_VEC_ALLOC_O (include_unit, heap);
 
 static struct
 {
-  VEC (lpair, heap) * scopes;	/* for FileDefinition table. */
   VEC (include_unit, heap) * includee;	/* file-depend stack. */
 
   struct sqlite3_stmt *select_chfile;
   struct sqlite3_stmt *insert_chfile;
   struct sqlite3_stmt *select_filedep;
   struct sqlite3_stmt *insert_filedep;
-  struct sqlite3_stmt *select_filedef;
-  struct sqlite3_stmt *insert_filedef;
 } file;
 
 static long long
@@ -341,47 +337,6 @@ reinsert:
 }
 
 static void
-file_insert_defid (long long defid)
-{
-  int fileid = file_get_current_fid ();
-  db_error (sqlite3_bind_int (file.select_filedef, 1, fileid));
-  db_error (sqlite3_bind_int64 (file.select_filedef, 2, defid));
-  db_error (sqlite3_bind_int64 (file.select_filedef, 3, defid));
-  if (sqlite3_step (file.select_filedef) != SQLITE_ROW)
-    {
-      lpair *s;
-      if (VEC_length (lpair, file.scopes) != 0)
-	{
-	  s = VEC_last (lpair, file.scopes);
-	  if (defid == s->end + 1)
-	    {
-	      s->end++;
-	      goto done;
-	    }
-	}
-      s = VEC_safe_push (lpair, heap, file.scopes, NULL);
-      s->start = s->end = defid;
-    }
-done:
-  revalidate_sql (file.select_filedef);
-}
-
-static void
-flush_scopes (void)
-{
-  int ix, fileid = file_get_current_fid ();
-  lpair *p;
-  FOR_EACH_VEC_ELT_REVERSE (lpair, file.scopes, ix, p)
-  {
-    db_error (sqlite3_bind_int (file.insert_filedef, 1, fileid));
-    db_error (sqlite3_bind_int64 (file.insert_filedef, 2, p->start));
-    db_error (sqlite3_bind_int64 (file.insert_filedef, 3, p->end));
-    execute_sql (file.insert_filedef);
-  }
-  VEC_truncate (lpair, file.scopes, 0);
-}
-
-static void
 file_insert_filedep (int token_offset, const char *fname, bool sys)
 {
   int id;
@@ -399,10 +354,6 @@ file_push (const char *f, bool sys)
   long long mtime;
   gcc_assert (!mo_isvalid ());
   insert_file (f, &id, &mtime, sys);
-  if (VEC_length (include_unit, file.includee) != 0)
-    {
-      flush_scopes ();
-    }
   include_unit *p = VEC_safe_push (include_unit, heap, file.includee, NULL);
   p->id = id;
   p->name = dyn_string_new (32);
@@ -416,7 +367,6 @@ file_pop (void)
 {
   ifdef_pop ();
   gcc_assert (!mo_isvalid ());
-  flush_scopes ();
   include_unit *p = VEC_last (include_unit, file.includee);
   dyn_string_delete (p->name);
   VEC_pop (include_unit, file.includee);
@@ -425,7 +375,6 @@ file_pop (void)
 static void
 file_init (const char *main_file)
 {
-  file.scopes = VEC_alloc (lpair, heap, 10);
   file.includee = VEC_alloc (include_unit, heap, 10);
 
   db_error (sqlite3_prepare_v2 (db,
@@ -440,13 +389,6 @@ file_init (const char *main_file)
   db_error (sqlite3_prepare_v2 (db,
 				"insert into FileDependence values (?, ?, ?);",
 				-1, &file.insert_filedep, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"select rowid from FileDefinition "
-				"where fileID = ? and startDefID <= ? and endDefID >= ?;",
-				-1, &file.select_filedef, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into FileDefinition values (?, ?, ?);",
-				-1, &file.insert_filedef, 0));
 
   file_push (main_file, false);
 }
@@ -455,15 +397,12 @@ static void
 file_tini (void)
 {
   file_pop ();
-  sqlite3_finalize (file.insert_filedef);
-  sqlite3_finalize (file.select_filedef);
   sqlite3_finalize (file.insert_filedep);
   sqlite3_finalize (file.select_filedep);
   sqlite3_finalize (file.insert_chfile);
   sqlite3_finalize (file.select_chfile);
 
   VEC_free (include_unit, heap, file.includee);
-  VEC_free (lpair, heap, file.scopes);
 }
 
 /* }])> */
@@ -624,29 +563,30 @@ static struct
   struct sqlite3_stmt *insert_defrel;
 } def;
 
-static long long
+static int
 insert_def (enum definition_flag flag, dyn_string_t str, int offset)
 {
   int fid = file_get_current_fid ();
   long long defid;
   db_error (sqlite3_bind_int (def.helper, 1, fid));
-  db_error (sqlite3_bind_int (def.helper, 2, offset));
   db_error (sqlite3_bind_text
-	    (def.helper, 3, dyn_string_buf (str),
+	    (def.helper, 2, dyn_string_buf (str),
 	     dyn_string_length (str), SQLITE_STATIC));
-  db_error (sqlite3_bind_int (def.helper, 4, flag));
+  db_error (sqlite3_bind_int (def.helper, 3, flag));
+  db_error (sqlite3_bind_int (def.helper, 4, offset));
   if (sqlite3_step (def.helper) != SQLITE_ROW)
     {
+      db_error (sqlite3_bind_int (def.insert_def, 1, fid));
       db_error (sqlite3_bind_text
-		(def.insert_def, 1, dyn_string_buf (str),
+		(def.insert_def, 2, dyn_string_buf (str),
 		 dyn_string_length (str), SQLITE_STATIC));
-      db_error (sqlite3_bind_int (def.insert_def, 2, flag));
-      db_error (sqlite3_bind_int (def.insert_def, 3, offset));
+      db_error (sqlite3_bind_int (def.insert_def, 3, flag));
+      db_error (sqlite3_bind_int (def.insert_def, 4, offset));
       execute_sql (def.insert_def);
       defid = sqlite3_last_insert_rowid (db);
     }
   else
-    defid = sqlite3_column_int64 (def.helper, 0);
+    defid = sqlite3_column_int (def.helper, 0);
   revalidate_sql (def.helper);
   return defid;
 }
@@ -655,26 +595,25 @@ static void
 insert_defrel (long long callee)
 {
   long long caller = def.caller_id;
-  db_error (sqlite3_bind_int64 (def.select_defrel, 1, caller));
-  db_error (sqlite3_bind_int64 (def.select_defrel, 2, callee));
+  db_error (sqlite3_bind_int (def.select_defrel, 1, caller));
+  db_error (sqlite3_bind_int (def.select_defrel, 2, callee));
   if (sqlite3_step (def.select_defrel) != SQLITE_ROW)
     {
-      db_error (sqlite3_bind_int64 (def.insert_defrel, 1, caller));
-      db_error (sqlite3_bind_int64 (def.insert_defrel, 2, callee));
+      db_error (sqlite3_bind_int (def.insert_defrel, 1, caller));
+      db_error (sqlite3_bind_int (def.insert_defrel, 2, callee));
       execute_sql (def.insert_defrel);
     }
   revalidate_sql (def.select_defrel);
 }
 
-static long long
+static int
 def_append (enum definition_flag flag, dyn_string_t str, int offset)
 {
-  long long defid = insert_def (flag, str, offset);
+  int defid = insert_def (flag, str, offset);
   if (flag == DEF_FUNC)
     def.caller_id = defid;
   else if (flag == DEF_CALLED_FUNC || flag == DEF_CALLED_POINTER)
     insert_defrel (defid);
-  file_insert_defid (defid);
   return defid;
 }
 
@@ -683,11 +622,11 @@ def_init (void)
 {
   /* Search FileSymbol view not Definition table. */
   db_error (sqlite3_prepare_v2 (db,
-				"select defID from FileSymbol "
-				"where fileID = ? and fileoffset = ? and defName = ? and flag = ?;",
+				"select id from Definition "
+				"where fileID = ? and name = ? and flag = ? and fileoffset = ?;",
 				-1, &def.helper, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into Definition values (NULL, ?, ?, ?);",
+				"insert into Definition values (NULL, ?, ?, ?, ?);",
 				-1, &def.insert_def, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FunctionRelationship where caller = ? and callee = ?;",
@@ -1043,8 +982,7 @@ cb_macro_end (cpp_reader * pfile, bool in_expansion)
 }
 
 /* Here, cb_file_change isn't enought because it's fail to notice us when a
- * standard header which has a guard macro generally (a.h) is included
- * repeatedly.
+ * header which has a guard macro is included repeatedly.
  *     ---- a.h ----
  *     #ifndef A_H
  *     #define A_H
@@ -1053,7 +991,7 @@ cb_macro_end (cpp_reader * pfile, bool in_expansion)
  *     ---- a.c ----
  *     #include "a.h"
  *     #include "a.h"
- * So we need cb_direct_include.
+ * So we need cb_direct_include which can record the lines to database.
  */
 typedef void (*CB_FILE_CHANGE) (cpp_reader *, const struct line_map *);
 static CB_FILE_CHANGE orig_file_change;
@@ -1449,7 +1387,7 @@ symdb_extern_var (void *gcc_data, void *user_data)
     }
 
   dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id));
-  long long id = def_append (df, gbuf, da->file_offset);
+  int id = def_append (df, gbuf, da->file_offset);
 
   if (is_anonymous_type (ds->type))
     struct_offsetof (id, ds->type);
@@ -1515,7 +1453,7 @@ symdb_declspecs (void *gcc_data, void *user_data)
   if (strcmp (str, "") != 0)
     {
       dyn_string_copy_cstr (gbuf, str);
-      long long id = def_append (df, gbuf, TYPE_FILE_OFFSET (type));
+      int id = def_append (df, gbuf, TYPE_FILE_OFFSET (type));
       struct_offsetof (id, type);
     }
   /* else is anonymous struct/union/enum. */

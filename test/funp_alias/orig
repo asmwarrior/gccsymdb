@@ -22,35 +22,36 @@ PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE Definition (
 	id integer primary key autoincrement,
+	fileID integer references chFile (id),
 	name text,
 	flag integer,
 	fileoffset integer
 );
-INSERT INTO "Definition" VALUES(1,'F',4,15);
-INSERT INTO "Definition" VALUES(2,'FF',4,39);
-INSERT INTO "Definition" VALUES(3,'control',1,63);
-INSERT INTO "Definition" VALUES(4,'f',1,78);
-INSERT INTO "Definition" VALUES(5,'foo',2,86);
-INSERT INTO "Definition" VALUES(6,'oof',2,104);
-INSERT INTO "Definition" VALUES(7,'ofo',2,122);
-INSERT INTO "Definition" VALUES(8,'foo_expr',2,140);
-INSERT INTO "Definition" VALUES(9,'oof_expr',2,163);
-INSERT INTO "Definition" VALUES(10,'ofo_expr',2,186);
-INSERT INTO "Definition" VALUES(11,'u',1,234);
-INSERT INTO "Definition" VALUES(12,'def',5,266);
-INSERT INTO "Definition" VALUES(13,'abc',5,291);
-INSERT INTO "Definition" VALUES(14,'x',1,394);
-INSERT INTO "Definition" VALUES(15,'jump',1,679);
-INSERT INTO "Definition" VALUES(16,'ghi',5,693);
-INSERT INTO "Definition" VALUES(17,'y',1,724);
-INSERT INTO "Definition" VALUES(18,'main',2,751);
-INSERT INTO "Definition" VALUES(19,'abc::mem',10,805);
-INSERT INTO "Definition" VALUES(20,'abc::mem',10,822);
-INSERT INTO "Definition" VALUES(21,'abc::mem',10,838);
-INSERT INTO "Definition" VALUES(22,'def::eme',10,856);
-INSERT INTO "Definition" VALUES(23,'def::eme',10,876);
-INSERT INTO "Definition" VALUES(24,'def::eme',10,890);
-INSERT INTO "Definition" VALUES(25,'def::eme',10,906);
+INSERT INTO "Definition" VALUES(1,1,'F',4,15);
+INSERT INTO "Definition" VALUES(2,1,'FF',4,39);
+INSERT INTO "Definition" VALUES(3,1,'control',1,63);
+INSERT INTO "Definition" VALUES(4,1,'f',1,78);
+INSERT INTO "Definition" VALUES(5,1,'foo',2,86);
+INSERT INTO "Definition" VALUES(6,1,'oof',2,104);
+INSERT INTO "Definition" VALUES(7,1,'ofo',2,122);
+INSERT INTO "Definition" VALUES(8,1,'foo_expr',2,140);
+INSERT INTO "Definition" VALUES(9,1,'oof_expr',2,163);
+INSERT INTO "Definition" VALUES(10,1,'ofo_expr',2,186);
+INSERT INTO "Definition" VALUES(11,1,'u',1,234);
+INSERT INTO "Definition" VALUES(12,1,'def',5,266);
+INSERT INTO "Definition" VALUES(13,1,'abc',5,291);
+INSERT INTO "Definition" VALUES(14,1,'x',1,394);
+INSERT INTO "Definition" VALUES(15,1,'jump',1,679);
+INSERT INTO "Definition" VALUES(16,1,'ghi',5,693);
+INSERT INTO "Definition" VALUES(17,1,'y',1,724);
+INSERT INTO "Definition" VALUES(18,1,'main',2,751);
+INSERT INTO "Definition" VALUES(19,1,'abc::mem',10,805);
+INSERT INTO "Definition" VALUES(20,1,'abc::mem',10,822);
+INSERT INTO "Definition" VALUES(21,1,'abc::mem',10,838);
+INSERT INTO "Definition" VALUES(22,1,'def::eme',10,856);
+INSERT INTO "Definition" VALUES(23,1,'def::eme',10,876);
+INSERT INTO "Definition" VALUES(24,1,'def::eme',10,890);
+INSERT INTO "Definition" VALUES(25,1,'def::eme',10,906);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin

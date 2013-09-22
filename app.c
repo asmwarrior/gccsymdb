@@ -281,21 +281,14 @@ addsym (const char *root_fn, const char *def, const char *fileoffset)
       db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
       fid = dep_get_fid (root_fn);
     }
-  dyn_string_copy_cstr (gbuf, "insert into Definition values (NULL, '");
+  dyn_string_copy_cstr (gbuf, "insert into Definition values (NULL, ");
+  dyn_string_append_cstr (gbuf, fid);
+  dyn_string_append_cstr (gbuf, ", '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "', ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_USER));
   dyn_string_append_cstr (gbuf, ", ");
   dyn_string_append_cstr (gbuf, fileoffset);
-  dyn_string_append_cstr (gbuf, ");");
-  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
-  long long defid = sqlite3_last_insert_rowid (db);
-  dyn_string_copy_cstr (gbuf, "insert into FileDefinition values (");
-  dyn_string_append_cstr (gbuf, fid);
-  dyn_string_append_cstr (gbuf, ", ");
-  dyn_string_append_cstr (gbuf, lltoa (defid));
-  dyn_string_append_cstr (gbuf, ", ");
-  dyn_string_append_cstr (gbuf, lltoa (defid));
   dyn_string_append_cstr (gbuf, ");");
   db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
 }
