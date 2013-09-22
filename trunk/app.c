@@ -136,7 +136,7 @@ recursive_dependence (const char *fid, dyn_string_t result)
   int nrow, ncolumn;
   char *error_msg, **table;
   dyn_string_copy_cstr (dep.str,
-			"select hID from FileDependence where chFileID = ");
+			"select hID from FileDependence where chID = ");
   dyn_string_append_cstr (dep.str, fid);
   dyn_string_append_cstr (dep.str, ";");
   db_error (sqlite3_get_table (db, dyn_string_buf (dep.str), &table,
@@ -305,12 +305,11 @@ rmsym (const char *root_fn, const char *def, const char *fileoffset)
 {
   int nrow, ncolumn;
   char *error_msg, **table;
-  const char *fid = dep_get_fid (root_fn);
   dyn_string_copy_cstr (gbuf,
 			"select defID from FileSymbol where defName = '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "'");
-  if (fid != NULL)
+  if (strcmp (root_fn, "--") != 0)
     {
       dyn_string_append_cstr (gbuf, " and fileName = '");
       dyn_string_append_cstr (gbuf, root_fn);
@@ -475,10 +474,10 @@ filedep (const char *file_name, int dep)
   if (dep)
     dyn_string_append_cstr (gbuf, " hID ");
   else
-    dyn_string_append_cstr (gbuf, " chFileID ");
+    dyn_string_append_cstr (gbuf, " chID ");
   dyn_string_append_cstr (gbuf, "from FileDependence where ");
   if (dep)
-    dyn_string_append_cstr (gbuf, " chFileID = ");
+    dyn_string_append_cstr (gbuf, " chID = ");
   else
     dyn_string_append_cstr (gbuf, " hID = ");
   dyn_string_append_cstr (gbuf, fid);

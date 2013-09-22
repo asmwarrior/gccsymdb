@@ -15,6 +15,7 @@ create table ProjectOverview (
 insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 0, 0, "user data", 't');
 
 -- chFile is the root of all tables, see trigger fold for more, delete the table will delete all things in the file.
+-- But currently, macro feature doesn't depend on chFile table, which is transient.
 
 -- File tables <([{
 create table chFile (
@@ -26,8 +27,9 @@ create table chFile (
 
 -- a c/h file and its direct-including .h.
 create table FileDependence (
-	chFileID integer,
-	hID integer
+	chID integer references chFile (id),
+	hID integer references chFile (id),
+	offset integer
 );
 -- }])>
 
@@ -53,7 +55,7 @@ create table FileDefinition (
 
 -- The table stores the information of which lines are skipped by such like `ifdef/if'.
 create table Ifdef (
-	fileID integer,
+	fileID integer references chFile (id),
 	flag integer,
 	startOffset integer,
 	endOffset integer
@@ -62,7 +64,7 @@ create table Ifdef (
 -- For function alias feature.
 -- The table is used to store where a member function pointer is assigned.
 create table FunpAlias (
-	fileID integer,
+	fileID integer references chFile (id),
 	structName text,
 	member text,
 	funDecl text,
@@ -85,12 +87,12 @@ create table Macro (
 -- For member offset feature.
 -- If member field is '', offset represents the size of the struct.
 create table Offsetof (
-	structID bigint,
+	structID integer references Definition (id),
 	member text,
 	offset integer
 );
 
--- Useful views, search them instead of table if possible <([{
+-- Useful views, search them instead of original tables if possible <([{
 -- Search file-definition pair.
 create view FileSymbol as
 select * from
@@ -145,7 +147,7 @@ end;
 
 create trigger DelFile after delete on chFile
 begin
-	delete from FileDependence where chFileID = old.id;
+	delete from FileDependence where chID = old.id;
 	delete from FileDefinition where fileID = old.id;
 	delete from Ifdef where fileID = old.id;
 	delete from FunpAlias where fileID = old.id;
