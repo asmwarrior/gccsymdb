@@ -23,8 +23,6 @@ static struct
     DEF_UNION,
     DEF_ENUM,
     DEF_ENUM_MEMBER,
-    DEF_CALLED_FUNC,
-    DEF_CALLED_POINTER,
     DEF_USER,
   } flag;
   const char *str;
@@ -37,10 +35,7 @@ static struct
     [DEF_STRUCT].str = "DEF_STRUCT",
     [DEF_UNION].str = "DEF_UNION",
     [DEF_ENUM].str = "DEF_ENUM",
-    [DEF_ENUM_MEMBER].str = "DEF_ENUM_MEMBER",
-    [DEF_CALLED_FUNC].str = "DEF_CALLED_FUNC",
-    [DEF_CALLED_POINTER].str = "DEF_CALLED_POINTER",
-    [DEF_USER].str = "DEF_USER",};
+    [DEF_ENUM_MEMBER].str = "DEF_ENUM_MEMBER",[DEF_USER].str = "DEF_USER",};
 
 enum
 {
@@ -80,11 +75,11 @@ usage (void)
 {
   printf ("Usage:\n");
   printf ("    gs def filename definition\n");
-  printf ("    gs caller -- definition\n");
-  printf ("    gs callee structname definition\n");
+  printf ("    gs caller function\n");
+  printf ("    gs callee struct::mfp/function\n");
   printf ("    gs ifdef filename fileoffset\n");
   printf ("    gs addsym/rmsym filename definition fileoffset\n");
-  printf ("    gs falias member/fundecl symbol\n");
+  printf ("    gs falias struct::mfp/fundecl symbol\n");
   printf ("    gs filedep/filedepee filename\n");
   printf ("    gs macro filename fileoffset\n");
   printf ("    gs macro\n");
@@ -95,9 +90,6 @@ usage (void)
   printf ("    gs relocate prjpath\n");
   printf ("    gs infodb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
-  printf ("        `-' for anonymous struct name\n");
-  printf
-    ("    structname only is used when definition is a member-function-pointer\n");
   return EXIT_FAILURE;
 }
 
@@ -205,11 +197,7 @@ def (const char *root_fn, const char *def)
   dyn_string_copy_cstr (gbuf,
 			"select fileName, fileoffset, flag from FileSymbol where defName = '");
   dyn_string_append_cstr (gbuf, def);
-  dyn_string_append_cstr (gbuf, "' and flag != ");
-  dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_FUNC));
-  dyn_string_append_cstr (gbuf, " and flag != ");
-  dyn_string_append_cstr (gbuf, lltoa (DEF_CALLED_POINTER));
-  dyn_string_append_cstr (gbuf, " and ");
+  dyn_string_append_cstr (gbuf, "' and ");
   dyn_string_append (gbuf, list);
   dyn_string_append_cstr (gbuf, ";");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
@@ -221,48 +209,40 @@ def (const char *root_fn, const char *def)
 }
 
 static void
-caller (const char *root_fn, const char *def)
+caller (const char *def)
 {
   int nrow, ncolumn;
   char *error_msg, **table;
 
   dyn_string_copy_cstr (gbuf,
-			"select fileName, calleeFileOffset, calleeName, flag"
+			"select calleeFileName, calleeFileOffset, calleeName"
 			" from CallRelationship where callerName = '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "';");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
-    printf ("%s %s %s %s\n", table[i * ncolumn + 0],
-	    table[i * ncolumn + 1], table[i * ncolumn + 2],
-	    def_flags[atoi (table[i * ncolumn + 3])].str);
+    printf ("%s %s %s\n", table[i * ncolumn + 0],
+	    table[i * ncolumn + 1], table[i * ncolumn + 2]);
   sqlite3_free_table (table);
 }
 
 static void
-callee (const char *struct_name, const char *def)
+callee (const char *def)
 {
   int nrow, ncolumn;
   char *error_msg, **table;
 
   dyn_string_copy_cstr (gbuf,
-			"select distinct fileName, callerFileOffset, callerName, flag"
+			"select distinct callerFileName, callerFileOffset, callerName"
 			" from CallRelationship where calleeName = '");
-  if (strcmp (struct_name, "--") != 0)
-    {
-      if (strcmp (struct_name, "-") != 0)
-	dyn_string_append_cstr (gbuf, struct_name);
-      dyn_string_append_cstr (gbuf, "::");
-    }
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "';");
   db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
 			       &nrow, &ncolumn, &error_msg));
   for (int i = 1; i <= nrow; i++)
-    printf ("%s %s %s %s\n", table[i * ncolumn + 0],
-	    table[i * ncolumn + 1], table[i * ncolumn + 2],
-	    def_flags[atoi (table[i * ncolumn + 3])].str);
+    printf ("%s %s %s\n", table[i * ncolumn + 0],
+	    table[i * ncolumn + 1], table[i * ncolumn + 2]);
   sqlite3_free_table (table);
 }
 
@@ -634,9 +614,9 @@ main (int argc, char **argv)
   if (strcmp (argv[1], "def") == 0)
     def (argv[2], argv[3]);
   else if (strcmp (argv[1], "caller") == 0)
-    caller (argv[2], argv[3]);
+    caller (argv[2]);
   else if (strcmp (argv[1], "callee") == 0)
-    callee (argv[2], argv[3]);
+    callee (argv[2]);
   else if (strcmp (argv[1], "ifdef") == 0)
     ifdef (argv[2], argv[3]);
   else if (strcmp (argv[1], "addsym") == 0)

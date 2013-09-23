@@ -27,22 +27,13 @@ INSERT INTO "Definition" VALUES(17,1,'tp',1,452);
 INSERT INTO "Definition" VALUES(18,1,'oldfun',2,462);
 INSERT INTO "Definition" VALUES(19,1,'foo',2,495);
 INSERT INTO "Definition" VALUES(20,1,'main',2,529);
-INSERT INTO "Definition" VALUES(21,1,'foo',9,667);
-INSERT INTO "Definition" VALUES(22,1,'c',1,679);
-INSERT INTO "Definition" VALUES(23,1,'ofo',2,724);
-INSERT INTO "Definition" VALUES(24,1,'fof',2,781);
+INSERT INTO "Definition" VALUES(21,1,'c',1,679);
+INSERT INTO "Definition" VALUES(22,1,'ofo',2,724);
+INSERT INTO "Definition" VALUES(23,1,'fof',2,781);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
 	delete from FunctionRelationship where caller = old.id;
 	delete from Offsetof where structID = old.id;
 end;
-COMMIT;
-PRAGMA foreign_keys=OFF;
-BEGIN TRANSACTION;
-CREATE TABLE FunctionRelationship (
-	caller bigint,
-	callee bigint
-);
-INSERT INTO "FunctionRelationship" VALUES(20,21);
 COMMIT;

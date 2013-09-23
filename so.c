@@ -59,18 +59,6 @@
 /* common <([{ */
 typedef const struct cpp_token *cpp_token_p;
 
-typedef struct
-{
-  long long start;
-  union
-  {
-    long long end;
-    long long length;
-  };
-} lpair;
-DEF_VEC_O (lpair);
-DEF_VEC_ALLOC_O (lpair, heap);
-
 static dyn_string_t gbuf;	/* Global temporary variable. */
 
 /* sqlite auxiliary <([{ */
@@ -548,26 +536,20 @@ __extension__ enum definition_flag
   DEF_UNION,
   DEF_ENUM,
   DEF_ENUM_MEMBER,
-  DEF_CALLED_FUNC,
-  DEF_CALLED_POINTER,
   DEF_USER,
 };
 
 static struct
 {
-  long long caller_id;
-
   struct sqlite3_stmt *helper;
   struct sqlite3_stmt *insert_def;
-  struct sqlite3_stmt *select_defrel;
-  struct sqlite3_stmt *insert_defrel;
 } def;
 
 static int
 insert_def (enum definition_flag flag, dyn_string_t str, int offset)
 {
   int fid = file_get_current_fid ();
-  long long defid;
+  int defid;
   db_error (sqlite3_bind_int (def.helper, 1, fid));
   db_error (sqlite3_bind_text
 	    (def.helper, 2, dyn_string_buf (str),
@@ -591,29 +573,13 @@ insert_def (enum definition_flag flag, dyn_string_t str, int offset)
   return defid;
 }
 
-static void
-insert_defrel (long long callee)
-{
-  long long caller = def.caller_id;
-  db_error (sqlite3_bind_int (def.select_defrel, 1, caller));
-  db_error (sqlite3_bind_int (def.select_defrel, 2, callee));
-  if (sqlite3_step (def.select_defrel) != SQLITE_ROW)
-    {
-      db_error (sqlite3_bind_int (def.insert_defrel, 1, caller));
-      db_error (sqlite3_bind_int (def.insert_defrel, 2, callee));
-      execute_sql (def.insert_defrel);
-    }
-  revalidate_sql (def.select_defrel);
-}
-
+static void fcallf_callerid (int);
 static int
 def_append (enum definition_flag flag, dyn_string_t str, int offset)
 {
   int defid = insert_def (flag, str, offset);
   if (flag == DEF_FUNC)
-    def.caller_id = defid;
-  else if (flag == DEF_CALLED_FUNC || flag == DEF_CALLED_POINTER)
-    insert_defrel (defid);
+    fcallf_callerid (defid);
   return defid;
 }
 
@@ -628,21 +594,75 @@ def_init (void)
   db_error (sqlite3_prepare_v2 (db,
 				"insert into Definition values (NULL, ?, ?, ?, ?);",
 				-1, &def.insert_def, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"select rowid from FunctionRelationship where caller = ? and callee = ?;",
-				-1, &def.select_defrel, 0));
-  db_error (sqlite3_prepare_v2 (db,
-				"insert into FunctionRelationship values (?, ?);",
-				-1, &def.insert_defrel, 0));
 }
 
 static void
 def_tini (void)
 {
-  sqlite3_finalize (def.insert_defrel);
-  sqlite3_finalize (def.select_defrel);
   sqlite3_finalize (def.insert_def);
   sqlite3_finalize (def.helper);
+}
+
+/* }])> */
+
+/* f-call-f <([{ */
+static struct
+{
+  int caller_id;
+
+  struct sqlite3_stmt *select_fcallf;
+  struct sqlite3_stmt *insert_fcallf;
+} fcallf;
+
+static void
+fcallf_callerid (int caller_id)
+{
+  fcallf.caller_id = caller_id;
+}
+
+static void
+fcallf_insert (dyn_string_t str, int offset)
+{
+  int fid = file_get_current_fid ();
+  gcc_assert (fcallf.caller_id != -1);
+  db_error (sqlite3_bind_int (fcallf.select_fcallf, 1, fcallf.caller_id));
+  db_error (sqlite3_bind_int (fcallf.select_fcallf, 2, fid));
+  db_error (sqlite3_bind_text
+	    (fcallf.select_fcallf, 3, dyn_string_buf (str),
+	     dyn_string_length (str), SQLITE_STATIC));
+  db_error (sqlite3_bind_int (fcallf.select_fcallf, 4, offset));
+  if (sqlite3_step (fcallf.select_fcallf) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_int (fcallf.insert_fcallf, 1, fcallf.caller_id));
+      db_error (sqlite3_bind_int (fcallf.insert_fcallf, 2, fid));
+      db_error (sqlite3_bind_text
+		(fcallf.insert_fcallf, 3, dyn_string_buf (str),
+		 dyn_string_length (str), SQLITE_STATIC));
+      db_error (sqlite3_bind_int (fcallf.insert_fcallf, 4, offset));
+      execute_sql (fcallf.insert_fcallf);
+    }
+  revalidate_sql (fcallf.select_fcallf);
+}
+
+static void
+fcallf_init (void)
+{
+  /* Search FileSymbol view not Definition table. */
+  db_error (sqlite3_prepare_v2 (db,
+				"select rowid from FunctionCall where "
+				" callerID = ? and fileID = ? and name = ? and fileoffset = ?;",
+				-1, &fcallf.select_fcallf, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into FunctionCall values (?, ?, ?, ?);",
+				-1, &fcallf.insert_fcallf, 0));
+  fcallf.caller_id = -1;
+}
+
+static void
+fcallf_tini (void)
+{
+  sqlite3_finalize (fcallf.insert_fcallf);
+  sqlite3_finalize (fcallf.select_fcallf);
 }
 
 /* }])> */
@@ -655,9 +675,17 @@ __extension__ enum ifdef_flag
   NO_SKIPPED,
 };
 
+typedef struct
+{
+  int start;
+  int end;
+} pair;
+DEF_VEC_O (pair);
+DEF_VEC_ALLOC_O (pair, heap);
+
 static struct
 {
-  VEC (lpair, heap) * units;
+  VEC (pair, heap) * units;
 
   struct sqlite3_stmt *select_ifdef;
   struct sqlite3_stmt *insert_ifdef;
@@ -666,7 +694,7 @@ static struct
 static void
 ifdef_append (enum ifdef_flag flag, int offset)
 {
-  lpair *unit = VEC_last (lpair, ifdef.units);
+  pair *unit = VEC_last (pair, ifdef.units);
   unit->end = offset;
   int fileid = file_get_current_fid ();
   db_error (sqlite3_bind_int (ifdef.select_ifdef, 1, fileid));
@@ -688,7 +716,7 @@ ifdef_append (enum ifdef_flag flag, int offset)
 static void
 ifdef_push (void)
 {
-  lpair *unit = VEC_safe_push (lpair, heap, ifdef.units, NULL);
+  pair *unit = VEC_safe_push (pair, heap, ifdef.units, NULL);
   unit->start = 0;
   unit->end = -1;
 }
@@ -697,7 +725,7 @@ static void
 ifdef_pop (void)
 {
   ifdef_append (NO_SKIPPED, 0x10000000);
-  VEC_pop (lpair, ifdef.units);
+  VEC_pop (pair, ifdef.units);
 }
 
 static void
@@ -711,13 +739,13 @@ ifdef_init (void)
   db_error (sqlite3_prepare_v2 (db,
 				"insert into Ifdef values (?, ?, ?, ?);",
 				-1, &ifdef.insert_ifdef, 0));
-  ifdef.units = VEC_alloc (lpair, heap, 10);
+  ifdef.units = VEC_alloc (pair, heap, 10);
 }
 
 static void
 ifdef_tini (void)
 {
-  VEC_free (lpair, heap, ifdef.units);
+  VEC_free (pair, heap, ifdef.units);
   sqlite3_finalize (ifdef.insert_ifdef);
   sqlite3_finalize (ifdef.select_ifdef);
 }
@@ -1056,6 +1084,7 @@ symdb_unit_init (void *gcc_data, void *user_data)
   ifdef_init ();
   file_init (main_input_filename);
   def_init ();
+  fcallf_init ();
   funp_alias_init ();
   mo_init ();
 }
@@ -1065,6 +1094,7 @@ symdb_unit_tini (void *gcc_data, void *user_data)
 {
   mo_tini ();
   funp_alias_tini ();
+  fcallf_tini ();
   def_tini ();
   file_tini ();
   ifdef_tini ();
@@ -1240,7 +1270,7 @@ symdb_call_func (void *gcc_data, void *user_data)
   void **pair = (void **) gcc_data;
   tree decl = (tree) pair[0], type = NULL, member;
   int file_offset = (int) pair[1];
-  enum definition_flag df = DEF_CALLED_FUNC;
+  bool mfp = false;
   if (block_list.call_func)
     return;
   if (TREE_CODE (decl) == FUNCTION_DECL)
@@ -1256,11 +1286,11 @@ symdb_call_func (void *gcc_data, void *user_data)
 	  decl = TREE_OPERAND (decl, 0);
 	}
       if (var_is_mfp (decl, &type, &member))
-	df = DEF_CALLED_POINTER;
+	mfp = true;
       else
 	goto done;
     }
-  if (df == DEF_CALLED_POINTER)
+  if (mfp)
     {
       if (type != NULL)
 	dyn_string_copy_cstr (gbuf, get_typename (type));
@@ -1271,7 +1301,7 @@ symdb_call_func (void *gcc_data, void *user_data)
     }
   else
     dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (decl)));
-  def_append (df, gbuf, file_offset);
+  fcallf_insert (gbuf, file_offset);
 
 done:;
 }
