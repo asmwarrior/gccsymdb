@@ -33,7 +33,7 @@ create table FileDependence (
 );
 -- }])>
 
--- Definition tables <([{
+-- Definition tables
 create table Definition (
 	id integer primary key autoincrement,
 	fileID integer references chFile (id),
@@ -42,11 +42,13 @@ create table Definition (
 	fileoffset integer
 );
 
-create table FunctionRelationship (
-	caller bigint,
-	callee bigint
+-- fun-call-fun, or fun-call-mfp feature, abbr. f-call-f.
+create table FunctionCall (
+	callerID integer references Definition (id),
+	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
+	name text, -- if name is like `XX::YY', that is, include '::', it's mfp call, otherwise, function call.
+	fileoffset integer
 );
--- }])>
 
 -- The table stores the information of which lines are skipped by such like `ifdef/if'.
 create table Ifdef (
@@ -105,15 +107,13 @@ create view CallRelationship as
 select * from
 (
 select
-	f.id as fileID, f.name as fileName,
-	d1.fileOffset as callerFileOffset, caller as callerID, d1.name as callerName,
-	d2.fileOffset as calleeFileOffset, callee as calleeID, d2.name as calleeName,
-	d2.flag
+	f1.id as callerFileID, f1.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
+	f2.id as calleeFileID, f2.name as calleeFileName, dc.fileOffset as calleeFileOffset, 0 as calleeID, dc.name as calleeName
 from
-	FunctionRelationship dr, chFile f, Definition as d1, Definition as d2
+	FunctionCall dc, chFile f1, chFile f2, Definition as d
 where
-	dr.caller = d1.id and dr.callee = d2.id and
-	d1.fileID = f.id
+	dc.callerID = d.id and
+	d.fileID = f1.id and dc.fileID = f2.id
 );
 -- }])>
 
