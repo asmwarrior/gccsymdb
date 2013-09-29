@@ -85,10 +85,10 @@ usage (void)
   printf ("    gs macro\n");
   printf ("    gs sizeof struct\n");
   printf ("    gs offsetof struct member\n");
+  printf ("    gs infodb\n");
   printf ("    gs initdb prjpath user-defined-info\n");
   printf ("    gs enddb prjpath\n");
   printf ("    gs relocate prjpath\n");
-  printf ("    gs infodb prjpath\n");
   printf ("    Meanwhile, filename can be substituted by `--' (all files)\n");
   return EXIT_FAILURE;
 }
@@ -541,38 +541,40 @@ offset_of (const char *struct_name, const char *member)
 }
 
 static void
-infodb (const char *path)
+infodb (void)
 {
-  char *str = lrealpath (path);
+  int nrow, ncolumn;
+  char *error_msg, **table;
   system ("echo \"Current sqlite is:\"");
   system ("sqlite3 --version");
-  dyn_string_copy_cstr (gbuf, "sqlite3 ");
-  dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf, "/gccsym.db \".du ProjectOverview\"");
-  system (dyn_string_buf (gbuf));
-  dyn_string_copy_cstr (gbuf, "sqlite3 ");
-  dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf,
-			  "/gccsym.db \"select count(*) from Definition;\"");
-  printf ("Definition count is ");
-  fflush (NULL);
-  system (dyn_string_buf (gbuf));
-  dyn_string_copy_cstr (gbuf, "sqlite3 ");
-  dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf,
-			  "/gccsym.db \"select count(*) from chFile;\"");
-  printf ("File count is ");
-  fflush (NULL);
-  system (dyn_string_buf (gbuf));
-  dyn_string_copy_cstr (gbuf, "sqlite3 ");
-  dyn_string_append_cstr (gbuf, path);
-  dyn_string_append_cstr (gbuf, "/gccsym.db \""
-			  "select name, count(name) from definition "
-			  "group by (name) having count(name) > 1 limit 1;\"");
-  printf ("Duplication of definition name, one of them|count is: ");
-  fflush (NULL);
-  system (dyn_string_buf (gbuf));
-  free (str);
+  dyn_string_copy_cstr (gbuf, "select * from ProjectOverview;");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  for (int i = 0; i < nrow + 1; i++)
+    {
+      for (int j = 0; j < ncolumn; j++)
+	printf ("%s,", table[j + i * ncolumn]);
+      printf ("\n");
+    }
+  sqlite3_free_table (table);
+  dyn_string_copy_cstr (gbuf, "select count(*) from Definition;");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  printf ("Definition count is %s\n", table[1]);
+  sqlite3_free_table (table);
+  dyn_string_copy_cstr (gbuf, "select count(*) from chFile;");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  printf ("File count is %s\n", table[1]);
+  sqlite3_free_table (table);
+  dyn_string_copy_cstr (gbuf, "select name, count(name) from definition "
+			"group by (name) having count(name) > 1 limit 1;");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  if (nrow != 0)
+    printf ("Duplication of definition name is %s, its count is %s\n",
+	    table[2], table[3]);
+  sqlite3_free_table (table);
 }
 
 /* }])> */
@@ -599,11 +601,6 @@ main (int argc, char **argv)
   if (strcmp (argv[1], "enddb") == 0)
     {
       enddb (argv[2]);
-      goto done;
-    }
-  if (strcmp (argv[1], "infodb") == 0)
-    {
-      infodb (argv[2]);
       goto done;
     }
   db_error ((sqlite3_open_v2
@@ -642,6 +639,8 @@ main (int argc, char **argv)
     offset_of (argv[2], "");
   else if (strcmp (argv[1], "offsetof") == 0)
     offset_of (argv[2], argv[3]);
+  else if (strcmp (argv[1], "infodb") == 0)
+    infodb ();
   dep_tini ();
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);

@@ -93,13 +93,16 @@ if a:from != 1
 endif
 
 " Call gs
-let s:str = system('./gs callee -- ' . s:symbol)
+let s:str = system('./gs callee ' . s:symbol)
 let s:str2 = system('./gs falias fundecl ' . s:symbol)
 let s:alist = split(s:str2, '\n')
 for s:element in s:alist
 	let s:str = s:str . s:element . " CALL_MEMBER_POINTER <<< \n"
 	let s:blist = split(s:element)
-	let s:str = s:str . system('./gs callee ' . s:blist[2] . ' ' . s:blist[3])
+	if s:blist[2] == '-'
+		let s:blist[2] = ''
+	endif
+	let s:str = s:str . system('./gs callee ' . s:blist[2] . '::' . s:blist[3])
 endfor
 if s:str == ''
 	echo "Not found."
