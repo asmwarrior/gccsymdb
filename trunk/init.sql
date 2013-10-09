@@ -50,6 +50,25 @@ create table FunctionCall (
 	fileoffset integer
 );
 
+-- fun-access-var <([{
+create table FunctionAccess (
+	callerID integer references Definition (id),
+	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
+	name text,
+	flag integer,
+	fileoffset integer
+);
+
+-- When a function body has a pattern
+--     void set_gv(int i) { gv = i; }
+-- These functions will be used by fun-access-var feature just like it's expanded at the called position.
+create table FunctionPattern (
+	callerID integer references Definition (id),
+	name text,
+	flag integer
+);
+-- }])>
+
 -- The table stores the information of which lines are skipped by such like `ifdef/if'.
 create table Ifdef (
 	fileID integer references chFile (id),

@@ -574,19 +574,22 @@ insert_def (enum definition_flag flag, dyn_string_t str, int offset)
 }
 
 static void fcallf_callerid (int);
+static void faccessv_callerid (int);
 static int
 def_append (enum definition_flag flag, dyn_string_t str, int offset)
 {
   int defid = insert_def (flag, str, offset);
   if (flag == DEF_FUNC)
-    fcallf_callerid (defid);
+    {
+      fcallf_callerid (defid);
+      faccessv_callerid (defid);
+    }
   return defid;
 }
 
 static void
 def_init (void)
 {
-  /* Search FileSymbol view not Definition table. */
   db_error (sqlite3_prepare_v2 (db,
 				"select id from Definition "
 				"where fileID = ? and name = ? and flag = ? and fileoffset = ?;",
@@ -647,7 +650,6 @@ fcallf_insert (dyn_string_t str, int offset)
 static void
 fcallf_init (void)
 {
-  /* Search FileSymbol view not Definition table. */
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FunctionCall where "
 				" callerID = ? and fileID = ? and name = ? and fileoffset = ?;",
@@ -663,6 +665,139 @@ fcallf_tini (void)
 {
   sqlite3_finalize (fcallf.insert_fcallf);
   sqlite3_finalize (fcallf.select_fcallf);
+}
+
+/* }])> */
+
+/* f-access-v <([{ */
+__extension__ enum access_flag
+{
+  ACCESS_READ = 1,
+  ACCESS_WRITE = 2,
+  ACCESS_ADDR = 4,
+  ACCESS_POINTER = 8,
+};
+
+static struct
+{
+  int caller_id;
+
+  struct sqlite3_stmt *select_faccess;
+  struct sqlite3_stmt *insert_faccess;
+  struct sqlite3_stmt *update_faccess;
+
+  struct sqlite3_stmt *select_fpattern;
+  struct sqlite3_stmt *insert_fpattern;
+} faccessv;
+
+static void
+faccessv_callerid (int caller_id)
+{
+  faccessv.caller_id = caller_id;
+}
+
+static void
+faccessv_insert_fpattern (dyn_string_t str, int flag)
+{
+  gcc_assert (faccessv.caller_id != -1);
+  db_error (sqlite3_bind_int
+	    (faccessv.select_fpattern, 1, faccessv.caller_id));
+  db_error (sqlite3_bind_text
+	    (faccessv.select_fpattern, 2, dyn_string_buf (str),
+	     dyn_string_length (str), SQLITE_STATIC));
+  db_error (sqlite3_bind_int (faccessv.select_fpattern, 3, flag));
+  if (sqlite3_step (faccessv.select_fpattern) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_int
+		(faccessv.insert_fpattern, 1, faccessv.caller_id));
+      db_error (sqlite3_bind_text
+		(faccessv.insert_fpattern, 2, dyn_string_buf (str),
+		 dyn_string_length (str), SQLITE_STATIC));
+      db_error (sqlite3_bind_int (faccessv.insert_fpattern, 3, flag));
+      execute_sql (faccessv.insert_fpattern);
+    }
+  revalidate_sql (faccessv.select_fpattern);
+}
+
+static void
+faccessv_insert (dyn_string_t str, int flag, int offset)
+{
+  int fid = file_get_current_fid ();
+  gcc_assert (faccessv.caller_id != -1);
+  db_error (sqlite3_bind_int
+	    (faccessv.select_faccess, 1, faccessv.caller_id));
+  db_error (sqlite3_bind_int (faccessv.select_faccess, 2, fid));
+  db_error (sqlite3_bind_text
+	    (faccessv.select_faccess, 3, dyn_string_buf (str),
+	     dyn_string_length (str), SQLITE_STATIC));
+  db_error (sqlite3_bind_int (faccessv.select_faccess, 4, offset));
+  if (sqlite3_step (faccessv.select_faccess) != SQLITE_ROW)
+    {
+      db_error (sqlite3_bind_int
+		(faccessv.insert_faccess, 1, faccessv.caller_id));
+      db_error (sqlite3_bind_int (faccessv.insert_faccess, 2, fid));
+      db_error (sqlite3_bind_text
+		(faccessv.insert_faccess, 3, dyn_string_buf (str),
+		 dyn_string_length (str), SQLITE_STATIC));
+      db_error (sqlite3_bind_int (faccessv.insert_faccess, 4, flag));
+      db_error (sqlite3_bind_int (faccessv.insert_faccess, 5, offset));
+      execute_sql (faccessv.insert_faccess);
+    }
+  else
+    {
+      int old_flag = sqlite3_column_int (faccessv.select_faccess, 0);
+      if ((old_flag & flag) != flag)
+	{
+	  db_error (sqlite3_bind_int
+		    (faccessv.update_faccess, 1, old_flag | flag));
+	  db_error (sqlite3_bind_int
+		    (faccessv.update_faccess, 2, faccessv.caller_id));
+	  db_error (sqlite3_bind_int (faccessv.update_faccess, 3, fid));
+	  db_error (sqlite3_bind_text
+		    (faccessv.update_faccess, 4, dyn_string_buf (str),
+		     dyn_string_length (str), SQLITE_STATIC));
+	  db_error (sqlite3_bind_int (faccessv.update_faccess, 5, offset));
+	  execute_sql (faccessv.update_faccess);
+	}
+    }
+  revalidate_sql (faccessv.select_faccess);
+}
+
+static void
+faccessv_init (void)
+{
+  db_error (sqlite3_prepare_v2 (db,
+				"select flag from FunctionAccess where "
+				" callerID = ? and fileID = ? and name = ? "
+				" and fileoffset = ?;",
+				-1, &faccessv.select_faccess, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"update FunctionAccess set flag = ? where "
+				" callerID = ? and fileID = ? and name = ? "
+				" and fileoffset = ?;",
+				-1, &faccessv.update_faccess, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into FunctionAccess values (?, ?, ?, ?, ?);",
+				-1, &faccessv.insert_faccess, 0));
+
+  db_error (sqlite3_prepare_v2 (db,
+				"select flag from FunctionPattern where "
+				" callerID = ? and name = ? and flag = ?;",
+				-1, &faccessv.select_fpattern, 0));
+  db_error (sqlite3_prepare_v2 (db,
+				"insert into FunctionPattern values (?, ?, ?);",
+				-1, &faccessv.insert_fpattern, 0));
+}
+
+static void
+faccessv_tini (void)
+{
+  sqlite3_finalize (faccessv.insert_fpattern);
+  sqlite3_finalize (faccessv.select_fpattern);
+
+  sqlite3_finalize (faccessv.insert_faccess);
+  sqlite3_finalize (faccessv.update_faccess);
+  sqlite3_finalize (faccessv.select_faccess);
 }
 
 /* }])> */
@@ -844,7 +979,6 @@ void
 funp_alias_append (const char *struct_name, const char *mem_name,
 		   const char *fun_decl, int offset)
 {
-  // sprintf (stderr, "falias %s::%s = %s\n", struct_name, mem_name, fun_decl);
   int fileid = file_get_current_fid ();
   db_error (sqlite3_bind_int (funp_alias.select_funpalias, 1, fileid));
   db_error (sqlite3_bind_text
@@ -1047,16 +1181,41 @@ cb_direct_include (int file_offset, const char *fname, bool sys)
 
 /* plugin callbacks <([{ */
 /* The fold isn't class fold. */
+/* The var is used to block some callbacks temporarily. */
 static struct
 {
   bool call_func;
+  bool access_var;
   bool enum_spec;
 } block_list =
 {
-.call_func = false,.enum_spec = false};
+.access_var = false,.call_func = false,.enum_spec = false};
 
 /* in_pragma is used by symdb_cpp_token and symdb_c_token. */
 static bool in_pragma = false;
+
+/* For symdb_begin_expression and symdb_end_expression. */
+static struct
+{
+  int current_fid;
+  int token_offset;
+  int nested_level;
+    VEC (tree, heap) * chain;
+} expr =
+{
+.nested_level = 0};
+
+static void
+pcallbacks_init (void)
+{
+  expr.chain = VEC_alloc (tree, heap, 10);
+}
+
+static void
+pcallbacks_tini (void)
+{
+  VEC_free (tree, heap, expr.chain);
+}
 
 static void plugin_tini (void *gcc_data, void *user_data);
 static void
@@ -1079,12 +1238,14 @@ symdb_unit_init (void *gcc_data, void *user_data)
 	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
 
   gbuf = dyn_string_new (1024);
+  pcallbacks_init ();
   control_panel_init (main_input_filename);
   offsetof_init ();
   ifdef_init ();
   file_init (main_input_filename);
   def_init ();
   fcallf_init ();
+  faccessv_init ();
   funp_alias_init ();
   mo_init ();
 }
@@ -1094,12 +1255,14 @@ symdb_unit_tini (void *gcc_data, void *user_data)
 {
   mo_tini ();
   funp_alias_tini ();
+  faccessv_tini ();
   fcallf_tini ();
   def_tini ();
   file_tini ();
   ifdef_tini ();
   offsetof_tini ();
   control_panel_tini ();
+  pcallbacks_tini ();
   dyn_string_delete (gbuf);
 
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
@@ -1132,6 +1295,9 @@ symdb_cpp_token (void *gcc_data, void *user_data)
     mo_append_macro_token (token);
 }
 
+/*
+ * The plugin callback isn't used anymore.
+ */
 static void
 symdb_c_token (void *gcc_data, void *user_data)
 {
@@ -1360,6 +1526,7 @@ symdb_extern_func (void *gcc_data, void *user_data)
 
   block_list.enum_spec = true;
   block_list.call_func = false;
+  block_list.access_var = false;
 }
 
 /*
@@ -1496,6 +1663,7 @@ symdb_extern_decl (void *gcc_data, void *user_data)
 {
   block_list.enum_spec = false;
   block_list.call_func = true;
+  block_list.access_var = true;
 }
 
 static void
@@ -1570,8 +1738,8 @@ modify_expr (tree node, int offset)
 
 /*
  * The feature supports
- * 1) var.member = fun-decl # Note, not var.member = a-fun-pointer.
- * 2) var = { initializer-list } # as above, assign a member with fun-decl.
+ * 1) var.mfp = fun-decl # Note, not var.mfp = a-fun-pointer.
+ * 2) var = { initializer-list } # as above, assign a mfp with fun-decl.
  *
  * 1)
  * expression:
@@ -1613,6 +1781,326 @@ symdb_funp_alias (void *gcc_data, void *user_data)
     }
 }
 
+static bool
+is_var (tree node)
+{
+  int code = TREE_CODE (node);
+  return code == VAR_DECL || code == COMPONENT_REF || code == ARRAY_REF;
+}
+
+static int
+print_gvar (tree node)
+{
+  tree tmp = node;
+  if (!is_var (tmp))
+    return 0;
+  VEC_truncate (tree, expr.chain, 0);
+  int code = TREE_CODE (tmp);
+  while (true)
+    {
+      if (code == VAR_DECL)
+	{
+	  if (DECL_CONTEXT (tmp))
+	    // local variable.
+	    return -1;
+	  VEC_safe_push (tree, heap, expr.chain, tmp);
+	  break;
+	}
+      else if (code == ARRAY_REF || code == COMPONENT_REF)
+	{
+	  VEC_safe_push (tree, heap, expr.chain, tmp);
+	  tmp = TREE_OPERAND (tmp, 0);
+	  code = TREE_CODE (tmp);
+	}
+      else
+	gcc_assert (false);
+    }
+
+  int ix;
+  FOR_EACH_VEC_ELT_REVERSE (tree, expr.chain, ix, tmp)
+  {
+    switch (TREE_CODE (tmp))
+      {
+      case VAR_DECL:
+	dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
+	break;
+      case ARRAY_REF:
+	dyn_string_append_cstr (gbuf, "[]");
+	break;
+      case COMPONENT_REF:
+	{
+	  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 3);
+	  gcc_assert (TREE_OPERAND (tmp, 2) == NULL);
+	  tree arg1 = TREE_OPERAND (tmp, 1);
+	  gcc_assert (TREE_CODE (arg1) == FIELD_DECL);
+	  dyn_string_append_cstr (gbuf, ".");
+	  dyn_string_append_cstr (gbuf,
+				  IDENTIFIER_POINTER (DECL_NAME (arg1)));
+	}
+	break;
+      default:
+	break;
+      }
+  }
+  return 1;
+}
+
+static void loop_expr (tree);
+static void
+do_lhs (tree node)
+{
+  if (is_var (node))
+    {
+      if (print_gvar (node) == 1)
+	faccessv_insert (gbuf, ACCESS_WRITE, expr.token_offset);
+      return;
+    }
+  loop_expr (node);
+}
+
+static void
+loop_expr (tree node)
+{
+  tree tmp = node, arg0, arg1, arg2;
+  int ret;
+  if (is_var (node))
+    {
+      if (print_gvar (node) == 1)
+	faccessv_insert (gbuf, ACCESS_READ, expr.token_offset);
+      return;
+    }
+  switch (TREE_CODE (tmp))
+    {
+    case MODIFY_EXPR:		/* =, +=, >>= and so on */
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
+      arg0 = TREE_OPERAND (tmp, 0);
+      do_lhs (arg0);
+      arg1 = TREE_OPERAND (tmp, 1);
+      loop_expr (arg1);
+      break;
+    case ADDR_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
+      arg0 = TREE_OPERAND (tmp, 0);
+      ret = print_gvar (arg0);
+      if (ret == 0)
+	loop_expr (arg0);
+      else if (ret == 1)
+	faccessv_insert (gbuf, ACCESS_ADDR, expr.token_offset);
+      break;
+    case INDIRECT_REF:		/* *p */
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
+      arg0 = TREE_OPERAND (tmp, 0);
+      ret = print_gvar (arg0) == 1;
+      if (ret == 0)
+	loop_expr (arg0);
+      else
+	faccessv_insert (gbuf, ACCESS_POINTER, expr.token_offset);
+      break;
+    case POINTER_PLUS_EXPR:	/* inside parens of *(p + 1) */
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
+      arg0 = TREE_OPERAND (tmp, 0);
+      ret = print_gvar (arg0);
+      gcc_assert (ret != 0);
+      if (ret == 1)
+	faccessv_insert (gbuf, ACCESS_READ, expr.token_offset);
+      break;
+    case COND_EXPR:		/* .. ? .. : .. */
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 3);
+      arg0 = TREE_OPERAND (tmp, 0);
+      loop_expr (arg0);
+      arg1 = TREE_OPERAND (tmp, 1);
+      loop_expr (arg1);
+      arg2 = TREE_OPERAND (tmp, 2);
+      loop_expr (arg2);
+      break;
+    case COMPOUND_EXPR:	/* i, j */
+      ;
+    case LT_EXPR:
+    case LE_EXPR:
+    case GT_EXPR:
+    case GE_EXPR:
+    case EQ_EXPR:
+    case NE_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
+      arg0 = TREE_OPERAND (tmp, 0);
+      loop_expr (arg0);
+      arg1 = TREE_OPERAND (tmp, 1);
+      loop_expr (arg1);
+      break;
+    case POSTINCREMENT_EXPR:
+    case PREINCREMENT_EXPR:
+    case POSTDECREMENT_EXPR:
+    case PREDECREMENT_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
+      arg0 = TREE_OPERAND (tmp, 0);
+      ret = print_gvar (arg0);
+      if (ret == 0)
+	loop_expr (arg0);
+      else if (ret == 1)
+	faccessv_insert (gbuf, ACCESS_READ | ACCESS_WRITE, expr.token_offset);
+      break;
+    case CONVERT_EXPR:		/* (int*) i */
+    case NEGATE_EXPR:		/* -i */
+      ;
+    case BIT_NOT_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
+      arg0 = TREE_OPERAND (tmp, 0);
+      loop_expr (arg0);
+      break;
+    case LSHIFT_EXPR:
+    case RSHIFT_EXPR:
+    case BIT_IOR_EXPR:		/* a | b */
+    case BIT_AND_EXPR:
+    case BIT_XOR_EXPR:
+      ;
+    case TRUTH_ANDIF_EXPR:	/* a && b */
+    case TRUTH_ORIF_EXPR:	/* a || b */
+      ;
+    case PLUS_EXPR:
+    case MINUS_EXPR:
+    case MULT_EXPR:
+    case TRUNC_DIV_EXPR:
+    case TRUNC_MOD_EXPR:
+    case RDIV_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
+      arg0 = TREE_OPERAND (tmp, 0);
+      loop_expr (arg0);
+      arg1 = TREE_OPERAND (tmp, 1);
+      loop_expr (arg1);
+      break;
+    case INTEGER_CST:
+    case REAL_CST:
+    case FIXED_CST:
+    case COMPLEX_CST:
+    case VECTOR_CST:
+    case STRING_CST:
+      ;
+    case CALL_EXPR:
+    case FUNCTION_DECL:
+    case PARM_DECL:
+      break;
+      /* Some inner codes */
+    case NOP_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
+      arg0 = TREE_OPERAND (tmp, 0);
+      loop_expr (arg0);
+      break;
+    case C_MAYBE_CONST_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
+      arg1 = TREE_OPERAND (tmp, 1);
+      loop_expr (arg1);
+      break;
+    default:
+      gcc_assert (false);
+    }
+}
+
+static void
+symdb_begin_expression (void *gcc_data, void *user_data)
+{
+  if (block_list.access_var)
+    return;
+  expr.current_fid = file_get_current_fid ();
+  if (expr.nested_level++ == 0)
+    expr.token_offset = (int) gcc_data;
+}
+
+static void
+symdb_end_expression (void *gcc_data, void *user_data)
+{
+  if (block_list.access_var)
+    return;
+  tree node = (tree) gcc_data;
+  if (--expr.nested_level != 0)
+    return;
+  loop_expr (node);
+  void *pair[2];
+  pair[0] = node;
+  pair[1] = (void *) expr.token_offset;
+  symdb_funp_alias (pair, NULL);
+}
+
+static void
+set_func (const char *fname, tree body)
+{
+  tree arg0, arg1;
+  if (TREE_CODE (body) != MODIFY_EXPR)
+    return;
+  arg0 = TREE_OPERAND (body, 0);
+  arg1 = TREE_OPERAND (body, 1);
+  if (TREE_CODE (arg1) != PARM_DECL)
+    return;
+  if (TREE_CODE (arg0) == INDIRECT_REF)
+    {
+      arg0 = TREE_OPERAND (arg0, 0);
+      if (print_gvar (arg0) == 1)
+	faccessv_insert_fpattern (gbuf, ACCESS_POINTER);
+    }
+  else if (print_gvar (arg0) == 1)
+    faccessv_insert_fpattern (gbuf, ACCESS_WRITE);
+}
+
+static void
+get_func (const char *fname, tree body)
+{
+  tree tmp, arg0, arg1;
+  if (TREE_CODE (body) != RETURN_EXPR)
+    return;
+  tmp = TREE_OPERAND (body, 0);
+  if (TREE_CODE (tmp) != MODIFY_EXPR)
+    return;
+  arg0 = TREE_OPERAND (tmp, 0);
+  if (TREE_CODE (arg0) != RESULT_DECL)
+    return;
+  arg1 = TREE_OPERAND (tmp, 1);
+  int code = TREE_CODE (arg1);
+  if (code == ADDR_EXPR)
+    {
+      arg0 = TREE_OPERAND (arg1, 0);
+      if (print_gvar (arg0) == 1)
+	faccessv_insert_fpattern (gbuf, ACCESS_ADDR);
+    }
+  else if (code == INDIRECT_REF)
+    {
+      arg0 = TREE_OPERAND (arg1, 0);
+      if (print_gvar (arg0) == 1)
+	faccessv_insert_fpattern (gbuf, ACCESS_POINTER);
+    }
+  else if (print_gvar (arg1) == 1)
+    faccessv_insert_fpattern (gbuf, ACCESS_READ);
+}
+
+static void
+symdb_fnbody_pattern (void *gcc_data, void *user_data)
+{
+  tree node = (tree) gcc_data, tmp;
+  gcc_assert (TREE_CODE (node) == BIND_EXPR);
+  tree vars = TREE_OPERAND (node, 0);
+  if (vars != NULL)
+    /* You have declared a local var. */
+    return;
+  tree body = TREE_OPERAND (node, 1);
+  tree block = TREE_OPERAND (node, 2);
+
+  tmp = BLOCK_SUPERCONTEXT (block);
+  gcc_assert (TREE_CODE (tmp) == FUNCTION_DECL);
+  tree args = DECL_ARGUMENT_FLD (tmp);
+  tree result = DECL_RESULT_FLD (tmp);
+  gcc_assert (TREE_CODE (result) == RESULT_DECL);
+  if (TREE_CODE (TREE_TYPE (result)) == VOID_TYPE)
+    {
+      if (args != NULL && TREE_CHAIN (args) == NULL)
+	/* Only a parameter is accepted. */
+	set_func (IDENTIFIER_POINTER (DECL_NAME (tmp)), body);
+    }
+  else
+    {
+      if (args != NULL)
+	return;
+      get_func (IDENTIFIER_POINTER (DECL_NAME (tmp)), body);
+    }
+}
+
 /* }])> */
 
 int plugin_is_GPL_compatible;
@@ -1639,8 +2127,9 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
   unregister_callback ("symdb", PLUGIN_EXTERN_DECLSPECS);
   unregister_callback ("symdb", PLUGIN_EXTERN_INITIALIZER);
-  // unregister_callback ("symdb", PLUGIN_BEGIN_EXPRESSION);
+  unregister_callback ("symdb", PLUGIN_BEGIN_EXPRESSION);
   unregister_callback ("symdb", PLUGIN_END_EXPRESSION);
+  unregister_callback ("symdb", PLUGIN_FNBODY_PATTERN);
 }
 
 int
@@ -1679,8 +2168,12 @@ plugin_init (struct plugin_name_args *plugin_info,
 		     &symdb_declspecs, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_INITIALIZER, &symdb_funp_alias,
 		     NULL);
-  // register_callback ("symdb", PLUGIN_BEGIN_EXPRESSION, &symdb_funp_alias, NULL);
-  register_callback ("symdb", PLUGIN_END_EXPRESSION, &symdb_funp_alias, NULL);
+  register_callback ("symdb", PLUGIN_BEGIN_EXPRESSION,
+		     &symdb_begin_expression, NULL);
+  register_callback ("symdb", PLUGIN_END_EXPRESSION, &symdb_end_expression,
+		     NULL);
+  register_callback ("symdb", PLUGIN_FNBODY_PATTERN, &symdb_fnbody_pattern,
+		     NULL);
 
   cpp_callbacks *cb = cpp_get_callbacks (parse_in);
   cb->macro_start_expand = cb_macro_start;

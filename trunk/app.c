@@ -1,5 +1,4 @@
-/* vim: foldmarker=<([{,}])> foldmethod=marker
- * */
+/* vim: foldmarker=<([{,}])> foldmethod=marker */
 #include"include/dyn-string.h"
 #include"include/libiberty.h"
 #include<sys/stat.h>
