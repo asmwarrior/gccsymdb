@@ -34,6 +34,8 @@ noun `compilation session' means compiling all files of a project.
 
 For User
 // Feature List <([{
+Note: In my plugin, I patched gcc to use token file-offset, not token
+line/column which is more convenient for database sort purpose.
 1) The plugin only works on C not C++.
 2) Plugin can collect all extern definitins and dump them to database.
 3) As the convention, the members of an extern enum are collected and dumped

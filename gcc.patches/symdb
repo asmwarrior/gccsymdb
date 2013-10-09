@@ -201,7 +201,16 @@ Index: gcc/gcc/c-parser.c
        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
  	= c_parser_peek_token (parser)->location;
        fnbody = c_parser_compound_statement (parser);
-@@ -2168,6 +2198,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -1735,6 +1765,8 @@ c_parser_declaration_or_fndef (c_parser 
+ 	  add_stmt (fnbody);
+ 	  finish_function ();
+ 	}
++      if (!nested)
++        invoke_plugin_callbacks (PLUGIN_FNBODY_PATTERN, fnbody);
+       break;
+     }
+ }
+@@ -2168,6 +2200,7 @@ c_parser_enum_specifier (c_parser *parse
    tree attrs;
    tree ident = NULL_TREE;
    location_t enum_loc;
@@ -209,7 +218,7 @@ Index: gcc/gcc/c-parser.c
    location_t ident_loc = UNKNOWN_LOCATION;  /* Quiet warning.  */
    gcc_assert (c_parser_next_token_is_keyword (parser, RID_ENUM));
    enum_loc = c_parser_peek_token (parser)->location;
-@@ -2180,6 +2211,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2180,6 +2213,7 @@ c_parser_enum_specifier (c_parser *parse
      {
        ident = c_parser_peek_token (parser)->value;
        ident_loc = c_parser_peek_token (parser)->location;
@@ -217,7 +226,7 @@ Index: gcc/gcc/c-parser.c
        enum_loc = ident_loc;
        c_parser_consume_token (parser);
      }
-@@ -2192,6 +2224,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2192,6 +2226,7 @@ c_parser_enum_specifier (c_parser *parse
        /* We chain the enumerators in reverse order, then put them in
  	 forward order at the end.  */
        tree values = NULL_TREE;
@@ -225,7 +234,7 @@ Index: gcc/gcc/c-parser.c
        c_parser_consume_token (parser);
        while (true)
  	{
-@@ -2214,6 +2247,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2214,6 +2249,7 @@ c_parser_enum_specifier (c_parser *parse
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
@@ -233,7 +242,7 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_EQ))
  	    {
-@@ -2226,6 +2260,8 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2226,6 +2262,8 @@ c_parser_enum_specifier (c_parser *parse
  	  enum_decl = build_enumerator (decl_loc, value_loc,
  	      				&the_enum, enum_id, enum_value);
  	  TREE_CHAIN (enum_decl) = values;
@@ -242,7 +251,7 @@ Index: gcc/gcc/c-parser.c
  	  values = enum_decl;
  	  seen_comma = false;
  	  if (c_parser_next_token_is (parser, CPP_COMMA))
-@@ -2324,6 +2360,7 @@ c_parser_struct_or_union_specifier (c_pa
+@@ -2324,6 +2362,7 @@ c_parser_struct_or_union_specifier (c_pa
    tree attrs;
    tree ident = NULL_TREE;
    location_t struct_loc;
@@ -250,7 +259,7 @@ Index: gcc/gcc/c-parser.c
    location_t ident_loc = UNKNOWN_LOCATION;
    enum tree_code code;
    switch (c_parser_peek_token (parser)->keyword)
-@@ -2348,6 +2385,7 @@ c_parser_struct_or_union_specifier (c_pa
+@@ -2348,6 +2387,7 @@ c_parser_struct_or_union_specifier (c_pa
      {
        ident = c_parser_peek_token (parser)->value;
        ident_loc = c_parser_peek_token (parser)->location;
@@ -258,7 +267,7 @@ Index: gcc/gcc/c-parser.c
        struct_loc = ident_loc;
        c_parser_consume_token (parser);
      }
-@@ -2369,6 +2407,7 @@ c_parser_struct_or_union_specifier (c_pa
+@@ -2369,6 +2409,7 @@ c_parser_struct_or_union_specifier (c_pa
  	 so we'll be minimizing the number of node traversals required
  	 by chainon.  */
        tree contents = NULL_TREE;
@@ -266,7 +275,7 @@ Index: gcc/gcc/c-parser.c
        c_parser_consume_token (parser);
        /* Handle the Objective-C @defs construct,
  	 e.g. foo(sizeof(struct{ @defs(ClassName) }));.  */
-@@ -2857,6 +2896,7 @@ c_parser_direct_declarator (c_parser *pa
+@@ -2857,6 +2898,7 @@ c_parser_direct_declarator (c_parser *pa
        struct c_declarator *inner
  	= build_id_declarator (c_parser_peek_token (parser)->value);
        *seen_id = true;
@@ -274,7 +283,32 @@ Index: gcc/gcc/c-parser.c
        inner->id_loc = c_parser_peek_token (parser)->location;
        c_parser_consume_token (parser);
        return c_parser_direct_declarator_inner (parser, *seen_id, inner);
-@@ -6563,6 +6603,12 @@ c_parser_postfix_expression_after_primar
+@@ -5208,6 +5250,8 @@ c_parser_expr_no_commas (c_parser *parse
+   struct c_expr lhs, rhs, ret;
+   enum tree_code code;
+   location_t op_location, exp_location;
++  invoke_plugin_callbacks (PLUGIN_BEGIN_EXPRESSION,
++                           (void*) c_parser_peek_token (parser)->file_offset);
+   gcc_assert (!after || c_dialect_objc ());
+   lhs = c_parser_conditional_expression (parser, after);
+   op_location = c_parser_peek_token (parser)->location;
+@@ -5247,6 +5291,7 @@ c_parser_expr_no_commas (c_parser *parse
+       code = BIT_IOR_EXPR;
+       break;
+     default:
++      invoke_plugin_callbacks (PLUGIN_END_EXPRESSION, lhs.value);
+       return lhs;
+     }
+   c_parser_consume_token (parser);
+@@ -5264,6 +5309,7 @@ c_parser_expr_no_commas (c_parser *parse
+       ret.original_code = ERROR_MARK;
+     }
+   ret.original_type = NULL;
++  invoke_plugin_callbacks (PLUGIN_END_EXPRESSION, ret.value);
+   return ret;
+ }
+ 
+@@ -6563,6 +6609,12 @@ c_parser_postfix_expression_after_primar
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -287,25 +321,32 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-@@ -6686,6 +6732,8 @@ static struct c_expr
+@@ -6686,6 +6738,8 @@ static struct c_expr
  c_parser_expression (c_parser *parser)
  {
    struct c_expr expr;
-+  int file_offset = c_parser_peek_token (parser)->file_offset;
-+  invoke_plugin_callbacks (PLUGIN_BEGIN_EXPRESSION, NULL);
++  invoke_plugin_callbacks (PLUGIN_BEGIN_EXPRESSION,
++                           (void*) c_parser_peek_token (parser)->file_offset);
    expr = c_parser_expr_no_commas (parser, NULL);
    while (c_parser_next_token_is (parser, CPP_COMMA))
      {
-@@ -6706,6 +6754,12 @@ c_parser_expression (c_parser *parser)
+@@ -6706,6 +6760,7 @@ c_parser_expression (c_parser *parser)
        expr.original_code = COMPOUND_EXPR;
        expr.original_type = next.original_type;
      }
-+  {
-+    void* pair[2];
-+    pair[0] = expr.value;
-+    pair[1] = (void*) file_offset;
-+    invoke_plugin_callbacks (PLUGIN_END_EXPRESSION, pair);
-+  }
++  invoke_plugin_callbacks (PLUGIN_END_EXPRESSION, expr.value);
+   return expr;
+ }
+ 
+@@ -6717,8 +6772,11 @@ c_parser_expression_conv (c_parser *pars
+ {
+   struct c_expr expr;
+   location_t loc = c_parser_peek_token (parser)->location;
++  invoke_plugin_callbacks (PLUGIN_BEGIN_EXPRESSION,
++                           (void*) c_parser_peek_token (parser)->file_offset);
+   expr = c_parser_expression (parser);
+   expr = default_function_array_conversion (loc, expr);
++  invoke_plugin_callbacks (PLUGIN_END_EXPRESSION, expr.value);
    return expr;
  }
  
@@ -340,7 +381,7 @@ Index: gcc/gcc/doc/plugins.texi
 ===================================================================
 --- gcc.orig/gcc/doc/plugins.texi
 +++ gcc/gcc/doc/plugins.texi
-@@ -183,6 +183,25 @@ enum plugin_event
+@@ -183,6 +183,27 @@ enum plugin_event
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
    PLUGIN_NEW_PASS,
@@ -363,6 +404,8 @@ Index: gcc/gcc/doc/plugins.texi
 +  /* An expression is parsed. */
 +  PLUGIN_BEGIN_EXPRESSION,
 +  PLUGIN_END_EXPRESSION,
++  /* Test function pattern. */
++  PLUGIN_FNBODY_PATTERN,
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
@@ -370,7 +413,7 @@ Index: gcc/gcc/plugin.c
 ===================================================================
 --- gcc.orig/gcc/plugin.c
 +++ gcc/gcc/plugin.c
-@@ -438,6 +438,17 @@ register_callback (const char *plugin_na
+@@ -438,6 +438,18 @@ register_callback (const char *plugin_na
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -385,10 +428,11 @@ Index: gcc/gcc/plugin.c
 +      case PLUGIN_EXTERN_INITIALIZER:
 +      case PLUGIN_BEGIN_EXPRESSION:
 +      case PLUGIN_END_EXPRESSION:
++      case PLUGIN_FNBODY_PATTERN:
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -514,6 +525,17 @@ invoke_plugin_callbacks_full (int event,
+@@ -514,6 +526,18 @@ invoke_plugin_callbacks_full (int event,
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -403,6 +447,7 @@ Index: gcc/gcc/plugin.c
 +      case PLUGIN_EXTERN_INITIALIZER:
 +      case PLUGIN_BEGIN_EXPRESSION:
 +      case PLUGIN_END_EXPRESSION:
++      case PLUGIN_FNBODY_PATTERN:
          {
            /* Iterate over every callback registered with this event and
               call it.  */
@@ -410,7 +455,7 @@ Index: gcc/gcc/plugin.def
 ===================================================================
 --- gcc.orig/gcc/plugin.def
 +++ gcc/gcc/plugin.def
-@@ -89,6 +89,37 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
+@@ -89,6 +89,40 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
  
@@ -444,6 +489,9 @@ Index: gcc/gcc/plugin.def
 +/* An expression is parsed. */
 +DEFEVENT (PLUGIN_BEGIN_EXPRESSION)
 +DEFEVENT (PLUGIN_END_EXPRESSION)
++
++/* Test function pattern. */
++DEFEVENT (PLUGIN_FNBODY_PATTERN)
 +
  /* After the hard-coded events above, plugins can dynamically allocate events
     at run time.

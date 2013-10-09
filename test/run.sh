@@ -12,6 +12,8 @@ dump_helper ()
 		sed 's/uvwxyz/.du chFile\n.du FileDependence/' abc123 > 123abc
 	elif [ "$1" = "fcallf" ]; then
 		sed 's/uvwxyz/.du Definition\n.du FunctionCall/' abc123 > 123abc
+	elif [ "$1" = "faccessv" ]; then
+		sed 's/uvwxyz/.du FunctionAccess\n.du FunctionPattern/' abc123 > 123abc
 	elif [ "$1" = "def" ]; then
 		sed 's/uvwxyz/.du Definition\n/' abc123 > 123abc
 	elif [ "$1" = "ifdef" ]; then
@@ -48,6 +50,8 @@ diff $1/orig $1/new || exit 1
 # }])>
 
 find . -\( -name '*.h' -or -name '*.c' -\) -exec touch -t 201201010101.00 {} \;
+test_it faccessv faccessv
+echo PASS faccessv
 test_it fcallf fcallf
 echo PASS fcallf
 test_it ifdef ifdef

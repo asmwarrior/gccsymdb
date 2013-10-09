@@ -1,0 +1,69 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunctionAccess (
+	callerID integer references Definition (id),
+	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
+	name text,
+	flag integer,
+	fileoffset integer
+);
+INSERT INTO "FunctionAccess" VALUES(12,1,'i',2,213);
+INSERT INTO "FunctionAccess" VALUES(13,1,'i',3,319);
+INSERT INTO "FunctionAccess" VALUES(14,1,'i',2,359);
+INSERT INTO "FunctionAccess" VALUES(15,1,'abc.p',8,394);
+INSERT INTO "FunctionAccess" VALUES(16,1,'abc.arr[][].y',4,496);
+INSERT INTO "FunctionAccess" VALUES(17,1,'p',8,542);
+INSERT INTO "FunctionAccess" VALUES(18,1,'arr[][][]',1,576);
+INSERT INTO "FunctionAccess" VALUES(19,1,'abc.arr[][].y',2,616);
+INSERT INTO "FunctionAccess" VALUES(20,1,'p',8,662);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',1,734);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',1,747);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,766);
+INSERT INTO "FunctionAccess" VALUES(21,1,'p',8,766);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,775);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',7,799);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,818);
+INSERT INTO "FunctionAccess" VALUES(21,1,'j',1,818);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,839);
+INSERT INTO "FunctionAccess" VALUES(21,1,'ci',1,839);
+INSERT INTO "FunctionAccess" VALUES(21,1,'f1',2,851);
+INSERT INTO "FunctionAccess" VALUES(21,1,'f2',1,851);
+INSERT INTO "FunctionAccess" VALUES(21,1,'f3',1,851);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,866);
+INSERT INTO "FunctionAccess" VALUES(21,1,'j',1,866);
+INSERT INTO "FunctionAccess" VALUES(21,1,'k',1,866);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,879);
+INSERT INTO "FunctionAccess" VALUES(21,1,'j',1,879);
+INSERT INTO "FunctionAccess" VALUES(21,1,'k',1,879);
+INSERT INTO "FunctionAccess" VALUES(21,1,'abc.p',1,891);
+INSERT INTO "FunctionAccess" VALUES(21,1,'abc.x',1,910);
+INSERT INTO "FunctionAccess" VALUES(21,1,'abc.x',1,938);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,970);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,979);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,988);
+INSERT INTO "FunctionAccess" VALUES(21,1,'j',1,988);
+INSERT INTO "FunctionAccess" VALUES(21,1,'k',1,988);
+INSERT INTO "FunctionAccess" VALUES(21,1,'p',8,1005);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,1014);
+INSERT INTO "FunctionAccess" VALUES(21,1,'j',2,1014);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,1026);
+INSERT INTO "FunctionAccess" VALUES(21,1,'k',3,1026);
+INSERT INTO "FunctionAccess" VALUES(21,1,'j',4,1026);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,1060);
+INSERT INTO "FunctionAccess" VALUES(21,1,'abc.arr[][].z.arr2[]',1,1060);
+INSERT INTO "FunctionAccess" VALUES(21,1,'i',2,1090);
+INSERT INTO "FunctionAccess" VALUES(21,1,'arr[][][]',1,1090);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunctionPattern (
+	callerID integer references Definition (id),
+	name text,
+	flag integer
+);
+INSERT INTO "FunctionPattern" VALUES(16,'abc.arr[][].y',4);
+INSERT INTO "FunctionPattern" VALUES(17,'p',8);
+INSERT INTO "FunctionPattern" VALUES(18,'arr[][][]',1);
+INSERT INTO "FunctionPattern" VALUES(19,'abc.arr[][].y',2);
+INSERT INTO "FunctionPattern" VALUES(20,'p',8);
+COMMIT;
