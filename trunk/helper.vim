@@ -94,16 +94,6 @@ endif
 
 " Call gs
 let s:str = system('./gs callee ' . s:symbol)
-let s:str2 = system('./gs falias fundecl ' . s:symbol)
-let s:alist = split(s:str2, '\n')
-for s:element in s:alist
-	let s:str = s:str . s:element . " CALL_MEMBER_POINTER <<< \n"
-	let s:blist = split(s:element)
-	if s:blist[2] == '-'
-		let s:blist[2] = ''
-	endif
-	let s:str = s:str . system('./gs callee ' . s:blist[2] . '::' . s:blist[3])
-endfor
 if s:str == ''
 	echo "Not found."
 	return
@@ -124,20 +114,8 @@ endfunction
 " }])>
 
 " GS_falias <([{
-function! s:GS_falias_def()
-let s:str = ''
-let s:str2 = system('./gs falias member ' . s:symbol)
-let s:alist = split(s:str2, '\n')
-let s:prevalias = ''
-for s:element in s:alist
-	let s:blist = split(s:element)
-	let s:str = s:str . s:element . " MEMBER_FUNC_P <<< \n"
-	if s:prevalias == s:blist[3]
-		continue
-	endif
-	let s:str = s:str . system('./gs def -- ' . s:blist[3])
-	let s:prevalias = s:blist[3]
-endfor
+function! s:GS_falias()
+let s:str = system('./gs falias ' . s:symbol)
 if s:str == ''
 	echo "Not found."
 	return
@@ -148,13 +126,6 @@ if s:i == -1
 	return
 endif
 call s:jumpTo()
-endfunction
-
-function! s:GS_falias()
-let s:str = system('./gs falias member ' . s:symbol)
-echo s:str
-let s:str = system('./gs falias fundecl ' . s:symbol)
-echo s:str
 endfunction
 " }])>
 
@@ -174,10 +145,6 @@ elseif a:subcmd == 'falias'
 	let s:file_name = '--'
 	let s:symbol = a:1
 	call s:GS_falias()
-elseif a:subcmd == 'fdef'
-	let s:file_name = '--'
-	let s:symbol = a:1
-	call s:GS_falias_def()
 else
 	echo 'Gs command (all except ifdef accept only a param):'
 	echo 'def     : search a definition.'

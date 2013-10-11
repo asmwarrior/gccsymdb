@@ -1,11 +1,11 @@
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE FunctionAccess (
-	callerID integer references Definition (id),
+	funcID integer references Definition (id),
 	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
 	name text,
 	flag integer,
-	fileoffset integer
+	fileOffset integer
 );
 INSERT INTO "FunctionAccess" VALUES(12,1,'i',2,213);
 INSERT INTO "FunctionAccess" VALUES(13,1,'i',3,319);
@@ -57,7 +57,7 @@ COMMIT;
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE FunctionPattern (
-	callerID integer references Definition (id),
+	funcID integer references Definition (id),
 	name text,
 	flag integer
 );

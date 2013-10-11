@@ -5,7 +5,7 @@ CREATE TABLE Definition (
 	fileID integer references chFile (id),
 	name text,
 	flag integer,
-	fileoffset integer
+	fileOffset integer
 );
 INSERT INTO "Definition" VALUES(1,1,'F',4,15);
 INSERT INTO "Definition" VALUES(2,1,'foo',2,30);
@@ -14,8 +14,10 @@ INSERT INTO "Definition" VALUES(4,1,'main',2,70);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
-	delete from FunctionRelationship where caller = old.id;
+	delete from FunctionCall where callerID = old.id;
 	delete from Offsetof where structID = old.id;
+	delete from FunctionAccess where funcID = old.id;
+	delete from FunctionPattern where funcID = old.id;
 end;
 COMMIT;
 PRAGMA foreign_keys=OFF;
@@ -24,7 +26,7 @@ CREATE TABLE FunctionCall (
 	callerID integer references Definition (id),
 	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
 	name text, -- if name is like `XX::YY', that is, include '::', it's mfp call, otherwise, function call.
-	fileoffset integer
+	fileOffset integer
 );
 INSERT INTO "FunctionCall" VALUES(4,1,'foo',87);
 INSERT INTO "FunctionCall" VALUES(4,1,'::mem',99);
