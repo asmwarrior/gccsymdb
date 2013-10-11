@@ -592,7 +592,7 @@ def_init (void)
 {
   db_error (sqlite3_prepare_v2 (db,
 				"select id from Definition "
-				"where fileID = ? and name = ? and flag = ? and fileoffset = ?;",
+				"where fileID = ? and name = ? and flag = ? and fileOffset = ?;",
 				-1, &def.helper, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into Definition values (NULL, ?, ?, ?, ?);",
@@ -652,7 +652,7 @@ fcallf_init (void)
 {
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FunctionCall where "
-				" callerID = ? and fileID = ? and name = ? and fileoffset = ?;",
+				" callerID = ? and fileID = ? and name = ? and fileOffset = ?;",
 				-1, &fcallf.select_fcallf, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into FunctionCall values (?, ?, ?, ?);",
@@ -768,21 +768,21 @@ faccessv_init (void)
 {
   db_error (sqlite3_prepare_v2 (db,
 				"select flag from FunctionAccess where "
-				" callerID = ? and fileID = ? and name = ? "
-				" and fileoffset = ?;",
+				" funcID = ? and fileID = ? and name = ? "
+				" and fileOffset = ?;",
 				-1, &faccessv.select_faccess, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"update FunctionAccess set flag = ? where "
-				" callerID = ? and fileID = ? and name = ? "
-				" and fileoffset = ?;",
+				" funcID = ? and fileID = ? and name = ? "
+				" and fileOffset = ?;",
 				-1, &faccessv.update_faccess, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into FunctionAccess values (?, ?, ?, ?, ?);",
 				-1, &faccessv.insert_faccess, 0));
 
   db_error (sqlite3_prepare_v2 (db,
-				"select flag from FunctionPattern where "
-				" callerID = ? and name = ? and flag = ?;",
+				"select rowid from FunctionPattern where "
+				" funcID = ? and name = ? and flag = ?;",
 				-1, &faccessv.select_fpattern, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into FunctionPattern values (?, ?, ?);",
@@ -976,31 +976,30 @@ static struct
 } funp_alias;
 
 void
-funp_alias_append (const char *struct_name, const char *mem_name,
+funp_alias_append (const char *struct_name, const char *mfp_name,
 		   const char *fun_decl, int offset)
 {
   int fileid = file_get_current_fid ();
+  dyn_string_copy_cstr (gbuf, struct_name);
+  dyn_string_append_cstr (gbuf, "::");
+  dyn_string_append_cstr (gbuf, mfp_name);
   db_error (sqlite3_bind_int (funp_alias.select_funpalias, 1, fileid));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 2, struct_name, -1, SQLITE_STATIC));
+	    (funp_alias.select_funpalias, 2, dyn_string_buf (gbuf),
+	     dyn_string_length (gbuf), SQLITE_STATIC));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 3, mem_name, -1, SQLITE_STATIC));
-  db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 4, fun_decl, -1, SQLITE_STATIC));
-  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 5, offset));
+	    (funp_alias.select_funpalias, 3, fun_decl, -1, SQLITE_STATIC));
+  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 4, offset));
   if (sqlite3_step (funp_alias.select_funpalias) != SQLITE_ROW)
     {
       db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 1, fileid));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 2, struct_name, -1,
-		 SQLITE_STATIC));
+		(funp_alias.insert_funpalias, 2, dyn_string_buf (gbuf),
+		 dyn_string_length (gbuf), SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 3, mem_name, -1,
+		(funp_alias.insert_funpalias, 3, fun_decl, -1,
 		 SQLITE_STATIC));
-      db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 4, fun_decl, -1,
-		 SQLITE_STATIC));
-      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 5, offset));
+      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 4, offset));
       execute_sql (funp_alias.insert_funpalias);
     }
   revalidate_sql (funp_alias.select_funpalias);
@@ -1012,11 +1011,11 @@ funp_alias_init (void)
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FunpAlias "
 				"where fileID = ?"
-				" and structName = ? and member = ? and funDecl = ?"
+				" and mfp = ? and funDecl = ?"
 				" and offset = ?;",
 				-1, &funp_alias.select_funpalias, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into FunpAlias values (?, ?, ?, ?, ?);",
+				"insert into FunpAlias values (?, ?, ?, ?);",
 				-1, &funp_alias.insert_funpalias, 0));
 }
 
@@ -1319,18 +1318,18 @@ is_fun_p (tree node)
 }
 
 static bool
-var_is_mfp (tree var, tree * type, tree * member)
+var_is_mfp (tree var, tree * struct_name, tree * mfp)
 {
   if (TREE_CODE (var) != COMPONENT_REF)
     return false;
   gcc_assert (TREE_OPERAND_LENGTH (var) == 3);
-  *member = TREE_OPERAND (var, 1);
-  if (!is_fun_p (*member))
+  *mfp = TREE_OPERAND (var, 1);
+  if (!is_fun_p (*mfp))
     return false;
   gcc_assert (TREE_OPERAND (var, 2) == NULL);
-  gcc_assert (TREE_CODE (*member) == FIELD_DECL);
-  gcc_assert (TREE_CODE_CLASS (TREE_CODE (*member)) == tcc_declaration);
-  *type = TREE_TYPE (TREE_OPERAND (var, 0));
+  gcc_assert (TREE_CODE (*mfp) == FIELD_DECL);
+  gcc_assert (TREE_CODE_CLASS (TREE_CODE (*mfp)) == tcc_declaration);
+  *struct_name = TREE_TYPE (TREE_OPERAND (var, 0));
   return true;
 }
 
@@ -1434,9 +1433,9 @@ static void
 symdb_call_func (void *gcc_data, void *user_data)
 {
   void **pair = (void **) gcc_data;
-  tree decl = (tree) pair[0], type = NULL, member;
+  tree decl = (tree) pair[0], struct_name = NULL, mfp;
   int file_offset = (int) pair[1];
-  bool mfp = false;
+  bool is_mfp = false;
   if (block_list.call_func)
     return;
   if (TREE_CODE (decl) == FUNCTION_DECL)
@@ -1451,19 +1450,19 @@ symdb_call_func (void *gcc_data, void *user_data)
 	  gcc_assert (TREE_OPERAND_LENGTH (decl) == 1);
 	  decl = TREE_OPERAND (decl, 0);
 	}
-      if (var_is_mfp (decl, &type, &member))
-	mfp = true;
+      if (var_is_mfp (decl, &struct_name, &mfp))
+	is_mfp = true;
       else
 	goto done;
     }
-  if (mfp)
+  if (is_mfp)
     {
-      if (type != NULL)
-	dyn_string_copy_cstr (gbuf, get_typename (type));
+      if (struct_name != NULL)
+	dyn_string_copy_cstr (gbuf, get_typename (struct_name));
       else
 	dyn_string_copy_cstr (gbuf, "");
       dyn_string_append_cstr (gbuf, "::");
-      dyn_string_append_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (member)));
+      dyn_string_append_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (mfp)));
     }
   else
     dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (decl)));
@@ -1669,10 +1668,11 @@ symdb_extern_decl (void *gcc_data, void *user_data)
 static void
 constructor_loop (tree node, int offset)
 {
-  tree type = TREE_TYPE (node);
-  if (TREE_CODE (type) != RECORD_TYPE && TREE_CODE (type) != UNION_TYPE)
+  tree struct_name = TREE_TYPE (node);
+  if (TREE_CODE (struct_name) != RECORD_TYPE
+      && TREE_CODE (struct_name) != UNION_TYPE)
     {
-      gcc_assert (TREE_CODE (type) == ARRAY_TYPE);
+      gcc_assert (TREE_CODE (struct_name) == ARRAY_TYPE);
       return;
     }
 
@@ -1700,7 +1700,7 @@ constructor_loop (tree node, int offset)
 	gcc_assert (TREE_CODE_CLASS (TREE_CODE (index)) == tcc_declaration);
 	const char *a = IDENTIFIER_POINTER (DECL_NAME (index));
 	const char *b = IDENTIFIER_POINTER (DECL_NAME (arg0));
-	const char *c = get_typename (type);
+	const char *c = get_typename (struct_name);
 	funp_alias_append (c, a, b, offset);
       }
     else if (TREE_CODE (value) == CONSTRUCTOR)
@@ -1714,8 +1714,8 @@ modify_expr (tree node, int offset)
   if (!is_fun_p (node))
     return;
   gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
-  tree type, member = NULL;
-  if (!var_is_mfp (TREE_OPERAND (node, 0), &type, &member))
+  tree struct_name, mfp = NULL;
+  if (!var_is_mfp (TREE_OPERAND (node, 0), &struct_name, &mfp))
     return;
   tree tmp = TREE_OPERAND (node, 1);
   if (TREE_CODE (tmp) == NOP_EXPR)
@@ -1730,9 +1730,9 @@ modify_expr (tree node, int offset)
   if (TREE_CODE (funcdecl) != FUNCTION_DECL)
     return;
   gcc_assert (TREE_CODE_CLASS (TREE_CODE (funcdecl)) == tcc_declaration);
-  const char *a = IDENTIFIER_POINTER (DECL_NAME (member));
+  const char *a = IDENTIFIER_POINTER (DECL_NAME (mfp));
   const char *b = IDENTIFIER_POINTER (DECL_NAME (funcdecl));
-  const char *c = get_typename (type);
+  const char *c = get_typename (struct_name);
   funp_alias_append (c, a, b, offset);
 }
 

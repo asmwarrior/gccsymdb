@@ -39,7 +39,7 @@ create table Definition (
 	fileID integer references chFile (id),
 	name text,
 	flag integer,
-	fileoffset integer
+	fileOffset integer
 );
 
 -- fun-call-fun, or fun-call-mfp feature, abbr. f-call-f.
@@ -47,23 +47,23 @@ create table FunctionCall (
 	callerID integer references Definition (id),
 	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
 	name text, -- if name is like `XX::YY', that is, include '::', it's mfp call, otherwise, function call.
-	fileoffset integer
+	fileOffset integer
 );
 
 -- fun-access-var <([{
 create table FunctionAccess (
-	callerID integer references Definition (id),
+	funcID integer references Definition (id),
 	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
 	name text,
 	flag integer,
-	fileoffset integer
+	fileOffset integer
 );
 
 -- When a function body has a pattern
 --     void set_gv(int i) { gv = i; }
 -- These functions will be used by fun-access-var feature just like it's expanded at the called position.
 create table FunctionPattern (
-	callerID integer references Definition (id),
+	funcID integer references Definition (id),
 	name text,
 	flag integer
 );
@@ -78,11 +78,10 @@ create table Ifdef (
 );
 
 -- For function alias feature.
--- The table is used to store where a member function pointer is assigned.
+-- The table is used to store where a mfp is assigned.
 create table FunpAlias (
 	fileID integer references chFile (id),
-	structName text,
-	member text,
+	mfp text, -- syntax pattern: structname::mfp
 	funDecl text,
 	offset integer
 );
@@ -91,7 +90,7 @@ create table FunpAlias (
 create table Macro (
 	-- user request.
 	letFileID integer,
-	letOffset integer, 
+	letOffset integer,
 
 	-- result.
 	defFileID integer,
@@ -100,7 +99,7 @@ create table Macro (
 	macroTokens text
 );
 
--- For member offset feature.
+-- For offsetof feature.
 -- If member field is '', offset represents the size of the struct.
 create table Offsetof (
 	structID integer references Definition (id),
@@ -114,25 +113,46 @@ create view FileSymbol as
 select * from
 (
 select
-	f.id as fileID, f.name as fileName, fileoffset, d.id as defID, d.name as defName, flag
+	f.id as fileID, f.name as fileName, fileOffset, d.id as defID, d.name as defName, flag
 from
 	chFile f, Definition as d
 where
 	d.fileID = f.id
 );
 
--- Search function-call relationship.
+-- Search function-call relationship, query column calleName if you only know func-decl.
+-- Note: It's possible that FunpAlias hasn't a mfp record which the mfp exists in FunctionCall -- your function calls a mfp but forget to assigns it to some func-decl? The view should use left join to detect the case.
 create view CallRelationship as
 select * from
 (
 select
-	f1.id as callerFileID, f1.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
-	f2.id as calleeFileID, f2.name as calleeFileName, dc.fileOffset as calleeFileOffset, 0 as calleeID, dc.name as calleeName
+	f.id as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
+	fc.fileID as calleePositionFileID, fc.fileOffset as calleePosition, fa.fundecl as calleeName, fa.mfp as mfp
 from
-	FunctionCall dc, chFile f1, chFile f2, Definition as d
+	FunctionCall fc, FunpAlias fa, chFile f, Definition as d
 where
-	dc.callerID = d.id and
-	d.fileID = f1.id and dc.fileID = f2.id
+	fc.callerID = d.id and fc.name = fa.mfp and d.fileID = f.id
+union all
+select
+	f.id as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
+	fc.fileId as calleePositionFileID, fc.fileOffset as calleePosition, fc.name as calleeName, '-' as mfp
+from
+	FunctionCall fc, chFile f, Definition as d
+where
+	fc.callerID = d.id and d.fileID = f.id
+);
+
+-- Note: It's possible that FunpAlias has a record but you can't find it in Defintion, maybe you assign the mfp to an assemble-entry.
+create view MfpJumpto as
+select * from
+(
+select
+	fa.fileID as mfpFileID, f2.name as mfpFileName, fa.offset as mfpOffset, fa.mfp as mfp,
+	f.id as funcFileID, f.name as funcFileName, d.fileOffset as funcOffset, fa.funDecl as funcName
+from
+	FunpAlias fa, chFile f, chFile f2, Definition as d
+where
+	fa.funDecl = d.name and d.fileID = f.id and fa.fileID = f2.id
 );
 -- }])>
 
@@ -141,15 +161,17 @@ create index FileName on chFile (name);
 
 create index DefName on Definition (name);
 
-create index Alias on FunpAlias (member, funDecl); 
+create index Alias on FunpAlias (mfp);
 -- }])>
 
 -- Triggger <([{
 -- Delete trigger note: all can be indexed directely or indirectely by chFile::id. But to Definition fold, two additional trigger must be set up.
 create trigger DelDefinition after delete on Definition
 begin
-	delete from FunctionRelationship where caller = old.id;
+	delete from FunctionCall where callerID = old.id;
 	delete from Offsetof where structID = old.id;
+	delete from FunctionAccess where funcID = old.id;
+	delete from FunctionPattern where funcID = old.id;
 end;
 
 create trigger DelFile after delete on chFile

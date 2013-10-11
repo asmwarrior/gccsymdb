@@ -67,7 +67,7 @@ which showed in above assign-expression. See test/funp_alias/a.c for more.
 Syntax pattern (member-function-pointer) is `struct::fun_pointer = fun_decl'
 and call the pattern, complex struct::...::struct::__pattern__ is supported,
 but only the last two levels are imported into database.
-    ./gs fdef open
+    ./gs falias open
 11) Get macro expansion process by later steps
     a) ./gs macro a.h 0
     b) re-compile all files which depends directly/indirectly on a.h by my
@@ -284,7 +284,7 @@ outest function.
 gcc on converting tokens from cpp stage to c/c++ stage -- g++ tries to convert
 all cpp_tokens to cp_tokens at one time, it violates the architecture of my
 plugin.
-4) Execute `:Gs fdef open' by vim in linux.src is slow, in fact, it is a
+4) Execute `:Gs falais open' by vim in linux.src is slow, in fact, it is a
 combination command, try `:Gs falias open' and `:Gs def XXX' individually.
 5) omp extension and objc of gcc aren't supported.
 // }])>

@@ -5,7 +5,7 @@ CREATE TABLE Definition (
 	fileID integer references chFile (id),
 	name text,
 	flag integer,
-	fileoffset integer
+	fileOffset integer
 );
 INSERT INTO "Definition" VALUES(1,1,'td',4,17);
 INSERT INTO "Definition" VALUES(2,1,'tdfunp',4,39);
@@ -27,7 +27,9 @@ INSERT INTO "Definition" VALUES(17,1,'fun2',1,482);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
-	delete from FunctionRelationship where caller = old.id;
+	delete from FunctionCall where callerID = old.id;
 	delete from Offsetof where structID = old.id;
+	delete from FunctionAccess where funcID = old.id;
+	delete from FunctionPattern where funcID = old.id;
 end;
 COMMIT;
