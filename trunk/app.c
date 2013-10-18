@@ -290,7 +290,26 @@ initdb (const char *path, const char *user_def)
   dyn_string_append_cstr (gbuf, str);
   dyn_string_append_cstr (gbuf, "/', initdbTime = ");
   dyn_string_append_cstr (gbuf, lltoa (time (NULL)));
-  dyn_string_append_cstr (gbuf, ";\"");
+  dyn_string_append_cstr (gbuf, ";");
+  /* Some temporary indices to accelerate database establishment. */
+  dyn_string_append_cstr (gbuf,
+			  "create index idx_tempFileDependence on FileDependence"
+			  "(chID, hID, offset);"
+			  "create index idx_tempDefinition on Definition"
+			  "(fileID, name, flag, fileOffset);"
+			  "create index idx_tempFunctionCall on FunctionCall"
+			  "(callerID, fileID, name, fileOffset);"
+			  "create index idx_tempFunctionAccess on FunctionAccess"
+			  "(funcID, fileID, name, fileOffset);"
+			  "create index idx_tempFunctionPattern on FunctionPattern"
+			  "(funcID, name, flag);"
+			  "create index idx_tempIfdef on Ifdef"
+			  "(fileID, flag, startOffset, endOffset);"
+			  "create index idx_tempFunpAlias on FunpAlias"
+			  "(fileID, mfp, funDecl, offset);"
+			  "create index idx_tempOffsetof on Offsetof"
+			  "(structID);");
+  dyn_string_append_cstr (gbuf, "\"");
   system (dyn_string_buf (gbuf));
   free (str);
 }
@@ -304,7 +323,17 @@ enddb (const char *path)
   dyn_string_append_cstr (gbuf, "\"update ProjectOverview set ");
   dyn_string_append_cstr (gbuf, "enddbTime = ");
   dyn_string_append_cstr (gbuf, lltoa (time (NULL)));
-  dyn_string_append_cstr (gbuf, "; vacuum;\"");
+  dyn_string_append_cstr (gbuf, ";");
+  dyn_string_append_cstr (gbuf,
+			  "drop index idx_tempOffsetof;"
+			  "drop index idx_tempFunpAlias;"
+			  "drop index idx_tempIfdef;"
+			  "drop index idx_tempFunctionPattern;"
+			  "drop index idx_tempFunctionAccess;"
+			  "drop index idx_tempFunctionCall;"
+			  "drop index idx_tempDefinition;"
+			  "drop index idx_tempFileDependence;");
+  dyn_string_append_cstr (gbuf, "vacuum;\"");
   system (dyn_string_buf (gbuf));
 }
 

@@ -519,6 +519,19 @@ Index: gcc/gcc/print-tree.c
        if (TYPE_UNSIGNED (node))
  	fputs (" unsigned", file);
  
+Index: gcc/gcc/tree.c
+===================================================================
+--- gcc.orig/gcc/tree.c
++++ gcc/gcc/tree.c
+@@ -903,6 +903,8 @@ make_node_stat (enum tree_code code MEM_
+ 
+       /* We have not yet computed the alias set for this type.  */
+       TYPE_ALIAS_SET (t) = -1;
++
++      TYPE_FILE_OFFSET (t) = -1;
+       break;
+ 
+     case tcc_constant:
 Index: gcc/gcc/tree.h
 ===================================================================
 --- gcc.orig/gcc/tree.h
@@ -554,16 +567,17 @@ Index: gcc/gcc/tree.h
    unsigned int align;
    alias_set_type alias_set;
    tree pointer_to;
-@@ -2561,6 +2574,8 @@ struct function;
+@@ -2561,6 +2574,9 @@ struct function;
  #define DECL_SOURCE_LINE(NODE) LOCATION_LINE (DECL_SOURCE_LOCATION (NODE))
  #define DECL_IS_BUILTIN(DECL) \
    (DECL_SOURCE_LOCATION (DECL) <= BUILTINS_LOCATION)
++/* Currently, only enumerator has set the field. */
 +#define DECL_FILE_OFFSET(NODE) \
 +  (DECL_MINIMAL_CHECK (NODE)->decl_minimal.file_offset)
  
  /*  For FIELD_DECLs, this is the RECORD_TYPE, UNION_TYPE, or
      QUAL_UNION_TYPE node that the field is a member of.  For VAR_DECL,
-@@ -2579,6 +2594,7 @@ struct function;
+@@ -2579,6 +2595,7 @@ struct function;
  struct GTY(()) tree_decl_minimal {
    struct tree_common common;
    location_t locus;

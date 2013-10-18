@@ -87,3 +87,39 @@ int main(void)
 	set_p(m);
 	return 0;
 }
+
+struct Y {
+	char c;
+};
+struct X {
+	char *cp;
+	struct Y* p;
+} x, y;
+int** pp;
+void foo(char* parm1, struct X* parm2)
+{
+	x.p->c = 0;
+	parm1 += 2;
+	*parm1 = *parm2->cp;
+	int lc = (x.p[i].c, x.p[y.p[j].c].c);
+	int **lp = &*pp;
+	--*pp; **pp++;
+	**pp = 0;
+	struct Y ly = *x.p;
+	p[i] = 3;
+	foo(&y.p[j].c, (struct X*) 0);
+	i = p - q;
+	f1 = i;
+	i = f1;
+}
+
+#include<stdarg.h>
+va_list ap;
+void oof(char* file, ...)
+{
+	va_list aq;
+	va_start(ap, file);
+	i = va_arg(ap, int);
+	va_copy(ap, aq);
+	va_end(ap);
+}
