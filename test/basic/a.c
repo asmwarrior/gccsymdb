@@ -15,6 +15,7 @@ extern int exi, exj;
 int muldef;
 int muldef;
 
+struct abc;
 struct abc {
 	char c;
 	int i;
@@ -25,6 +26,7 @@ enum {
 } __attribute__((packed));
 struct def {};
 typeof(struct ghi {char c; int i;}) tp;
+struct abc;
 
 void oldfun(abc)
 int ((abc));

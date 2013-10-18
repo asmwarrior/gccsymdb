@@ -58,6 +58,8 @@
 
 /* common <([{ */
 typedef const struct cpp_token *cpp_token_p;
+DEF_VEC_I (int);
+DEF_VEC_ALLOC_I (int, heap);
 
 static dyn_string_t gbuf;	/* Global temporary variable. */
 
@@ -541,7 +543,7 @@ __extension__ enum definition_flag
 
 static struct
 {
-  struct sqlite3_stmt *helper;
+  struct sqlite3_stmt *select_def;
   struct sqlite3_stmt *insert_def;
 } def;
 
@@ -550,13 +552,13 @@ insert_def (enum definition_flag flag, dyn_string_t str, int offset)
 {
   int fid = file_get_current_fid ();
   int defid;
-  db_error (sqlite3_bind_int (def.helper, 1, fid));
+  db_error (sqlite3_bind_int (def.select_def, 1, fid));
   db_error (sqlite3_bind_text
-	    (def.helper, 2, dyn_string_buf (str),
+	    (def.select_def, 2, dyn_string_buf (str),
 	     dyn_string_length (str), SQLITE_STATIC));
-  db_error (sqlite3_bind_int (def.helper, 3, flag));
-  db_error (sqlite3_bind_int (def.helper, 4, offset));
-  if (sqlite3_step (def.helper) != SQLITE_ROW)
+  db_error (sqlite3_bind_int (def.select_def, 3, flag));
+  db_error (sqlite3_bind_int (def.select_def, 4, offset));
+  if (sqlite3_step (def.select_def) != SQLITE_ROW)
     {
       db_error (sqlite3_bind_int (def.insert_def, 1, fid));
       db_error (sqlite3_bind_text
@@ -568,8 +570,8 @@ insert_def (enum definition_flag flag, dyn_string_t str, int offset)
       defid = sqlite3_last_insert_rowid (db);
     }
   else
-    defid = sqlite3_column_int (def.helper, 0);
-  revalidate_sql (def.helper);
+    defid = sqlite3_column_int (def.select_def, 0);
+  revalidate_sql (def.select_def);
   return defid;
 }
 
@@ -593,7 +595,7 @@ def_init (void)
   db_error (sqlite3_prepare_v2 (db,
 				"select id from Definition "
 				"where fileID = ? and name = ? and flag = ? and fileOffset = ?;",
-				-1, &def.helper, 0));
+				-1, &def.select_def, 0));
   db_error (sqlite3_prepare_v2 (db,
 				"insert into Definition values (NULL, ?, ?, ?, ?);",
 				-1, &def.insert_def, 0));
@@ -603,7 +605,7 @@ static void
 def_tini (void)
 {
   sqlite3_finalize (def.insert_def);
-  sqlite3_finalize (def.helper);
+  sqlite3_finalize (def.select_def);
 }
 
 /* }])> */
@@ -675,7 +677,8 @@ __extension__ enum access_flag
   ACCESS_READ = 1,
   ACCESS_WRITE = 2,
   ACCESS_ADDR = 4,
-  ACCESS_POINTER = 8,
+  ACCESS_POINTER_READ = 8,	/* i = *p */
+  ACCESS_POINTER_WRITE = 16,	/* *p = i */
 };
 
 static struct
@@ -1196,10 +1199,9 @@ static bool in_pragma = false;
 /* For symdb_begin_expression and symdb_end_expression. */
 static struct
 {
-  int current_fid;
   int token_offset;
   int nested_level;
-    VEC (tree, heap) * chain;
+    VEC (tree, heap) * gvar;
 } expr =
 {
 .nested_level = 0};
@@ -1207,13 +1209,13 @@ static struct
 static void
 pcallbacks_init (void)
 {
-  expr.chain = VEC_alloc (tree, heap, 10);
+  expr.gvar = VEC_alloc (tree, heap, 10);
 }
 
 static void
 pcallbacks_tini (void)
 {
-  VEC_free (tree, heap, expr.chain);
+  VEC_free (tree, heap, expr.gvar);
 }
 
 static void plugin_tini (void *gcc_data, void *user_data);
@@ -1781,138 +1783,178 @@ symdb_funp_alias (void *gcc_data, void *user_data)
     }
 }
 
-static bool
-is_var (tree node)
-{
-  int code = TREE_CODE (node);
-  return code == VAR_DECL || code == COMPONENT_REF || code == ARRAY_REF;
-}
-
+static void loop_expr (tree);
 static int
-print_gvar (tree node)
+print_gvar (tree node, bool * indirect)
 {
   tree tmp = node;
-  if (!is_var (tmp))
-    return 0;
-  VEC_truncate (tree, expr.chain, 0);
-  int code = TREE_CODE (tmp);
-  while (true)
+  int ret, pos = VEC_length (tree, expr.gvar);
+  bool print = false;
+
+  *indirect = false;
+  while (TREE_CODE (tmp) == INDIRECT_REF)
     {
-      if (code == VAR_DECL)
-	{
-	  if (DECL_CONTEXT (tmp))
-	    // local variable.
-	    return -1;
-	  VEC_safe_push (tree, heap, expr.chain, tmp);
-	  break;
-	}
-      else if (code == ARRAY_REF || code == COMPONENT_REF)
-	{
-	  VEC_safe_push (tree, heap, expr.chain, tmp);
-	  tmp = TREE_OPERAND (tmp, 0);
-	  code = TREE_CODE (tmp);
-	}
-      else
-	gcc_assert (false);
+      tmp = TREE_OPERAND (tmp, 0);
+      *indirect = true;
+    }
+  if (*indirect && TREE_CODE (tmp) == POINTER_PLUS_EXPR)
+    {
+      ret = 0;
+      goto nofound;
     }
 
-  int ix;
-  FOR_EACH_VEC_ELT_REVERSE (tree, expr.chain, ix, tmp)
-  {
-    switch (TREE_CODE (tmp))
-      {
-      case VAR_DECL:
-	dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
-	break;
-      case ARRAY_REF:
-	dyn_string_append_cstr (gbuf, "[]");
-	break;
-      case COMPONENT_REF:
+  while (true)
+    {
+      switch (TREE_CODE (tmp))
 	{
-	  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 3);
-	  gcc_assert (TREE_OPERAND (tmp, 2) == NULL);
-	  tree arg1 = TREE_OPERAND (tmp, 1);
-	  gcc_assert (TREE_CODE (arg1) == FIELD_DECL);
-	  dyn_string_append_cstr (gbuf, ".");
-	  dyn_string_append_cstr (gbuf,
-				  IDENTIFIER_POINTER (DECL_NAME (arg1)));
+	case VAR_DECL:
+	  if (DECL_CONTEXT (tmp))
+	    {			// local variable.
+	      ret = -1;
+	      goto nofound;
+	    }
+	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  goto found;
+	case INDIRECT_REF:
+	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  tmp = TREE_OPERAND (tmp, 0);
+	  if (TREE_CODE (tmp) == POINTER_PLUS_EXPR)
+	    {			/* astrut.p[i] */
+	      loop_expr (TREE_OPERAND (tmp, 1));
+	      tmp = TREE_OPERAND (tmp, 0);
+	    }
+	  break;
+	case ARRAY_REF:
+	case COMPONENT_REF:
+	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  tmp = TREE_OPERAND (tmp, 0);
+	  break;
+	case PARM_DECL:
+	  ret = -2;
+	  goto nofound;
+	case FUNCTION_DECL:
+	  ret = -3;
+	  goto nofound;
+	case INTEGER_CST:
+	case REAL_CST:
+	case FIXED_CST:
+	case COMPLEX_CST:
+	case VECTOR_CST:
+	case STRING_CST:
+	  ret = -4;
+	  goto nofound;
+	default:
+	  ret = 0;
+	  goto nofound;
 	}
-	break;
-      default:
-	break;
-      }
-  }
-  return 1;
+    }
+
+found:
+  while (VEC_length (tree, expr.gvar) != pos)
+    {
+      tmp = VEC_pop (tree, expr.gvar);
+      switch (TREE_CODE (tmp))
+	{
+	case VAR_DECL:
+	  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
+	  break;
+	case INDIRECT_REF:
+	  print = true;
+	  break;
+	case ARRAY_REF:
+	  dyn_string_append_cstr (gbuf, "[]");
+	  break;
+	case COMPONENT_REF:
+	  {
+	    gcc_assert (TREE_OPERAND_LENGTH (tmp) == 3);
+	    gcc_assert (TREE_OPERAND (tmp, 2) == NULL);
+	    tree arg1 = TREE_OPERAND (tmp, 1);
+	    gcc_assert (TREE_CODE (arg1) == FIELD_DECL);
+	    if (print)
+	      {
+		print = false;
+		dyn_string_append_cstr (gbuf, "->");
+	      }
+	    else
+	      dyn_string_append_cstr (gbuf, ".");
+	    dyn_string_append_cstr (gbuf,
+				    IDENTIFIER_POINTER (DECL_NAME (arg1)));
+	  }
+	  break;
+	default:
+	  break;
+	}
+    }
+  ret = 1;
+  goto done;
+
+nofound:
+  while (VEC_length (tree, expr.gvar) != pos)
+    VEC_pop (tree, expr.gvar);
+
+done:
+  return ret;
 }
 
-static void loop_expr (tree);
 static void
 do_lhs (tree node)
 {
-  if (is_var (node))
-    {
-      if (print_gvar (node) == 1)
-	faccessv_insert (gbuf, ACCESS_WRITE, expr.token_offset);
-      return;
-    }
-  loop_expr (node);
+  tree tmp = node;
+  bool indirect;
+  int ret = print_gvar (tmp, &indirect);
+  if (ret == 1)
+    faccessv_insert (gbuf,
+		     indirect ? ACCESS_POINTER_WRITE : ACCESS_WRITE,
+		     expr.token_offset);
+  else if (ret == 0)
+    loop_expr (tmp);
 }
 
 static void
 loop_expr (tree node)
 {
   tree tmp = node, arg0, arg1, arg2;
-  int ret;
-  if (is_var (node))
+  call_expr_arg_iterator iter;
+  bool indirect;
+  int ret = print_gvar (tmp, &indirect);
+  if (ret == 1)
     {
-      if (print_gvar (node) == 1)
-	faccessv_insert (gbuf, ACCESS_READ, expr.token_offset);
+      faccessv_insert (gbuf,
+		       indirect ? ACCESS_POINTER_READ : ACCESS_READ,
+		       expr.token_offset);
       return;
     }
-  switch (TREE_CODE (tmp))
+  else if (ret < 0)
+    return;
+
+  switch (TREE_CODE (node))
     {
     case MODIFY_EXPR:		/* =, +=, >>= and so on */
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
-      arg0 = TREE_OPERAND (tmp, 0);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+      arg0 = TREE_OPERAND (node, 0);
       do_lhs (arg0);
-      arg1 = TREE_OPERAND (tmp, 1);
+      arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
       break;
     case ADDR_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
-      arg0 = TREE_OPERAND (tmp, 0);
-      ret = print_gvar (arg0);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
+      arg0 = TREE_OPERAND (node, 0);
+      ret = print_gvar (arg0, &indirect);
       if (ret == 0)
 	loop_expr (arg0);
       else if (ret == 1)
 	faccessv_insert (gbuf, ACCESS_ADDR, expr.token_offset);
       break;
-    case INDIRECT_REF:		/* *p */
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
-      arg0 = TREE_OPERAND (tmp, 0);
-      ret = print_gvar (arg0) == 1;
-      if (ret == 0)
-	loop_expr (arg0);
-      else
-	faccessv_insert (gbuf, ACCESS_POINTER, expr.token_offset);
-      break;
-    case POINTER_PLUS_EXPR:	/* inside parens of *(p + 1) */
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
-      arg0 = TREE_OPERAND (tmp, 0);
-      ret = print_gvar (arg0);
-      gcc_assert (ret != 0);
-      if (ret == 1)
-	faccessv_insert (gbuf, ACCESS_READ, expr.token_offset);
-      break;
     case COND_EXPR:		/* .. ? .. : .. */
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 3);
-      arg0 = TREE_OPERAND (tmp, 0);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 3);
+      arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
-      arg1 = TREE_OPERAND (tmp, 1);
+      arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
-      arg2 = TREE_OPERAND (tmp, 2);
+      arg2 = TREE_OPERAND (node, 2);
       loop_expr (arg2);
       break;
+    case POINTER_PLUS_EXPR:	/* *(p + i) or p[i] */
     case COMPOUND_EXPR:	/* i, j */
       ;
     case LT_EXPR:
@@ -1921,32 +1963,40 @@ loop_expr (tree node)
     case GE_EXPR:
     case EQ_EXPR:
     case NE_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
-      arg0 = TREE_OPERAND (tmp, 0);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+      arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
-      arg1 = TREE_OPERAND (tmp, 1);
+      arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
       break;
     case POSTINCREMENT_EXPR:
     case PREINCREMENT_EXPR:
     case POSTDECREMENT_EXPR:
     case PREDECREMENT_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
-      arg0 = TREE_OPERAND (tmp, 0);
-      ret = print_gvar (arg0);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+      arg0 = TREE_OPERAND (node, 0);
+      ret = print_gvar (arg0, &indirect);
       if (ret == 0)
 	loop_expr (arg0);
       else if (ret == 1)
-	faccessv_insert (gbuf, ACCESS_READ | ACCESS_WRITE, expr.token_offset);
+	faccessv_insert (gbuf,
+			 indirect ? ACCESS_POINTER_READ | ACCESS_POINTER_WRITE
+			 : ACCESS_READ | ACCESS_WRITE, expr.token_offset);
       break;
+    case INDIRECT_REF:		/* *(expression) */
     case CONVERT_EXPR:		/* (int*) i */
     case NEGATE_EXPR:		/* -i */
+    case FLOAT_EXPR:		/* f = i */
+    case FIX_TRUNC_EXPR:	/* i = f */
+    case VA_ARG_EXPR:
       ;
     case BIT_NOT_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
-      arg0 = TREE_OPERAND (tmp, 0);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
+      arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
       break;
+    case EXACT_DIV_EXPR:	/* int *p, *q; p - q */
+	  ;
     case LSHIFT_EXPR:
     case RSHIFT_EXPR:
     case BIT_IOR_EXPR:		/* a | b */
@@ -1962,32 +2012,27 @@ loop_expr (tree node)
     case TRUNC_DIV_EXPR:
     case TRUNC_MOD_EXPR:
     case RDIV_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
-      arg0 = TREE_OPERAND (tmp, 0);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+      arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
-      arg1 = TREE_OPERAND (tmp, 1);
+      arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
       break;
-    case INTEGER_CST:
-    case REAL_CST:
-    case FIXED_CST:
-    case COMPLEX_CST:
-    case VECTOR_CST:
-    case STRING_CST:
-      ;
     case CALL_EXPR:
-    case FUNCTION_DECL:
-    case PARM_DECL:
+      gcc_assert (CALL_EXPR_FN (node) != NULL);
+      gcc_assert (CALL_EXPR_STATIC_CHAIN (node) == NULL);
+      FOR_EACH_CALL_EXPR_ARG (tmp, iter, node) loop_expr (tmp);
       break;
       /* Some inner codes */
     case NOP_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
-      arg0 = TREE_OPERAND (tmp, 0);
+    case NON_LVALUE_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
+      arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
       break;
     case C_MAYBE_CONST_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
-      arg1 = TREE_OPERAND (tmp, 1);
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+      arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
       break;
     default:
@@ -2000,7 +2045,6 @@ symdb_begin_expression (void *gcc_data, void *user_data)
 {
   if (block_list.access_var)
     return;
-  expr.current_fid = file_get_current_fid ();
   if (expr.nested_level++ == 0)
     expr.token_offset = (int) gcc_data;
 }
@@ -2013,6 +2057,7 @@ symdb_end_expression (void *gcc_data, void *user_data)
   tree node = (tree) gcc_data;
   if (--expr.nested_level != 0)
     return;
+  gcc_assert (VEC_length (tree, expr.gvar) == 0);
   loop_expr (node);
   void *pair[2];
   pair[0] = node;
@@ -2024,26 +2069,23 @@ static void
 set_func (const char *fname, tree body)
 {
   tree arg0, arg1;
+  bool indirect;
   if (TREE_CODE (body) != MODIFY_EXPR)
     return;
   arg0 = TREE_OPERAND (body, 0);
   arg1 = TREE_OPERAND (body, 1);
   if (TREE_CODE (arg1) != PARM_DECL)
     return;
-  if (TREE_CODE (arg0) == INDIRECT_REF)
-    {
-      arg0 = TREE_OPERAND (arg0, 0);
-      if (print_gvar (arg0) == 1)
-	faccessv_insert_fpattern (gbuf, ACCESS_POINTER);
-    }
-  else if (print_gvar (arg0) == 1)
-    faccessv_insert_fpattern (gbuf, ACCESS_WRITE);
+  if (print_gvar (arg0, &indirect) == 1)
+    faccessv_insert_fpattern (gbuf,
+			      indirect ? ACCESS_POINTER_WRITE : ACCESS_WRITE);
 }
 
 static void
 get_func (const char *fname, tree body)
 {
   tree tmp, arg0, arg1;
+  bool indirect;
   if (TREE_CODE (body) != RETURN_EXPR)
     return;
   tmp = TREE_OPERAND (body, 0);
@@ -2057,17 +2099,16 @@ get_func (const char *fname, tree body)
   if (code == ADDR_EXPR)
     {
       arg0 = TREE_OPERAND (arg1, 0);
-      if (print_gvar (arg0) == 1)
+      if (print_gvar (arg0, &indirect) == 1)
 	faccessv_insert_fpattern (gbuf, ACCESS_ADDR);
     }
-  else if (code == INDIRECT_REF)
+  else
     {
-      arg0 = TREE_OPERAND (arg1, 0);
-      if (print_gvar (arg0) == 1)
-	faccessv_insert_fpattern (gbuf, ACCESS_POINTER);
+      if (print_gvar (arg1, &indirect) == 1)
+	faccessv_insert_fpattern (gbuf,
+				  indirect ? ACCESS_POINTER_READ :
+				  ACCESS_READ);
     }
-  else if (print_gvar (arg1) == 1)
-    faccessv_insert_fpattern (gbuf, ACCESS_READ);
 }
 
 static void
