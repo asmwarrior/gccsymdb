@@ -1516,11 +1516,8 @@ static void
 symdb_extern_func (void *gcc_data, void *user_data)
 {
   const struct c_declarator *da = (const struct c_declarator *) gcc_data;
-
-  for (; da->kind == cdk_pointer; da = da->declarator);
-  gcc_assert (da->kind == cdk_function);
-  da = da->declarator;
-  gcc_assert (da->kind == cdk_id);
+  for (; da->kind != cdk_id; da = da->declarator);
+  gcc_assert (da->declarator == NULL);
 
   dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id));
   def_append (DEF_FUNC, gbuf, da->file_offset);
@@ -1788,7 +1785,7 @@ static int
 print_gvar (tree node, bool * indirect)
 {
   tree tmp = node;
-  int ret, pos = VEC_length (tree, expr.gvar);
+  int ret, code, pos = VEC_length (tree, expr.gvar);
   bool print = false;
 
   *indirect = false;
@@ -1803,6 +1800,25 @@ print_gvar (tree node, bool * indirect)
       goto nofound;
     }
 
+  code = TREE_CODE (tmp);
+  switch (TREE_CODE_CLASS (code))
+    {
+    case tcc_expression:
+    case tcc_comparison:
+    case tcc_unary:
+    case tcc_binary:
+    case tcc_vl_exp:
+      ret = 0;
+      goto nofound;
+    case tcc_declaration:
+    case tcc_reference:
+    case tcc_constant:
+      break;
+    default:
+      gcc_assert (false);
+    }
+
+  // Iterator a leaf node, some expressions can occur in it.
   while (true)
     {
       switch (TREE_CODE (tmp))
@@ -1822,6 +1838,11 @@ print_gvar (tree node, bool * indirect)
 	    {			/* astrut.p[i] */
 	      loop_expr (TREE_OPERAND (tmp, 1));
 	      tmp = TREE_OPERAND (tmp, 0);
+	    }
+	  else if (TREE_CODE (tmp) == CALL_EXPR)
+	    {
+	      ret = -16;
+	      goto nofound;
 	    }
 	  break;
 	case ARRAY_REF:
@@ -1843,9 +1864,21 @@ print_gvar (tree node, bool * indirect)
 	case STRING_CST:
 	  ret = -4;
 	  goto nofound;
-	default:
-	  ret = 0;
+	case COMPOUND_EXPR:
+	  loop_expr (TREE_OPERAND (tmp, 0));
+	  tmp = TREE_OPERAND (tmp, 1);
+	  break;
+	case MODIFY_EXPR:
+	  loop_expr (TREE_OPERAND (tmp, 1));
+	  tmp = TREE_OPERAND (tmp, 0);
+	  break;
+	case NOP_EXPR:
+	case CONVERT_EXPR:
+	  loop_expr (TREE_OPERAND (tmp, 0));
+	  ret = -16;
 	  goto nofound;
+	default:
+	  gcc_assert (false);
 	}
     }
 
@@ -1983,12 +2016,14 @@ loop_expr (tree node)
 			 indirect ? ACCESS_POINTER_READ | ACCESS_POINTER_WRITE
 			 : ACCESS_READ | ACCESS_WRITE, expr.token_offset);
       break;
-    case INDIRECT_REF:		/* *(expression) */
-    case CONVERT_EXPR:		/* (int*) i */
+    case INDIRECT_REF:		/* p->i */
     case NEGATE_EXPR:		/* -i */
     case FLOAT_EXPR:		/* f = i */
     case FIX_TRUNC_EXPR:	/* i = f */
     case VA_ARG_EXPR:
+      ;
+    case CONVERT_EXPR:		/* cast: (struct abc*) i */
+    case NOP_EXPR:		/* cast: (struct abc*) p */
       ;
     case BIT_NOT_EXPR:
       gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
@@ -1996,7 +2031,7 @@ loop_expr (tree node)
       loop_expr (arg0);
       break;
     case EXACT_DIV_EXPR:	/* int *p, *q; p - q */
-	  ;
+      ;
     case LSHIFT_EXPR:
     case RSHIFT_EXPR:
     case BIT_IOR_EXPR:		/* a | b */
@@ -2024,7 +2059,15 @@ loop_expr (tree node)
       FOR_EACH_CALL_EXPR_ARG (tmp, iter, node) loop_expr (tmp);
       break;
       /* Some inner codes */
-    case NOP_EXPR:
+    case MAX_EXPR:
+    case MIN_EXPR:
+      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+      arg0 = TREE_OPERAND (node, 0);
+      loop_expr (arg0);
+      arg1 = TREE_OPERAND (node, 1);
+      loop_expr (arg1);
+      break;
+    case SAVE_EXPR:
     case NON_LVALUE_EXPR:
       gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
       arg0 = TREE_OPERAND (node, 0);

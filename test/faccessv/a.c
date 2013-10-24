@@ -94,10 +94,17 @@ struct Y {
 struct X {
 	char *cp;
 	struct Y* p;
+	struct Y** pp;
+	struct Y v;
 } x, y;
 int** pp;
+struct X* ofo(void)
+{
+	return 0;
+}
 void foo(char* parm1, struct X* parm2)
 {
+	struct X lx;
 	x.p->c = 0;
 	parm1 += 2;
 	*parm1 = *parm2->cp;
@@ -111,6 +118,16 @@ void foo(char* parm1, struct X* parm2)
 	i = p - q;
 	f1 = i;
 	i = f1;
+	(i > 0 ? i : 0) < 3;
+	((struct X*) (x.pp[j]))->cp;
+	((struct X*) i)->p[j].c;
+	(x = lx).p;
+	(lx, x).p;
+	(j, (struct X*) i)->p;
+	((x = lx).p, x.p)->c;
+	(&x.v)->c;
+	ofo()->v;
+	p[i/8] |= 3;
 }
 
 #include<stdarg.h>

@@ -12,4 +12,5 @@ paren_declarator/: test outer-paren and inner-paren surrounding a declaration.
 
 cpptoken/: PLUGIN_CPP_TOKEN sometimes passes token = NULL, here is the case.
 
-ifdef/: test `ifdef/if' feature.
+Feature testcases use their names as directory name, such as ifdef, offsetof
+etc.
