@@ -90,6 +90,7 @@ usage (void)
   printf ("    gs initdb prjpath user-defined-info\n");
   printf ("    gs enddb prjpath\n");
   printf ("    gs relocate prjpath\n");
+  printf ("    gs ctrl XXX (YYY)\n");
   printf ("    Meanwhile, filename can be substituted by `-' (all files)\n");
   return EXIT_FAILURE;
 }
@@ -544,6 +545,21 @@ infodb (void)
   sqlite3_free_table (table);
 }
 
+static void
+ctrl (const char *parameter, const char *value)
+{
+  dyn_string_copy_cstr (gbuf, "update ProjectOverview set ");
+  if (strcmp (parameter, "canUpdateFile") == 0)
+    {
+      dyn_string_append_cstr (gbuf, parameter);
+      dyn_string_append_cstr (gbuf, " = '");
+      dyn_string_append_cstr (gbuf, value);
+      dyn_string_append_cstr (gbuf, "'");
+    }
+  dyn_string_append_cstr (gbuf, ";");
+  db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
+}
+
 /* }])> */
 
 int
@@ -606,6 +622,8 @@ main (int argc, char **argv)
     offset_of (argv[2], argv[3]);
   else if (strcmp (argv[1], "infodb") == 0)
     infodb ();
+  else if (strcmp (argv[1], "ctrl") == 0)
+    ctrl (argv[2], argv[3]);
   dep_tini ();
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
   sqlite3_close (db);
