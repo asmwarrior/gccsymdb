@@ -92,11 +92,12 @@ struct Y {
 	char c;
 };
 struct X {
+	struct X* next;
 	char *cp;
 	struct Y* p;
 	struct Y** pp;
 	struct Y v;
-} x, y;
+} x, y, *px;
 int** pp;
 struct X* ofo(void)
 {
@@ -128,6 +129,7 @@ void foo(char* parm1, struct X* parm2)
 	(&x.v)->c;
 	ofo()->v;
 	p[i/8] |= 3;
+	(px->next ? px->next : px)->p;
 }
 
 #include<stdarg.h>

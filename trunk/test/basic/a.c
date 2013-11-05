@@ -56,4 +56,6 @@ static void (*ararefuncdecl(void *pVfs, float q))(char p);
 static void (*ararefuncdecl(void *pVfs, float q))(char p){
 	  return pVfs;
 }
+
+extern void off(void) {}
 //*/

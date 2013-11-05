@@ -267,7 +267,9 @@ static void
 insert_filedep (int hid, int offset)
 {
   int previd = file_get_current_fid ();
-  gcc_assert (previd != hid);
+  if (previd == hid)
+    /* Rare case, file includes itself. */
+    return;
   db_error (sqlite3_bind_int (file.select_filedep, 1, previd));
   db_error (sqlite3_bind_int (file.select_filedep, 2, hid));
   db_error (sqlite3_bind_int (file.select_filedep, 3, offset));
@@ -1834,15 +1836,19 @@ print_gvar (tree node, bool * indirect)
 	case INDIRECT_REF:
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
-	  if (TREE_CODE (tmp) == POINTER_PLUS_EXPR)
-	    {			/* astrut.p[i] */
+	  code = TREE_CODE (tmp);
+	  switch (code)
+	    {
+	    case POINTER_PLUS_EXPR:	/* astrut.p[i] */
 	      loop_expr (TREE_OPERAND (tmp, 1));
 	      tmp = TREE_OPERAND (tmp, 0);
-	    }
-	  else if (TREE_CODE (tmp) == CALL_EXPR)
-	    {
+	      break;
+	    case CALL_EXPR:
+	    case COND_EXPR:
 	      ret = -16;
 	      goto nofound;
+	    default:
+	      break;
 	    }
 	  break;
 	case ARRAY_REF:
@@ -1875,6 +1881,9 @@ print_gvar (tree node, bool * indirect)
 	case NOP_EXPR:
 	case CONVERT_EXPR:
 	  loop_expr (TREE_OPERAND (tmp, 0));
+	  ret = -16;
+	  goto nofound;
+	case BIT_FIELD_REF:
 	  ret = -16;
 	  goto nofound;
 	default:
