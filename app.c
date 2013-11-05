@@ -513,8 +513,11 @@ offset_of (const char *struct_name, const char *member)
 static void
 infodb (void)
 {
-  system ("echo \"Current sqlite is:\"");
-  system ("sqlite3 --version");
+  char fbuf[32];
+  FILE *ftmp = popen ("sqlite3 --version", "r");
+  fread (fbuf, sizeof (char), sizeof (fbuf), ftmp);
+  pclose (ftmp);
+  printf ("Current sqlite is: %s\n", fbuf);
   dyn_string_copy_cstr (gbuf, "select * from ProjectOverview;");
   db_error (sqlite3_get_table
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
@@ -525,6 +528,7 @@ infodb (void)
       printf ("\n");
     }
   sqlite3_free_table (table);
+  printf ("\n");
   dyn_string_copy_cstr (gbuf, "select count(*) from Definition;");
   db_error (sqlite3_get_table
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
@@ -535,13 +539,53 @@ infodb (void)
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
   printf ("File count is %s\n", table[1]);
   sqlite3_free_table (table);
-  dyn_string_copy_cstr (gbuf, "select name, count(name) from definition "
-			"group by (name) having count(name) > 1 limit 1;");
+  printf ("\n");
+  dyn_string_copy_cstr (gbuf, "select count(*) from Definition "
+			"where flag = 1;");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  printf ("Global variable count is %s\n", table[1]);
+  sqlite3_free_table (table);
+  dyn_string_copy_cstr (gbuf, "select fileName, fileOffset, defName "
+			"from FileSymbol where defName in "
+			"(select name from definition where flag = 1 "
+			"group by (name) having count(name) > 1 order by count(name));");
   db_error (sqlite3_get_table
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
   if (nrow != 0)
-    printf ("Duplication of definition name is %s, its count is %s\n",
-	    table[2], table[3]);
+    {
+      printf ("Global variable duplication overview\n");
+      for (int i = 0; i < nrow + 1; i++)
+	{
+	  for (int j = 0; j < ncolumn; j++)
+	    printf ("%s,", table[j + i * ncolumn]);
+	  printf ("\n");
+	}
+    }
+  sqlite3_free_table (table);
+  printf ("\n");
+  dyn_string_copy_cstr (gbuf, "select count(*) from Definition "
+			"where flag = 2;");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  printf ("Function count is %s\n", table[1]);
+  sqlite3_free_table (table);
+  dyn_string_copy_cstr (gbuf, "select fileName, fileOffset, defName "
+			"from FileSymbol where defName in "
+			"(select name from definition where flag = 2 "
+			"group by (name) having count(name) > 1 order by count(name));");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
+  if (nrow != 0)
+    {
+      printf ("Function duplication overview\n");
+      for (int i = 0; i < nrow + 1; i++)
+	{
+	  for (int j = 0; j < ncolumn; j++)
+	    printf ("%s,", table[j + i * ncolumn]);
+	  printf ("\n");
+	}
+    }
   sqlite3_free_table (table);
 }
 

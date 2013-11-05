@@ -108,20 +108,20 @@ create table Offsetof (
 );
 
 -- Useful views, search them instead of original tables if possible <([{
--- Search file-definition pair.
+-- Search file-definition pair by defname.
 create view FileSymbol as
 select * from
 (
 select
 	f.id as fileID, f.name as fileName, fileOffset, d.id as defID, d.name as defName, flag
 from
-	chFile f, Definition as d
-where
-	d.fileID = f.id
+	Definition as d
+	left join chFile as f on d.fileID = f.id
 );
 
 -- Search function-call relationship, query column calleName if you only know func-decl.
--- Note: It's possible that FunpAlias hasn't a mfp record which the mfp exists in FunctionCall -- your function calls a mfp but forget to assigns it to some func-decl? The view should use left join to detect the case.
+-- Note: It's possible that FunpAlias hasn't a mfp record while the mfp exists in FunctionCall -- your function calls a mfp but forget to assigns it to some func-decl? The view should use left join to detect the case.
+-- Note: the second query includes the first query totally, the first for search a func-decl indirectly by mfp, the second directly. It depends on the fact that mfp field of FunctionCall has a pattern '*::XX'.
 create view CallRelationship as
 select * from
 (
@@ -142,6 +142,7 @@ where
 	fc.callerID = d.id and d.fileID = f.id
 );
 
+-- Search mfp alias and its position by mfp.
 -- Note: It's possible that FunpAlias has a record but you can't find it in Defintion, maybe you assign the mfp to an assemble-entry.
 create view MfpJumpto as
 select * from
