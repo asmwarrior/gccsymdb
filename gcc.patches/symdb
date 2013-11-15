@@ -409,6 +409,21 @@ Index: gcc/gcc/doc/plugins.texi
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
+Index: gcc/gcc/fold-const.c
+===================================================================
+--- gcc.orig/gcc/fold-const.c
++++ gcc/gcc/fold-const.c
+@@ -3393,6 +3393,10 @@ optimize_bit_field_compare (location_t l
+   tree mask;
+   tree offset;
+ 
++  /* Prevent make_bit_field_ref to create BIT_FIELD_REF tree because new tree
++     substitutes and discards original FIELD_DECL. */
++  return 0;
++
+   /* Get all the information about the extractions being done.  If the bit size
+      if the same as the size of the underlying object, we aren't doing an
+      extraction at all and so can do nothing.  We also don't want to
 Index: gcc/gcc/plugin.c
 ===================================================================
 --- gcc.orig/gcc/plugin.c

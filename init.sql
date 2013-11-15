@@ -10,9 +10,10 @@ create table ProjectOverview (
 	-- User-defined info, such as the svn revision of code.
 	userDefInfo text,
 	-- plugin control parameters.
-	canUpdateFile boolean
+	canUpdateFile boolean,
+	faccessv boolean
 );
-insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 0, 0, "user data", 't');
+insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 0, 0, "user data", 't', 't');
 
 -- chFile is the root of all tables, see trigger fold for more, delete the table will delete all things in the file.
 -- But currently, macro feature doesn't depend on chFile table, which is transient.
@@ -110,51 +111,65 @@ create table Offsetof (
 -- Useful views, search them instead of original tables if possible <([{
 -- Search file-definition pair by defname.
 create view FileSymbol as
-select * from
-(
 select
 	f.id as fileID, f.name as fileName, fileOffset, d.id as defID, d.name as defName, flag
 from
 	Definition as d
 	left join chFile as f on d.fileID = f.id
-);
+;
 
--- Search function-call relationship, query column calleName if you only know func-decl.
--- Note: It's possible that FunpAlias hasn't a mfp record while the mfp exists in FunctionCall -- your function calls a mfp but forget to assigns it to some func-decl? The view should use left join to detect the case.
--- Note: the second query includes the first query totally, the first for search a func-decl indirectly by mfp, the second directly. It depends on the fact that mfp field of FunctionCall has a pattern '*::XX'.
+-- Search function-call relationship, query column calleeName if you only know func-decl.
+-- Note: It's possible that FunpAlias hasn't a mfp record while the mfp exists in FunctionCall -- your function calls a mfp but forget to assigns it to some func-decl?
+-- Note: the second query actually includes all rows in FunctionCall. It depends on the fact that mfp data of FunctionCall has a pattern '*::XX', it's used to query direct call relationship.
+-- Note: sqlite-3.6.20 hasn't a good query plan in the view, if the view only includes either the first or second query, it will use Alias2 and CalleeName indices individually. That's why app.c:callee() uses its code based on this.
 create view CallRelationship as
-select * from
-(
 select
-	f.id as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
+	d.fileID as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
 	fc.fileID as calleePositionFileID, fc.fileOffset as calleePosition, fa.fundecl as calleeName, fa.mfp as mfp
 from
-	FunctionCall fc, FunpAlias fa, chFile f, Definition as d
-where
-	fc.callerID = d.id and fc.name = fa.mfp and d.fileID = f.id
+	FunctionCall as fc
+	left join FunpAlias fa on fc.name = fa.mfp
+	left join Definition as d on fc.callerID = d.id
+		left join chFile f on d.fileID = f.id
 union all
 select
-	f.id as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
-	fc.fileId as calleePositionFileID, fc.fileOffset as calleePosition, fc.name as calleeName, '-' as mfp
+	d.fileID as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
+	fc.fileID as calleePositionFileID, fc.fileOffset as calleePosition, fc.name as calleeName, '-' as mfp
 from
-	FunctionCall fc, chFile f, Definition as d
-where
-	fc.callerID = d.id and d.fileID = f.id
-);
+	FunctionCall as fc
+	left join Definition as d on fc.callerID = d.id
+		left join chFile f on d.fileID = f.id
+;
 
 -- Search mfp alias and its position by mfp.
 -- Note: It's possible that FunpAlias has a record but you can't find it in Defintion, maybe you assign the mfp to an assemble-entry.
 create view MfpJumpto as
-select * from
-(
 select
-	fa.fileID as mfpFileID, f2.name as mfpFileName, fa.offset as mfpOffset, fa.mfp as mfp,
-	f.id as funcFileID, f.name as funcFileName, d.fileOffset as funcOffset, fa.funDecl as funcName
+	fa.fileID as mfpFileID, f.name as mfpFileName, fa.offset as mfpOffset, fa.mfp as mfp,
+	d.fileID as funcFileID, f2.name as funcFileName, d.fileOffset as funcOffset, fa.funDecl as funcName
 from
-	FunpAlias fa, chFile f, chFile f2, Definition as d
+	FunpAlias as fa
+	left join Definition as d on fa.funDecl = d.Name
+		left join chFile as f2 on d.fileID = f2.id
+	left join chFile as f on fa.fileID = f.id
 where
-	fa.funDecl = d.name and d.fileID = f.id and fa.fileID = f2.id
-);
+	d.flag = 2; -- DEF_FUNC
+;
+
+-- Search variable access by variable name.
+-- NOte: since query clause of the view is affixing `where VarName like 'var%'', and like operator doesn't use index, so the view hasn't optimization solution.
+create view AccessRelationship as
+select
+	f2.id as FuncFileID, f2.name as FuncFileName, d.fileOffset as FuncFileOffset, d.name as FuncName,
+	f.id as ExpressionFileID, f.name as ExpressionFileName, fa.fileOffset as ExpressionFileOffset,
+	fa.name as VarName,
+	fa.flag as VarAccessFlag
+from
+	FunctionAccess as fa
+	left join Definition as d on fa.funcID = d.id
+		left join chFile as f2 on d.fileID = f2.id
+	left join chFile as f on fa.fileID = f.id
+;
 -- }])>
 
 -- Index <([{
@@ -163,6 +178,10 @@ create index FileName on chFile (name);
 create index DefName on Definition (name);
 
 create index Alias on FunpAlias (mfp);
+
+create index Alias2 on FunpAlias (funDecl);
+
+create index CalleeName on FunctionCall (name);
 -- }])>
 
 -- Triggger <([{

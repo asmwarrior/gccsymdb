@@ -142,3 +142,15 @@ void oof(char* file, ...)
 	va_copy(ap, aq);
 	va_end(ap);
 }
+
+struct
+{
+	unsigned bf1 : 2;
+	unsigned bf2 : 3;
+	unsigned bf3 : 2;
+} bfv;
+void bfr_test(void)
+{
+	i = bfv.bf1 == 1;
+	i = bfv.bf1 == 2 && bfv.bf3 == 3;
+}
