@@ -30,4 +30,5 @@ CREATE TABLE FunctionCall (
 );
 INSERT INTO "FunctionCall" VALUES(4,1,'foo',87);
 INSERT INTO "FunctionCall" VALUES(4,1,'::mem',99);
+CREATE INDEX CalleeName on FunctionCall (name);
 COMMIT;

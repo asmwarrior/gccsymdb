@@ -190,8 +190,10 @@ return multiple-resuls when search a definition.
     int i;
     int i;
     extern int i;
+    void f(void) {}
+    extern inline void f(void) {}
 The syntax is acceped by gcc, so to my plugin, by the way, my plugin doesn't
-store the third line to database.
+store the third line to database, but stores the fifth.
 
     typedef abc abc;
     struct abc {

@@ -102,6 +102,7 @@ static struct
   dyn_string_t cwd;
   dyn_string_t main_file;
   bool can_update_file;
+  bool faccessv;
 } control_panel;
 
 static const char *
@@ -132,10 +133,12 @@ control_panel_init (const char *main_file)
   dyn_string_copy_cstr (control_panel.main_file, canonical_path (main_file));
   /* initilize control data. */
   db_error (sqlite3_get_table (db,
-			       "select projectRootPath, canUpdateFile from ProjectOverview;",
+			       "select projectRootPath, canUpdateFile, faccessv "
+			       "from ProjectOverview;",
 			       &result, &nrow, &ncolumn, &error_msg));
-  dyn_string_copy_cstr (control_panel.prj_dir, result[2]);
-  control_panel.can_update_file = strcmp (result[3], "t") == 0 ? true : false;
+  dyn_string_copy_cstr (control_panel.prj_dir, result[3]);
+  control_panel.can_update_file = strcmp (result[4], "t") == 0 ? true : false;
+  control_panel.faccessv = strcmp (result[5], "t") == 0 ? true : false;
   sqlite3_free_table (result);
 }
 
@@ -267,9 +270,7 @@ static void
 insert_filedep (int hid, int offset)
 {
   int previd = file_get_current_fid ();
-  if (previd == hid)
-    /* Rare case, file includes itself. */
-    return;
+  if (previd == hid);		/* Rare case, file includes itself. */
   db_error (sqlite3_bind_int (file.select_filedep, 1, previd));
   db_error (sqlite3_bind_int (file.select_filedep, 2, hid));
   db_error (sqlite3_bind_int (file.select_filedep, 3, offset));
@@ -1836,13 +1837,16 @@ print_gvar (tree node, bool * indirect)
 	case INDIRECT_REF:
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
-	  code = TREE_CODE (tmp);
-	  switch (code)
+	  switch (TREE_CODE (tmp))
 	    {
 	    case POINTER_PLUS_EXPR:	/* astrut.p[i] */
 	      loop_expr (TREE_OPERAND (tmp, 1));
 	      tmp = TREE_OPERAND (tmp, 0);
 	      break;
+	    case TARGET_EXPR:
+	      loop_expr (TREE_OPERAND (tmp, 1));
+	      ret = -16;
+	      goto nofound;
 	    case CALL_EXPR:
 	    case COND_EXPR:
 	      ret = -16;
@@ -1881,9 +1885,6 @@ print_gvar (tree node, bool * indirect)
 	case NOP_EXPR:
 	case CONVERT_EXPR:
 	  loop_expr (TREE_OPERAND (tmp, 0));
-	  ret = -16;
-	  goto nofound;
-	case BIT_FIELD_REF:
 	  ret = -16;
 	  goto nofound;
 	default:
@@ -2076,6 +2077,7 @@ loop_expr (tree node)
       arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
       break;
+    case ABS_EXPR:
     case SAVE_EXPR:
     case NON_LVALUE_EXPR:
       gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
@@ -2110,7 +2112,8 @@ symdb_end_expression (void *gcc_data, void *user_data)
   if (--expr.nested_level != 0)
     return;
   gcc_assert (VEC_length (tree, expr.gvar) == 0);
-  loop_expr (node);
+  if (control_panel.faccessv)
+    loop_expr (node);
   void *pair[2];
   pair[0] = node;
   pair[1] = (void *) expr.token_offset;
