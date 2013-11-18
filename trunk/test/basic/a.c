@@ -54,7 +54,7 @@ int ofo(int);
 int* fof(int i __attribute__((unused))) {}
 static void (*ararefuncdecl(void *pVfs, float q))(char p);
 static void (*ararefuncdecl(void *pVfs, float q))(char p){
-	  return pVfs;
+	return pVfs;
 }
 
 extern void off(void) {}

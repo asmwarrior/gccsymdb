@@ -125,20 +125,22 @@ from
 create view CallRelationship as
 select
 	d.fileID as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
-	fc.fileID as calleePositionFileID, fc.fileOffset as calleePosition, fa.fundecl as calleeName, fa.mfp as mfp
+	fc.fileID as calleePosFileID, f2.name as calleePosFileName, fc.fileOffset as calleePos, fa.fundecl as calleeName, fa.mfp as mfp
 from
 	FunctionCall as fc
 	left join FunpAlias fa on fc.name = fa.mfp
 	left join Definition as d on fc.callerID = d.id
 		left join chFile f on d.fileID = f.id
+	left join chFile f2 on fc.fileID = f2.id
 union all
 select
 	d.fileID as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
-	fc.fileID as calleePositionFileID, fc.fileOffset as calleePosition, fc.name as calleeName, '-' as mfp
+	fc.fileID as calleePosFileID, f2.name as calleePosFileName, fc.fileOffset as calleePos, fc.name as calleeName, '-' as mfp
 from
 	FunctionCall as fc
 	left join Definition as d on fc.callerID = d.id
 		left join chFile f on d.fileID = f.id
+	left join chFile f2 on fc.fileID = f2.id
 ;
 
 -- Search mfp alias and its position by mfp.
@@ -157,11 +159,11 @@ where
 ;
 
 -- Search variable access by variable name.
--- NOte: since query clause of the view is affixing `where VarName like 'var%'', and like operator doesn't use index, so the view hasn't optimization solution.
+-- NOte: since query clause of the view in most case is affixing `where VarName like 'var%'', and `like' operator doesn't use index in sqlite, so the view hasn't optimization solution.
 create view AccessRelationship as
 select
 	f2.id as FuncFileID, f2.name as FuncFileName, d.fileOffset as FuncFileOffset, d.name as FuncName,
-	f.id as ExpressionFileID, f.name as ExpressionFileName, fa.fileOffset as ExpressionFileOffset,
+	f.id as ExprFileID, f.name as ExprFileName, fa.fileOffset as ExprFileOffset,
 	fa.name as VarName,
 	fa.flag as VarAccessFlag
 from
