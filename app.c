@@ -450,16 +450,17 @@ faccessv (const char *var)
 			"VarName, VarAccessFlag "
 			"from AccessRelationship where VarName like '");
   dyn_string_append_cstr (gbuf, var);
-  dyn_string_append_cstr (gbuf, "%';");
-  db_error (sqlite3_get_table (db, dyn_string_buf (gbuf), &table,
-			       &nrow, &ncolumn, &error_msg));
+  dyn_string_append_cstr (gbuf,
+			  "%' order by FuncFileName, FuncFileOffset, FuncName, VarName;");
+  db_error (sqlite3_get_table
+	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
   const char *a, *b, *c, *d;
   if (nrow != 0)
     {
       a = table[5];
       b = table[6];
       c = table[7];
-      c = table[8];
+      d = table[8];
       int flag = 0;
       for (int i = 1; i <= nrow; i++)
 	{

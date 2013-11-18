@@ -84,6 +84,7 @@ int main(void)
 	i = (unsigned int) &j + k++ + n;
 	i = abc.arr[1][1].z.arr2[1];
 	i = arr[0][1][2];
+	abc.arr[i][j].y;
 	set_p(m);
 	return 0;
 }
@@ -153,4 +154,25 @@ void bfr_test(void)
 {
 	i = bfv.bf1 == 1;
 	i = bfv.bf1 == 2 && bfv.bf3 == 3;
+}
+
+void stmt_in_expr(void)
+{
+	struct X lx; int li, lj;
+	(*({ &x.v; })).c;
+	(*({ li < lj; &x.v; })).c;
+	({ li < lj; y; lx = y, y; }).v;
+	({ li < lj; ({ li > lj; y.p; }); })->c;
+	({ li < lj; y; }).v;
+	({ li < lj; px; })->v;
+	(j, (struct X*) i)->v;
+	({ ofo(); })->v;
+}
+
+void fun_nested(void)
+{
+	void fun_in_fun(void)
+	{
+		i;
+	}
 }

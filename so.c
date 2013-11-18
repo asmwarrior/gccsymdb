@@ -44,6 +44,7 @@
 #include "coretypes.h"
 #include "tm.h"
 #include "tree.h"
+#include "tree-iterator.h"
 #include "gcc/c-tree.h"
 #include "c-family/c-common.h"
 #include "c-family/c-pragma.h"
@@ -1185,7 +1186,8 @@ cb_direct_include (int file_offset, const char *fname, bool sys)
 /* }])> */
 
 /* plugin callbacks <([{ */
-/* The fold isn't class fold. */
+/* The fold isn't class fold. All functions in subfold are public to every
+ * folds. */
 /* The var is used to block some callbacks temporarily. */
 static struct
 {
@@ -1199,11 +1201,13 @@ static struct
 /* in_pragma is used by symdb_cpp_token and symdb_c_token. */
 static bool in_pragma = false;
 
-/* For symdb_begin_expression and symdb_end_expression. */
+/* For faccessv. */
 static struct
 {
   int token_offset;
-  int nested_level;
+    VEC (int, heap) * nested_level;
+  /* Since print_gvar can be called recursively -- print_gvar >> loop_expr >>
+   * print_gvar, so the member is used just like a stack in print_gvar. */
     VEC (tree, heap) * gvar;
 } expr =
 {
@@ -1212,67 +1216,20 @@ static struct
 static void
 pcallbacks_init (void)
 {
+  expr.nested_level = VEC_alloc (int, heap, 10);
   expr.gvar = VEC_alloc (tree, heap, 10);
+  VEC_safe_push (int, heap, expr.nested_level, 0);
 }
 
 static void
 pcallbacks_tini (void)
 {
   VEC_free (tree, heap, expr.gvar);
+  gcc_assert (VEC_length (int, expr.nested_level) == 1);
+  VEC_free (int, heap, expr.nested_level);
 }
 
-static void plugin_tini (void *gcc_data, void *user_data);
-static void
-symdb_unit_init (void *gcc_data, void *user_data)
-{
-  cpp_callbacks *cb = cpp_get_callbacks (parse_in);
-  orig_file_change = cb->file_change;
-  cb->file_change = cb_file_change;
-  /* The case is `echo "" | gcc -xc -'. */
-  if (strcmp (main_input_filename, "") == 0)
-    {
-      plugin_tini (NULL, NULL);
-      return;
-    }
-
-  db_error ((sqlite3_open_v2
-	     (dyn_string_buf (control_panel.db_file), &db,
-	      SQLITE_OPEN_READWRITE, NULL)));
-  db_error ((sqlite3_exec
-	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
-
-  gbuf = dyn_string_new (1024);
-  pcallbacks_init ();
-  control_panel_init (main_input_filename);
-  offsetof_init ();
-  ifdef_init ();
-  file_init (main_input_filename);
-  def_init ();
-  fcallf_init ();
-  faccessv_init ();
-  funp_alias_init ();
-  mo_init ();
-}
-
-static void
-symdb_unit_tini (void *gcc_data, void *user_data)
-{
-  mo_tini ();
-  funp_alias_tini ();
-  faccessv_tini ();
-  fcallf_tini ();
-  def_tini ();
-  file_tini ();
-  ifdef_tini ();
-  offsetof_tini ();
-  control_panel_tini ();
-  pcallbacks_tini ();
-  dyn_string_delete (gbuf);
-
-  db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
-  sqlite3_close (db);
-}
-
+/* cpp/c tokens callbacks. <([{ */
 static void
 symdb_cpp_token (void *gcc_data, void *user_data)
 {
@@ -1305,11 +1262,14 @@ symdb_cpp_token (void *gcc_data, void *user_data)
 static void
 symdb_c_token (void *gcc_data, void *user_data)
 {
-  // c_token_p token = gcc_data;
+  /* c_token_p token = gcc_data; */
   if (in_pragma)
     return;
 }
 
+/* }])> */
+
+/* falias auxiliary <([{ */
 static bool
 is_fun_p (tree node)
 {
@@ -1347,6 +1307,9 @@ get_typename (tree type)
   return result;
 }
 
+/* }])> */
+
+/* offsetof auxiliary <([{ */
 static bool
 is_anonymous_type (tree type)
 {
@@ -1425,6 +1388,9 @@ struct_offsetof (int structid, tree node)
     }
 }
 
+/* }])> */
+
+/* fcallf callbacks <([{ */
 /*
  * postfix-expression:
  *   primary-expression
@@ -1476,6 +1442,9 @@ symdb_call_func (void *gcc_data, void *user_data)
 done:;
 }
 
+/* }])> */
+
+/* def callbacks <([{ */
 /*
  * enumerator-list:
  *   enumerator
@@ -1576,7 +1545,7 @@ symdb_extern_var (void *gcc_data, void *user_data)
       if (da->kind == cdk_function)
 	{
 	  if (da->declarator->kind != cdk_pointer && df != DEF_TYPEDEF)
-	    // Just function declaration.
+	    /* Just function declaration. */
 	    goto done;
 	}
 
@@ -1659,6 +1628,8 @@ symdb_declspecs (void *gcc_data, void *user_data)
 done:;
 }
 
+/* }])> */
+
 static void
 symdb_extern_decl (void *gcc_data, void *user_data)
 {
@@ -1667,6 +1638,7 @@ symdb_extern_decl (void *gcc_data, void *user_data)
   block_list.access_var = true;
 }
 
+/* falias callbacks <([{ */
 static void
 constructor_loop (tree node, int offset)
 {
@@ -1783,24 +1755,21 @@ symdb_funp_alias (void *gcc_data, void *user_data)
     }
 }
 
+/* }])> */
+
+/* faccessv callbacks <([{ */
 static void loop_expr (tree);
 static int
-print_gvar (tree node, bool * indirect)
+print_gvar (tree node, int flag, bool fun_pattern)
 {
   tree tmp = node;
   int ret, code, pos = VEC_length (tree, expr.gvar);
-  bool print = false;
+  bool print = false, indirect = false;
 
-  *indirect = false;
   while (TREE_CODE (tmp) == INDIRECT_REF)
     {
       tmp = TREE_OPERAND (tmp, 0);
-      *indirect = true;
-    }
-  if (*indirect && TREE_CODE (tmp) == POINTER_PLUS_EXPR)
-    {
-      ret = 0;
-      goto nofound;
+      indirect = true;
     }
 
   code = TREE_CODE (tmp);
@@ -1821,34 +1790,35 @@ print_gvar (tree node, bool * indirect)
       gcc_assert (false);
     }
 
-  // Iterator a leaf node, some expressions can occur in it.
+  /* Iterator a leaf node, some expressions can occur in it. */
   while (true)
     {
       switch (TREE_CODE (tmp))
 	{
 	case VAR_DECL:
 	  if (DECL_CONTEXT (tmp))
-	    {			// local variable.
+	    {			/* local variable. */
 	      ret = -1;
 	      goto nofound;
 	    }
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  goto found;
+	case ADDR_EXPR:
+	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  tmp = TREE_OPERAND (tmp, 0);
+	  break;
 	case INDIRECT_REF:
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  switch (TREE_CODE (tmp))
 	    {
-	    case POINTER_PLUS_EXPR:	/* astrut.p[i] */
-	      loop_expr (TREE_OPERAND (tmp, 1));
-	      tmp = TREE_OPERAND (tmp, 0);
-	      break;
-	    case TARGET_EXPR:
-	      loop_expr (TREE_OPERAND (tmp, 1));
-	      ret = -16;
-	      goto nofound;
-	    case CALL_EXPR:
-	    case COND_EXPR:
+	    case POSTINCREMENT_EXPR:
+	    case PREINCREMENT_EXPR:
+	    case POSTDECREMENT_EXPR:
+	    case PREDECREMENT_EXPR:
+	      ;
+	    case POINTER_PLUS_EXPR:
+	      loop_expr (tmp);
 	      ret = -16;
 	      goto nofound;
 	    default:
@@ -1856,6 +1826,7 @@ print_gvar (tree node, bool * indirect)
 	    }
 	  break;
 	case ARRAY_REF:
+	  loop_expr (TREE_OPERAND (tmp, 1));
 	case COMPONENT_REF:
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
@@ -1863,7 +1834,7 @@ print_gvar (tree node, bool * indirect)
 	case PARM_DECL:
 	  ret = -2;
 	  goto nofound;
-	case FUNCTION_DECL:
+	case FUNCTION_DECL:	/* Function pointer assignment: fp = foo_decl; */
 	  ret = -3;
 	  goto nofound;
 	case INTEGER_CST:
@@ -1882,11 +1853,29 @@ print_gvar (tree node, bool * indirect)
 	  loop_expr (TREE_OPERAND (tmp, 1));
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
+	case TARGET_EXPR:
+	  tmp = TREE_OPERAND (tmp, 1);
+	  gcc_assert (TREE_CODE (tmp) == BIND_EXPR);
+	  tmp = TREE_OPERAND (tmp, 1);
+	  gcc_assert (TREE_CODE (tmp) == STATEMENT_LIST);
+	  tmp = tsi_stmt (tsi_last (tmp));
+	  if (TREE_CODE (tmp) == MODIFY_EXPR)	/* the lvalue is an inner temporary
+						   variable. */
+	    tmp = TREE_OPERAND (tmp, 1);
+	  break;
+	case CALL_EXPR:
+	case COND_EXPR:
+	  ;
 	case NOP_EXPR:
 	case CONVERT_EXPR:
-	  loop_expr (TREE_OPERAND (tmp, 0));
+	  loop_expr (tmp);
 	  ret = -16;
 	  goto nofound;
+	  /* Some inner codes */
+	case C_MAYBE_CONST_EXPR:
+	  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
+	  tmp = TREE_OPERAND (tmp, 1);
+	  break;
 	default:
 	  gcc_assert (false);
 	}
@@ -1900,6 +1889,10 @@ found:
 	{
 	case VAR_DECL:
 	  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
+	  break;
+	case ADDR_EXPR:
+	  /* Here, `&' is used to cancel `*' if they're neighbor each other. */
+	  print = false;
 	  break;
 	case INDIRECT_REF:
 	  print = true;
@@ -1929,6 +1922,15 @@ found:
 	}
     }
   ret = 1;
+  if (indirect)
+    {
+      gcc_assert (flag != ACCESS_ADDR);
+      flag <<= 3;
+    }
+  if (fun_pattern)
+    faccessv_insert_fpattern (gbuf, flag);
+  else
+    faccessv_insert (gbuf, flag, expr.token_offset);
   goto done;
 
 nofound:
@@ -1943,13 +1945,8 @@ static void
 do_lhs (tree node)
 {
   tree tmp = node;
-  bool indirect;
-  int ret = print_gvar (tmp, &indirect);
-  if (ret == 1)
-    faccessv_insert (gbuf,
-		     indirect ? ACCESS_POINTER_WRITE : ACCESS_WRITE,
-		     expr.token_offset);
-  else if (ret == 0)
+  int ret = print_gvar (tmp, ACCESS_WRITE, false);
+  if (ret == 0)
     loop_expr (tmp);
 }
 
@@ -1958,15 +1955,9 @@ loop_expr (tree node)
 {
   tree tmp = node, arg0, arg1, arg2;
   call_expr_arg_iterator iter;
-  bool indirect;
-  int ret = print_gvar (tmp, &indirect);
+  int ret = print_gvar (tmp, ACCESS_READ, false);
   if (ret == 1)
-    {
-      faccessv_insert (gbuf,
-		       indirect ? ACCESS_POINTER_READ : ACCESS_READ,
-		       expr.token_offset);
-      return;
-    }
+    return;
   else if (ret < 0)
     return;
 
@@ -1982,11 +1973,9 @@ loop_expr (tree node)
     case ADDR_EXPR:
       gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
       arg0 = TREE_OPERAND (node, 0);
-      ret = print_gvar (arg0, &indirect);
+      ret = print_gvar (arg0, ACCESS_ADDR, false);
       if (ret == 0)
 	loop_expr (arg0);
-      else if (ret == 1)
-	faccessv_insert (gbuf, ACCESS_ADDR, expr.token_offset);
       break;
     case COND_EXPR:		/* .. ? .. : .. */
       gcc_assert (TREE_OPERAND_LENGTH (node) == 3);
@@ -2018,13 +2007,9 @@ loop_expr (tree node)
     case PREDECREMENT_EXPR:
       gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
       arg0 = TREE_OPERAND (node, 0);
-      ret = print_gvar (arg0, &indirect);
+      ret = print_gvar (arg0, ACCESS_READ | ACCESS_WRITE, false);
       if (ret == 0)
 	loop_expr (arg0);
-      else if (ret == 1)
-	faccessv_insert (gbuf,
-			 indirect ? ACCESS_POINTER_READ | ACCESS_POINTER_WRITE
-			 : ACCESS_READ | ACCESS_WRITE, expr.token_offset);
       break;
     case INDIRECT_REF:		/* p->i */
     case NEGATE_EXPR:		/* -i */
@@ -2069,6 +2054,11 @@ loop_expr (tree node)
       FOR_EACH_CALL_EXPR_ARG (tmp, iter, node) loop_expr (tmp);
       break;
       /* Some inner codes */
+    case TARGET_EXPR:		/* GNU extension on c99 6.5.2 postfix expression --
+				   statment in expression */
+      /* Our callbacks symdb_begin/end_stmt_in_expr have sent all expressions
+       * in the statement block, so here is discarded. */
+      break;
     case MAX_EXPR:
     case MIN_EXPR:
       gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
@@ -2095,12 +2085,27 @@ loop_expr (tree node)
 }
 
 static void
+symdb_begin_stmt_in_expr (void *gcc_data, void *user_data)
+{
+  VEC_safe_push (int, heap, expr.nested_level, 0);
+}
+
+static void
+symdb_end_stmt_in_expr (void *gcc_data, void *user_data)
+{
+  int tmp = VEC_pop (int, expr.nested_level);
+  gcc_assert (tmp == 0);
+}
+
+static void
 symdb_begin_expression (void *gcc_data, void *user_data)
 {
   if (block_list.access_var)
     return;
-  if (expr.nested_level++ == 0)
+  int tmp = VEC_pop (int, expr.nested_level);
+  if (tmp++ == 0 && VEC_length (int, expr.nested_level) == 0)
     expr.token_offset = (int) gcc_data;
+  VEC_safe_push (int, heap, expr.nested_level, tmp);
 }
 
 static void
@@ -2109,7 +2114,9 @@ symdb_end_expression (void *gcc_data, void *user_data)
   if (block_list.access_var)
     return;
   tree node = (tree) gcc_data;
-  if (--expr.nested_level != 0)
+  int tmp = VEC_pop (int, expr.nested_level);
+  VEC_safe_push (int, heap, expr.nested_level, --tmp);
+  if (tmp != 0)
     return;
   gcc_assert (VEC_length (tree, expr.gvar) == 0);
   if (control_panel.faccessv)
@@ -2124,23 +2131,19 @@ static void
 set_func (const char *fname, tree body)
 {
   tree arg0, arg1;
-  bool indirect;
   if (TREE_CODE (body) != MODIFY_EXPR)
     return;
   arg0 = TREE_OPERAND (body, 0);
   arg1 = TREE_OPERAND (body, 1);
   if (TREE_CODE (arg1) != PARM_DECL)
     return;
-  if (print_gvar (arg0, &indirect) == 1)
-    faccessv_insert_fpattern (gbuf,
-			      indirect ? ACCESS_POINTER_WRITE : ACCESS_WRITE);
+  print_gvar (arg0, ACCESS_WRITE, true);
 }
 
 static void
 get_func (const char *fname, tree body)
 {
   tree tmp, arg0, arg1;
-  bool indirect;
   if (TREE_CODE (body) != RETURN_EXPR)
     return;
   tmp = TREE_OPERAND (body, 0);
@@ -2154,16 +2157,10 @@ get_func (const char *fname, tree body)
   if (code == ADDR_EXPR)
     {
       arg0 = TREE_OPERAND (arg1, 0);
-      if (print_gvar (arg0, &indirect) == 1)
-	faccessv_insert_fpattern (gbuf, ACCESS_ADDR);
+      print_gvar (arg0, ACCESS_ADDR, true);
     }
   else
-    {
-      if (print_gvar (arg1, &indirect) == 1)
-	faccessv_insert_fpattern (gbuf,
-				  indirect ? ACCESS_POINTER_READ :
-				  ACCESS_READ);
-    }
+    print_gvar (arg1, ACCESS_READ, true);
 }
 
 static void
@@ -2199,7 +2196,61 @@ symdb_fnbody_pattern (void *gcc_data, void *user_data)
 
 /* }])> */
 
+/* }])> */
+
 int plugin_is_GPL_compatible;
+
+static void plugin_tini (void *gcc_data, void *user_data);
+static void
+symdb_unit_init (void *gcc_data, void *user_data)
+{
+  cpp_callbacks *cb = cpp_get_callbacks (parse_in);
+  orig_file_change = cb->file_change;
+  cb->file_change = cb_file_change;
+  /* The case is `echo "" | gcc -xc -'. */
+  if (strcmp (main_input_filename, "") == 0)
+    {
+      plugin_tini (NULL, NULL);
+      return;
+    }
+
+  db_error ((sqlite3_open_v2
+	     (dyn_string_buf (control_panel.db_file), &db,
+	      SQLITE_OPEN_READWRITE, NULL)));
+  db_error ((sqlite3_exec
+	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
+
+  gbuf = dyn_string_new (1024);
+  pcallbacks_init ();
+  control_panel_init (main_input_filename);
+  offsetof_init ();
+  ifdef_init ();
+  file_init (main_input_filename);
+  def_init ();
+  fcallf_init ();
+  faccessv_init ();
+  funp_alias_init ();
+  mo_init ();
+}
+
+static void
+symdb_unit_tini (void *gcc_data, void *user_data)
+{
+  mo_tini ();
+  funp_alias_tini ();
+  faccessv_tini ();
+  fcallf_tini ();
+  def_tini ();
+  file_tini ();
+  ifdef_tini ();
+  offsetof_tini ();
+  control_panel_tini ();
+  pcallbacks_tini ();
+  dyn_string_delete (gbuf);
+
+  db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
+  sqlite3_close (db);
+}
 
 static void
 plugin_tini (void *gcc_data, void *user_data)
@@ -2223,6 +2274,8 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
   unregister_callback ("symdb", PLUGIN_EXTERN_DECLSPECS);
   unregister_callback ("symdb", PLUGIN_EXTERN_INITIALIZER);
+  unregister_callback ("symdb", PLUGIN_BEGIN_STMT_IN_EXPR);
+  unregister_callback ("symdb", PLUGIN_END_STMT_IN_EXPR);
   unregister_callback ("symdb", PLUGIN_BEGIN_EXPRESSION);
   unregister_callback ("symdb", PLUGIN_END_EXPRESSION);
   unregister_callback ("symdb", PLUGIN_FNBODY_PATTERN);
@@ -2264,6 +2317,10 @@ plugin_init (struct plugin_name_args *plugin_info,
 		     &symdb_declspecs, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_INITIALIZER, &symdb_funp_alias,
 		     NULL);
+  register_callback ("symdb", PLUGIN_BEGIN_STMT_IN_EXPR,
+		     &symdb_begin_stmt_in_expr, NULL);
+  register_callback ("symdb", PLUGIN_END_STMT_IN_EXPR,
+		     &symdb_end_stmt_in_expr, NULL);
   register_callback ("symdb", PLUGIN_BEGIN_EXPRESSION,
 		     &symdb_begin_expression, NULL);
   register_callback ("symdb", PLUGIN_END_EXPRESSION, &symdb_end_expression,
