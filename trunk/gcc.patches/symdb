@@ -437,6 +437,17 @@ Index: gcc/gcc/fold-const.c
    /* Get all the information about the extractions being done.  If the bit size
       if the same as the size of the underlying object, we aren't doing an
       extraction at all and so can do nothing.  We also don't want to
+@@ -5307,6 +5311,10 @@ fold_truthop (location_t loc, enum tree_
+ 	}
+     }
+ 
++  /* Prevent make_bit_field_ref to create BIT_FIELD_REF tree because new tree
++     substitutes and discards original FIELD_DECL. */
++  return 0;
++
+   /* If the right sides are not constant, do the same for it.  Also,
+      disallow this optimization if a size or signedness mismatch occurs
+      between the left and right sides.  */
 Index: gcc/gcc/plugin.c
 ===================================================================
 --- gcc.orig/gcc/plugin.c

@@ -148,10 +148,9 @@ elseif a:subcmd == 'falias'
 else
 	echo 'Gs command (all except ifdef accept only a param):'
 	echo 'def     : search a definition.'
-	echo 'callee  : where a function is called, member-function-pointer assignment is also searched cascadedly'
+	echo 'callee  : where a function is called, calling mfp is also searched cascadedly'
 	echo 'ifdef   : whether current position is skipped by ifdef/if.'
-	echo 'fdef    : where the member-function-pointer is assigned and assigned-definition.'
-	echo 'falias  : search symbol XX on .mfp = fundecl from two direction (.XX = fundecl or .mfp = XX), it just be the combination of fdef and callee.'
+	echo 'falias  : search where a mfp jumps to.'
 endif
 endfunction
 
