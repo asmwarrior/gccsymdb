@@ -677,15 +677,19 @@ infodb (void)
   printf ("\n");
 
   dyn_string_copy_cstr (gbuf, "select count(*) from Definition "
-			"where flag = 1;");
+			"where flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
+  dyn_string_append_cstr (gbuf, ";");
   db_error (sqlite3_get_table
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
   printf ("Global variable count is %s\n", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select fileName, fileOffset, defName "
 			"from FileSymbol where defName in "
-			"(select name from definition where flag = 1 "
-			"group by (name) having count(name) > 1 order by count(name));");
+			"(select name from definition where flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
+  dyn_string_append_cstr (gbuf,
+			  " group by (name) having count(name) > 1 order by count(name));");
   db_error (sqlite3_get_table
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
   if (nrow != 0)
@@ -702,15 +706,19 @@ infodb (void)
   printf ("\n");
 
   dyn_string_copy_cstr (gbuf, "select count(*) from Definition "
-			"where flag = 2;");
+			"where flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_FUNC));
+  dyn_string_append_cstr (gbuf, ";");
   db_error (sqlite3_get_table
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
   printf ("Function count is %s\n", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select fileName, fileOffset, defName "
 			"from FileSymbol where defName in "
-			"(select name from definition where flag = 2 "
-			"group by (name) having count(name) > 1 order by count(name));");
+			"(select name from definition where flag = ");
+  dyn_string_append_cstr (gbuf, lltoa (DEF_FUNC));
+  dyn_string_append_cstr (gbuf,
+			  " group by (name) having count(name) > 1 order by count(name));");
   db_error (sqlite3_get_table
 	    (db, dyn_string_buf (gbuf), &table, &nrow, &ncolumn, &error_msg));
   if (nrow != 0)

@@ -1877,6 +1877,9 @@ print_gvar (tree node, int flag, bool fun_pattern)
 	case STRING_CST:
 	  ret = 4;
 	  goto nofound;
+	case LABEL_DECL:
+	  ret = 5;
+	  goto nofound;
 	case COMPOUND_EXPR:
 	  loop_expr (TREE_OPERAND (tmp, 0));
 	  tmp = TREE_OPERAND (tmp, 1);
@@ -1919,7 +1922,7 @@ print_gvar (tree node, int flag, bool fun_pattern)
 	  ret = -2;
 	  goto nofound;
 	case SAVE_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
+	  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case C_MAYBE_CONST_EXPR:
@@ -1956,15 +1959,21 @@ found:
 	    gcc_assert (TREE_OPERAND (tmp, 2) == NULL);
 	    tree arg1 = TREE_OPERAND (tmp, 1);
 	    gcc_assert (TREE_CODE (arg1) == FIELD_DECL);
-	    if (print)
+	    if (DECL_NAME (arg1))
 	      {
-		print = false;
-		dyn_string_append_cstr (gbuf, "->");
+		if (print)
+		  {
+		    print = false;
+		    dyn_string_append_cstr (gbuf, "->");
+		  }
+		else
+		  dyn_string_append_cstr (gbuf, ".");
+		dyn_string_append_cstr (gbuf,
+					IDENTIFIER_POINTER (DECL_NAME
+							    (arg1)));
 	      }
-	    else
-	      dyn_string_append_cstr (gbuf, ".");
-	    dyn_string_append_cstr (gbuf,
-				    IDENTIFIER_POINTER (DECL_NAME (arg1)));
+	    else		/* struct a { struct { int i; } } x; x.i; */
+	      ;
 	  }
 	  break;
 	default:
@@ -2098,6 +2107,7 @@ loop_expr (tree node)
       /* Our callbacks symdb_begin/end_stmt_in_expr have sent all expressions
        * in its statement block to us, so iterator the outer expression
        * including the statmenet block is unnecessary. */
+    case BIND_EXPR:
       break;
     case TRUTH_AND_EXPR:
     case TRUTH_OR_EXPR:
@@ -2130,7 +2140,13 @@ loop_expr (tree node)
       arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
       break;
-    case BIND_EXPR:
+    case COMPOUND_LITERAL_EXPR:	/* c99 6.5.2, initializer list. */
+      gcc_assert (TREE_CODE (COMPOUND_LITERAL_EXPR_DECL_EXPR (tmp)) ==
+		  DECL_EXPR);
+      tmp = COMPOUND_LITERAL_EXPR_DECL (tmp);
+      gcc_assert (DECL_NAME (tmp) == NULL);
+      tmp = DECL_INITIAL (tmp);
+      loop_expr (tmp);
       break;
     default:
       gcc_assert (false);
