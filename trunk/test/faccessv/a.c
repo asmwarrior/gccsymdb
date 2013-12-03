@@ -1,3 +1,4 @@
+typedef char v8qi __attribute__ ((__vector_size__ (8)));
 int i, j, k;
 unsigned int ui;
 int *p, *q;
@@ -11,6 +12,7 @@ struct
 			int arr2[5];
 		} z;
 	} arr[3][4];
+	v8qi v[2];
 	int* p;
 } abc;
 int arr[1][2][3];
@@ -60,6 +62,7 @@ void set_p(int p1)
 
 int main(void)
 {
+	__label__ __here; __here: &&__here;
 	int m, n;
 	struct {
 		char c;
@@ -87,6 +90,9 @@ int main(void)
 	abc.arr[i][j].y;
 	set_p(m);
 	ui = (ui << 7) | (ui >> (32 - 7));
+	__builtin_choose_expr(__builtin_types_compatible_p (typeof (i), double), j, k);
+	__builtin_offsetof(typeof(abc), v[k]);
+	__builtin_offsetof(typeof(abc), arr[i][j].z.arr2[k]);
 	return 0;
 }
 
@@ -99,6 +105,7 @@ struct X {
 	struct Y* p;
 	struct Y** pp;
 	struct Y v;
+	struct { int anon_i; };
 } x, y, *px;
 int** pp;
 struct X* ofo(void)
@@ -138,6 +145,8 @@ void foo(char* parm1, struct X* parm2)
 	off().v;
 	ofo()->v;
 	p[i/8] |= 3;
+	x.anon_i;
+	px->anon_i;
 	(px->next ? px->next : px)->p;
 
 	((struct X*) (x.pp[j]))->cp;
@@ -187,8 +196,10 @@ void stmt_in_expr(void)
 	({ if (i) i++; });
 
 	({struct X* const _t = px; _t; })->v.c |= 1;
-	// Later is an initializer statment, not compount statement.
+
+	// COMPOUND_LITERAL_EXPR, later are an initializer statment, not compound statment.
 	((struct inner_type { int ii; int ij; }) { .ii = i + li }).ij;
+	(struct inner_type2 { int ii; }) { li };
 }
 
 union tu
@@ -214,7 +225,6 @@ void truth_notif_expr(char c)
 
 void __attribute__ ((__target__ ("sse"))) sse(void)
 {
-	typedef char v8qi __attribute__ ((__vector_size__ (8)));
 	v8qi a, b, c;
 	a = __builtin_ia32_pcmpeqb(b, c);
 }

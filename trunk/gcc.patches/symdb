@@ -1106,7 +1106,7 @@ Index: gcc/libcpp/macro.c
  
        if (pragma_buff)
  	{
-@@ -912,12 +921,15 @@ enter_macro_context (cpp_reader *pfile, 
+@@ -912,12 +921,17 @@ enter_macro_context (cpp_reader *pfile, 
  	      pragma_buff = tail;
  	    }
  	  while (pragma_buff != NULL);
@@ -1118,11 +1118,13 @@ Index: gcc/libcpp/macro.c
        return 1;
      }
  
++  if (pfile->cb.macro_start_expand)
++    pfile->cb.macro_start_expand (pfile, result, node);
 +  pfile->about_to_expand_macro_p = false;
    /* Handle built-in macros and the _Pragma operator.  */
    return builtin_macro (pfile, node);
  }
-@@ -1123,8 +1135,12 @@ void
+@@ -1123,8 +1137,12 @@ void
  _cpp_push_token_context (cpp_reader *pfile, cpp_hashnode *macro,
  			 const cpp_token *first, unsigned int count)
  {
@@ -1136,7 +1138,7 @@ Index: gcc/libcpp/macro.c
    context->direct_p = true;
    context->macro = macro;
    context->buff = NULL;
-@@ -1195,6 +1211,18 @@ expand_arg (cpp_reader *pfile, macro_arg
+@@ -1195,6 +1213,18 @@ expand_arg (cpp_reader *pfile, macro_arg
    CPP_WTRADITIONAL (pfile) = saved_warn_trad;
  }
  
@@ -1155,7 +1157,7 @@ Index: gcc/libcpp/macro.c
  /* Pop the current context off the stack, re-enabling the macro if the
     context represented a macro's replacement list.  The context
     structure is not freed so that we can re-use it later.  */
-@@ -1210,6 +1238,9 @@ _cpp_pop_context (cpp_reader *pfile)
+@@ -1210,6 +1240,9 @@ _cpp_pop_context (cpp_reader *pfile)
      _cpp_release_buff (pfile, context->buff);
  
    pfile->context = context->prev;
@@ -1165,7 +1167,7 @@ Index: gcc/libcpp/macro.c
  }
  
  /* External routine to get a token.  Also used nearly everywhere
-@@ -1228,6 +1259,7 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1228,6 +1261,7 @@ cpp_get_token (cpp_reader *pfile)
  {
    const cpp_token *result;
    bool can_set = pfile->set_invocation_location;
@@ -1173,7 +1175,7 @@ Index: gcc/libcpp/macro.c
    pfile->set_invocation_location = false;
  
    for (;;)
-@@ -1250,7 +1282,8 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1250,7 +1284,8 @@ cpp_get_token (cpp_reader *pfile)
  	      paste_all_tokens (pfile, result);
  	      if (pfile->state.in_directive)
  		continue;
@@ -1183,7 +1185,7 @@ Index: gcc/libcpp/macro.c
  	    }
  	}
        else
-@@ -1258,7 +1291,8 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1258,7 +1293,8 @@ cpp_get_token (cpp_reader *pfile)
  	  _cpp_pop_context (pfile);
  	  if (pfile->state.in_directive)
  	    continue;
@@ -1193,7 +1195,7 @@ Index: gcc/libcpp/macro.c
  	}
  
        if (pfile->state.in_directive && result->type == CPP_COMMENT)
-@@ -1278,7 +1312,10 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1278,7 +1314,10 @@ cpp_get_token (cpp_reader *pfile)
  	  /* If not in a macro context, and we're going to start an
  	     expansion, record the location.  */
  	  if (can_set && !context->macro)
@@ -1204,7 +1206,7 @@ Index: gcc/libcpp/macro.c
  	  if (pfile->state.prevent_expansion)
  	    break;
  
-@@ -1317,7 +1354,8 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1317,7 +1356,8 @@ cpp_get_token (cpp_reader *pfile)
   	    {
  	      if (pfile->state.in_directive || ret == 2)
  		continue;
@@ -1214,7 +1216,7 @@ Index: gcc/libcpp/macro.c
  	    }
  	}
        else
-@@ -1334,6 +1372,8 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1334,6 +1374,8 @@ cpp_get_token (cpp_reader *pfile)
        break;
      }
  
@@ -1223,7 +1225,7 @@ Index: gcc/libcpp/macro.c
    return result;
  }
  
-@@ -1344,16 +1384,22 @@ cpp_get_token (cpp_reader *pfile)
+@@ -1344,16 +1386,22 @@ cpp_get_token (cpp_reader *pfile)
     will indicate where the macro is defined, but *LOC will be the
     location of the start of the expansion.  */
  const cpp_token *
