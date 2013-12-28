@@ -64,7 +64,6 @@ let s:str = system('./gs ifdef ' . s:file_name . ' ' . s:i)
 echo s:str
 endfunction
 " }])>
-
 " GS_def <([{
 function! s:GS_def(from)
 if a:from != 1
@@ -85,7 +84,6 @@ endif
 call s:jumpTo()
 endfunction
 " }])>
-
 " GS_callee <([{
 function! s:GS_callee(from)
 if a:from != 1
@@ -106,13 +104,11 @@ endif
 call s:jumpTo()
 endfunction
 " }])>
-
 " GS_jumpback <([{
 function! s:GS_jumpback()
 call s:jumpBack()
 endfunction
 " }])>
-
 " GS_falias <([{
 function! s:GS_falias()
 let s:str = system('./gs falias ' . s:symbol)

@@ -14,7 +14,7 @@ begin
 	delete from FileDependence where chID = old.id;
 	delete from Definition where fileID = old.id;
 	delete from Ifdef where fileID = old.id;
-	delete from FunpAlias where fileID = old.id;
+	delete from FunctionAlias where fileID = old.id;
 end;
 COMMIT;
 PRAGMA foreign_keys=OFF;

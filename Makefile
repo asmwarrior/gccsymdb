@@ -31,9 +31,9 @@ default:
 
 redo:
 	./gs initdb ./
-	${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb || true
+	${GCC_BUILD_BIN} -std=gnu99 --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb || true
 	# Sometime, -O3 can also produce errors.
-	${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -O3 || true
+	${GCC_BUILD_BIN} -std=gnu99 --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -O3 || true
 	./gs enddb ./
 
 format:

@@ -8,26 +8,8 @@
  *   all funtions starting with `classname_' are treated as public.
  *   2) All in common fold are public.
  *
- * Guide: Definition extraction process is surrounding with cache, macro.
- *   1) Class cache caches all itokens from gcc. It also caches all macroes by
- *   cache.auxiliary, so I use them to reversely relocate itoken to chtoken
- *   (cache_itoken_to_chtoken).
- *   2) Class macro records macro data from gcc and dump them to
- *   cache.auxiliary, it's also in the charge of macro-cancel, macro-cascaded
- *   and macro-cascaded-cancel expansion cases, see doc.txt.
- *
- *   3) Fold plugin-callbacks: implements new PLUGIN_XXXX event. Dump token
- *   data to class cache/macro, parse DEF_XXX when special event occurs. I
- *   list all possible syntax cases before every function, and use them
- *   reversely search user-definition from cache.itokens.
- *   4) Fold cpp-callbacks: implements cpp_callback::XXXX, collects macro data
- *   for class macro, DEF_MACRO and file dependence.
- *   5) Class def: cooperate plugin-callbacks to parse definition in
- *   cache.itokens and is in charge of Definition fold of init.sql.
- *   6) Class file: is in charge of File fold of init.sql.
- *   7) Class ifdef: is in charge of Ifdef table of init.sql.
- *   8) Class funp_alias: is in charge of FunpAlias table of init.sql.
- *   9) Class mo: now, is also charge of Macro table.
+ * Guide:
+ *   Features from doc.txt are placed into its folds.
  *
  * GDB Guide:
  *   1) To support debug, I place a class `bug' in common fold, to use it,
@@ -35,7 +17,7 @@
  *     gdb> dlc
  *     gdb> call bug_init("filename", offset)
  *   only leader expanded token and common token can be break.
- *   2) file::dump_includee and cache::dump_cache.
+ *   2) file::dump_includee shows file include stack.
  * */
 
 #include "gcc-plugin.h"
@@ -56,7 +38,6 @@
 #include "libcpp/internal.h"
 #include <sqlite3.h>
 /* }])> */
-
 /* common <([{ */
 typedef const struct cpp_token *cpp_token_p;
 DEF_VEC_I (int);
@@ -400,7 +381,6 @@ file_tini (void)
 }
 
 /* }])> */
-
 /* macro <([{ */
 static struct
 {
@@ -530,7 +510,6 @@ mo_tini (void)
 }
 
 /* }])> */
-
 /* def <([{ */
 __extension__ enum definition_flag
 {
@@ -613,7 +592,6 @@ def_tini (void)
 }
 
 /* }])> */
-
 /* f-call-f <([{ */
 static struct
 {
@@ -674,7 +652,6 @@ fcallf_tini (void)
 }
 
 /* }])> */
-
 /* f-access-v <([{ */
 __extension__ enum access_flag
 {
@@ -808,7 +785,6 @@ faccessv_tini (void)
 }
 
 /* }])> */
-
 /* ifdef <([{ */
 __extension__ enum ifdef_flag
 {
@@ -893,7 +869,6 @@ ifdef_tini (void)
 }
 
 /* }])> */
-
 /* offsetof <([{ */
 typedef const char *const_char_p;
 DEF_VEC_P (const_char_p);
@@ -974,63 +949,61 @@ offsetof_tini (void)
 }
 
 /* }])> */
-
-/* funp alias <([{ */
+/* falias <([{ */
 static struct
 {
-  struct sqlite3_stmt *select_funpalias;
-  struct sqlite3_stmt *insert_funpalias;
-} funp_alias;
+  struct sqlite3_stmt *select_falias;
+  struct sqlite3_stmt *insert_falias;
+} falias;
 
 void
-funp_alias_append (const char *struct_name, const char *mfp_name,
-		   const char *fun_decl, int offset)
+falias_append (const char *struct_name, const char *mfp_name,
+	       const char *fun_decl, int offset)
 {
   int fileid = file_get_current_fid ();
   dyn_string_copy_cstr (gbuf, struct_name);
   dyn_string_append_cstr (gbuf, "::");
   dyn_string_append_cstr (gbuf, mfp_name);
-  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 1, fileid));
+  db_error (sqlite3_bind_int (falias.select_falias, 1, fileid));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 2, dyn_string_buf (gbuf),
+	    (falias.select_falias, 2, dyn_string_buf (gbuf),
 	     dyn_string_length (gbuf), SQLITE_STATIC));
   db_error (sqlite3_bind_text
-	    (funp_alias.select_funpalias, 3, fun_decl, -1, SQLITE_STATIC));
-  db_error (sqlite3_bind_int (funp_alias.select_funpalias, 4, offset));
-  if (sqlite3_step (funp_alias.select_funpalias) != SQLITE_ROW)
+	    (falias.select_falias, 3, fun_decl, -1, SQLITE_STATIC));
+  db_error (sqlite3_bind_int (falias.select_falias, 4, offset));
+  if (sqlite3_step (falias.select_falias) != SQLITE_ROW)
     {
-      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 1, fileid));
+      db_error (sqlite3_bind_int (falias.insert_falias, 1, fileid));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 2, dyn_string_buf (gbuf),
+		(falias.insert_falias, 2, dyn_string_buf (gbuf),
 		 dyn_string_length (gbuf), SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(funp_alias.insert_funpalias, 3, fun_decl, -1,
-		 SQLITE_STATIC));
-      db_error (sqlite3_bind_int (funp_alias.insert_funpalias, 4, offset));
-      execute_sql (funp_alias.insert_funpalias);
+		(falias.insert_falias, 3, fun_decl, -1, SQLITE_STATIC));
+      db_error (sqlite3_bind_int (falias.insert_falias, 4, offset));
+      execute_sql (falias.insert_falias);
     }
-  revalidate_sql (funp_alias.select_funpalias);
+  revalidate_sql (falias.select_falias);
 }
 
 void
-funp_alias_init (void)
+falias_init (void)
 {
   db_error (sqlite3_prepare_v2 (db,
-				"select rowid from FunpAlias "
+				"select rowid from FunctionAlias "
 				"where fileID = ?"
 				" and mfp = ? and funDecl = ?"
 				" and offset = ?;",
-				-1, &funp_alias.select_funpalias, 0));
+				-1, &falias.select_falias, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into FunpAlias values (?, ?, ?, ?);",
-				-1, &funp_alias.insert_funpalias, 0));
+				"insert into FunctionAlias values (?, ?, ?, ?);",
+				-1, &falias.insert_falias, 0));
 }
 
 void
-funp_alias_tini (void)
+falias_tini (void)
 {
-  sqlite3_finalize (funp_alias.insert_funpalias);
-  sqlite3_finalize (funp_alias.select_funpalias);
+  sqlite3_finalize (falias.insert_falias);
+  sqlite3_finalize (falias.select_falias);
 }
 
 /* }])> */
@@ -1184,10 +1157,9 @@ cb_direct_include (int file_offset, const char *fname, bool sys)
 }
 
 /* }])> */
-
 /* plugin callbacks <([{ */
 /* The fold isn't class fold. All functions in subfold are public to every
- * folds. */
+ * subfolds. */
 /* The var is used to block some callbacks temporarily. */
 static struct
 {
@@ -1197,9 +1169,6 @@ static struct
 } block_list =
 {
 .access_var = false,.call_func = false,.enum_spec = false};
-
-/* in_pragma is used by symdb_cpp_token and symdb_c_token. */
-static bool in_pragma = false;
 
 /* For faccessv. */
 static struct
@@ -1229,7 +1198,128 @@ pcallbacks_tini (void)
   VEC_free (int, heap, expr.nested_level);
 }
 
+/* falias auxiliary <([{ */
+static bool
+is_fun_p (tree node)
+{
+  tree type = TREE_TYPE (node);
+  if (TREE_CODE (type) != POINTER_TYPE)
+    return false;
+  type = TREE_TYPE (type);
+  if (TREE_CODE (type) != FUNCTION_TYPE)
+    return false;
+  return true;
+}
+
+static bool
+var_is_mfp (tree var, tree * struct_name, tree * mfp)
+{
+  if (TREE_CODE (var) != COMPONENT_REF)
+    return false;
+  gcc_assert (TREE_OPERAND_LENGTH (var) == 3);
+  gcc_assert (TREE_OPERAND (var, 2) == NULL_TREE);
+  *mfp = TREE_OPERAND (var, 1);
+  gcc_assert (TREE_CODE (*mfp) == FIELD_DECL);
+  if (!is_fun_p (*mfp))
+    return false;
+  *struct_name = TREE_TYPE (TREE_OPERAND (var, 0));
+  return true;
+}
+
+static const char *
+get_typename (tree type)
+{
+  const char *result = "";
+  if (TYPE_NAME (type) && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
+    result = IDENTIFIER_POINTER (TYPE_NAME (type));
+  return result;
+}
+
+/* }])> */
+/* offsetof auxiliary <([{ */
+static bool
+is_anonymous_type (tree type)
+{
+  return (TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
+    && TYPE_NAME (type) == NULL;
+}
+
+static void
+loop_struct (tree field, int base)
+{
+  if (field == NULL)
+    /* The struct has nothing. */
+    return;
+  do
+    {
+      gcc_assert (TREE_CODE (field) == FIELD_DECL);
+      /* From __builtin_offsetof stack snapshot.
+       *   size_binop_loc
+       *   fold_offsetof_1
+       *   fold_offsetof
+       *   c_parser_postfix_expression
+       * In brief, later is the result.
+       */
+      int offset = tree_low_cst (DECL_FIELD_OFFSET (field), 1) +
+	tree_low_cst (DECL_FIELD_BIT_OFFSET (field),
+		      1) / BITS_PER_UNIT + base;
+      tree type = TREE_TYPE (field);
+
+      const char *tmp = NULL;
+      if (DECL_NAME (field) != NULL_TREE)
+	{
+	  tmp = IDENTIFIER_POINTER (DECL_NAME (field));
+	  offsetof_commit (tmp, offset);
+	}
+
+      if ((TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
+	  && !TYPE_FILE_SCOPE (type))
+	{
+	  /* Enumerate anonymous struct/union. */
+	  if (tmp != NULL)
+	    offsetof_push (tmp);
+	  loop_struct (TYPE_FIELDS (type), offset);
+	  if (tmp != NULL)
+	    offsetof_pop ();
+	}
+    }
+  while ((field = TREE_CHAIN (field)) != NULL_TREE);
+}
+
+static void
+struct_offsetof (int structid, tree node)
+{
+  tree field;
+  if (!offsetof_prepare (structid))
+    return;
+
+  /* From sizeof stack snapshot.
+   *   size_binop_loc
+   *   c_sizeof_or_alignof_type
+   *   c_expr_sizeof_type
+   *   c_parser_sizeof_expression
+   * In brief, later is the result.
+   */
+  int size = tree_low_cst (TYPE_SIZE_UNIT (node), 1);
+  offsetof_commit ("", size);
+
+  switch (TREE_CODE (node))
+    {
+    case RECORD_TYPE:
+    case UNION_TYPE:
+      field = TYPE_FIELDS (node);
+      loop_struct (field, 0);
+      break;
+    default:
+      break;
+    }
+}
+
+/* }])> */
+
 /* cpp/c tokens callbacks. <([{ */
+static bool in_pragma = false;
+
 static void
 symdb_cpp_token (void *gcc_data, void *user_data)
 {
@@ -1268,128 +1358,6 @@ symdb_c_token (void *gcc_data, void *user_data)
 }
 
 /* }])> */
-
-/* falias auxiliary <([{ */
-static bool
-is_fun_p (tree node)
-{
-  tree type = TREE_TYPE (node);
-  if (TREE_CODE (type) != POINTER_TYPE)
-    return false;
-  type = TREE_TYPE (type);
-  if (TREE_CODE (type) != FUNCTION_TYPE)
-    return false;
-  return true;
-}
-
-static bool
-var_is_mfp (tree var, tree * struct_name, tree * mfp)
-{
-  if (TREE_CODE (var) != COMPONENT_REF)
-    return false;
-  gcc_assert (TREE_OPERAND_LENGTH (var) == 3);
-  *mfp = TREE_OPERAND (var, 1);
-  if (!is_fun_p (*mfp))
-    return false;
-  gcc_assert (TREE_OPERAND (var, 2) == NULL);
-  gcc_assert (TREE_CODE (*mfp) == FIELD_DECL);
-  gcc_assert (TREE_CODE_CLASS (TREE_CODE (*mfp)) == tcc_declaration);
-  *struct_name = TREE_TYPE (TREE_OPERAND (var, 0));
-  return true;
-}
-
-static const char *
-get_typename (tree type)
-{
-  const char *result = "";
-  if (TYPE_NAME (type) && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
-    result = IDENTIFIER_POINTER (TYPE_NAME (type));
-  return result;
-}
-
-/* }])> */
-
-/* offsetof auxiliary <([{ */
-static bool
-is_anonymous_type (tree type)
-{
-  return (TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
-    && TYPE_NAME (type) == NULL;
-}
-
-static void
-loop_struct (tree field, int base)
-{
-  if (field == NULL)
-    /* The struct has nothing. */
-    return;
-  do
-    {
-      gcc_assert (TREE_CODE (field) == FIELD_DECL);
-      /* From __builtin_offsetof stack snapshot.
-       *   size_binop_loc
-       *   fold_offsetof_1
-       *   fold_offsetof
-       *   c_parser_postfix_expression
-       * In brief, later is the result.
-       */
-      int offset = tree_low_cst (DECL_FIELD_OFFSET (field), 1) +
-	tree_low_cst (DECL_FIELD_BIT_OFFSET (field),
-		      1) / BITS_PER_UNIT + base;
-      tree type = TREE_TYPE (field);
-
-      const char *tmp = NULL;
-      if (DECL_NAME (field) != NULL)
-	{
-	  tmp = IDENTIFIER_POINTER (DECL_NAME (field));
-	  offsetof_commit (tmp, offset);
-	}
-
-      if ((TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
-	  && !TYPE_FILE_SCOPE (type))
-	{
-	  /* Enumerate anonymous struct/union. */
-	  if (tmp != NULL)
-	    offsetof_push (tmp);
-	  loop_struct (TYPE_FIELDS (type), offset);
-	  if (tmp != NULL)
-	    offsetof_pop ();
-	}
-    }
-  while ((field = TREE_CHAIN (field)) != NULL);
-}
-
-static void
-struct_offsetof (int structid, tree node)
-{
-  tree field;
-  if (!offsetof_prepare (structid))
-    return;
-
-  /* From sizeof stack snapshot.
-   *   size_binop_loc
-   *   c_sizeof_or_alignof_type
-   *   c_expr_sizeof_type
-   *   c_parser_sizeof_expression
-   * In brief, later is the result.
-   */
-  int size = tree_low_cst (TYPE_SIZE_UNIT (node), 1);
-  offsetof_commit ("", size);
-
-  switch (TREE_CODE (node))
-    {
-    case RECORD_TYPE:
-    case UNION_TYPE:
-      field = TYPE_FIELDS (node);
-      loop_struct (field, 0);
-      break;
-    default:
-      break;
-    }
-}
-
-/* }])> */
-
 /* fcallf callbacks <([{ */
 /*
  * postfix-expression:
@@ -1404,7 +1372,7 @@ static void
 symdb_call_func (void *gcc_data, void *user_data)
 {
   void **pair = (void **) gcc_data;
-  tree decl = (tree) pair[0], struct_name = NULL, mfp;
+  tree decl = (tree) pair[0], struct_name = NULL_TREE, mfp;
   int file_offset = (int) pair[1];
   bool is_mfp = false;
   if (block_list.call_func)
@@ -1417,10 +1385,7 @@ symdb_call_func (void *gcc_data, void *user_data)
   else
     {
       while (TREE_CODE (decl) == INDIRECT_REF)
-	{
-	  gcc_assert (TREE_OPERAND_LENGTH (decl) == 1);
-	  decl = TREE_OPERAND (decl, 0);
-	}
+	decl = TREE_OPERAND (decl, 0);
       if (var_is_mfp (decl, &struct_name, &mfp))
 	is_mfp = true;
       else
@@ -1428,7 +1393,7 @@ symdb_call_func (void *gcc_data, void *user_data)
     }
   if (is_mfp)
     {
-      if (struct_name != NULL)
+      if (struct_name != NULL_TREE)
 	dyn_string_copy_cstr (gbuf, get_typename (struct_name));
       else
 	dyn_string_copy_cstr (gbuf, "");
@@ -1443,7 +1408,6 @@ done:;
 }
 
 /* }])> */
-
 /* def callbacks <([{ */
 /*
  * enumerator-list:
@@ -1628,8 +1592,6 @@ symdb_declspecs (void *gcc_data, void *user_data)
 done:;
 }
 
-/* }])> */
-
 static void
 symdb_extern_decl (void *gcc_data, void *user_data)
 {
@@ -1638,6 +1600,7 @@ symdb_extern_decl (void *gcc_data, void *user_data)
   block_list.access_var = true;
 }
 
+/* }])> */
 /* falias callbacks <([{ */
 static void
 constructor_loop (tree node, int offset)
@@ -1654,31 +1617,24 @@ constructor_loop (tree node, int offset)
   tree index, value;
   FOR_EACH_CONSTRUCTOR_ELT (CONSTRUCTOR_ELTS (node), cnt, index, value)
   {
+    if (TREE_CODE (value) == CONSTRUCTOR)
+      {
+	constructor_loop (value, offset);
+	continue;
+      }
     gcc_assert (TREE_CODE (index) == FIELD_DECL);
+    if (!is_fun_p (index))
+      continue;
     if (TREE_CODE (value) == NOP_EXPR)
-      {
-	if (!is_fun_p (value))
-	  continue;
-	gcc_assert (TREE_OPERAND_LENGTH (value) == 1);
-	value = TREE_OPERAND (value, 0);
-      }
+      value = TREE_OPERAND (value, 0);
     if (TREE_CODE (value) == ADDR_EXPR)
-      {
-	if (!is_fun_p (value))
-	  continue;
-	gcc_assert (TREE_OPERAND_LENGTH (value) == 1);
-	tree arg0 = TREE_OPERAND (value, 0);
-	if (TREE_CODE (arg0) != FUNCTION_DECL)
-	  continue;
-	gcc_assert (TREE_CODE_CLASS (TREE_CODE (arg0)) == tcc_declaration);
-	gcc_assert (TREE_CODE_CLASS (TREE_CODE (index)) == tcc_declaration);
-	const char *a = IDENTIFIER_POINTER (DECL_NAME (index));
-	const char *b = IDENTIFIER_POINTER (DECL_NAME (arg0));
-	const char *c = get_typename (struct_name);
-	funp_alias_append (c, a, b, offset);
-      }
-    else if (TREE_CODE (value) == CONSTRUCTOR)
-      constructor_loop (value, offset);
+      value = TREE_OPERAND (value, 0);
+    if (TREE_CODE (value) != FUNCTION_DECL)
+      continue;
+    const char *a = IDENTIFIER_POINTER (DECL_NAME (index));
+    const char *b = IDENTIFIER_POINTER (DECL_NAME (value));
+    const char *c = get_typename (struct_name);
+    falias_append (c, a, b, offset);
   }
 }
 
@@ -1687,27 +1643,20 @@ modify_expr (tree node, int offset)
 {
   if (!is_fun_p (node))
     return;
-  gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
-  tree struct_name, mfp = NULL;
+  tree struct_name, mfp;
   if (!var_is_mfp (TREE_OPERAND (node, 0), &struct_name, &mfp))
     return;
   tree tmp = TREE_OPERAND (node, 1);
   if (TREE_CODE (tmp) == NOP_EXPR)
-    {
-      gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
-      tmp = TREE_OPERAND (tmp, 0);
-    }
-  if (TREE_CODE (tmp) != ADDR_EXPR)
+    tmp = TREE_OPERAND (tmp, 0);
+  if (TREE_CODE (tmp) == ADDR_EXPR)
+    tmp = TREE_OPERAND (tmp, 0);
+  if (TREE_CODE (tmp) != FUNCTION_DECL)
     return;
-  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
-  tree funcdecl = TREE_OPERAND (tmp, 0);
-  if (TREE_CODE (funcdecl) != FUNCTION_DECL)
-    return;
-  gcc_assert (TREE_CODE_CLASS (TREE_CODE (funcdecl)) == tcc_declaration);
   const char *a = IDENTIFIER_POINTER (DECL_NAME (mfp));
-  const char *b = IDENTIFIER_POINTER (DECL_NAME (funcdecl));
+  const char *b = IDENTIFIER_POINTER (DECL_NAME (tmp));
   const char *c = get_typename (struct_name);
-  funp_alias_append (c, a, b, offset);
+  falias_append (c, a, b, offset);
 }
 
 /*
@@ -1737,7 +1686,7 @@ modify_expr (tree node, int offset)
  * And you mfp can't be 2-level function pointer or array.
  */
 static void
-symdb_funp_alias (void *gcc_data, void *user_data)
+symdb_falias (void *gcc_data, void *user_data)
 {
   void **pair = (void **) gcc_data;
   tree node = (tree) pair[0];
@@ -1756,10 +1705,9 @@ symdb_funp_alias (void *gcc_data, void *user_data)
 }
 
 /* }])> */
-
 /* faccessv callbacks <([{ */
-/* Deal with the cases are not belong to expression class. */
 static void loop_expr (tree);
+static tree loop_stmt (tree node, bool detain_last);
 static int
 print_gvar (tree node, int flag, bool fun_pattern)
 {
@@ -1806,8 +1754,7 @@ print_gvar (tree node, int flag, bool fun_pattern)
 	  loop_expr (arg0);
 	  ret = -1;
 	  goto nofound;
-	case MEM_REF:		/* __builtin_memcpy(&ui, char[4], 4). */
-	  gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
+	case MEM_REF:		/* __builtin_memcpy(&ui, char_arr[4], 4). */
 	  arg0 = TREE_OPERAND (node, 0);
 	  loop_expr (arg0);
 	  arg1 = TREE_OPERAND (node, 1);
@@ -1889,9 +1836,8 @@ print_gvar (tree node, int flag, bool fun_pattern)
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case TARGET_EXPR:
-	  tmp = TREE_OPERAND (tmp, 1);
-	  gcc_assert (TREE_CODE (tmp) == BIND_EXPR);
-	  tmp = TREE_OPERAND (tmp, 1);
+	  tmp = TARGET_EXPR_INITIAL (tmp);
+	  tmp = BIND_EXPR_BODY (tmp);
 	  gcc_assert (TREE_CODE (tmp) == STATEMENT_LIST);
 	  tmp = tsi_stmt (tsi_last (tmp));
 	  if (TREE_CODE (tmp) == MODIFY_EXPR)	/* the lvalue is an inner temporary
@@ -1906,8 +1852,8 @@ print_gvar (tree node, int flag, bool fun_pattern)
 	  goto nofound;
 	case CONSTRUCTOR:	/* cast: pointer to union. */
 	  gcc_assert (TREE_CODE (TREE_TYPE (tmp)) == UNION_TYPE);
-	case NOP_EXPR:		/* cast: between pointer. */
-	case CONVERT_EXPR:	/* cast: i = *p. */
+	case NOP_EXPR:
+	case CONVERT_EXPR:
 	  loop_expr (tmp);
 	  ret = -2;
 	  goto nofound;
@@ -1916,17 +1862,15 @@ print_gvar (tree node, int flag, bool fun_pattern)
 	  gcc_assert (TREE_CODE (COMPOUND_LITERAL_EXPR_DECL_EXPR (tmp)) ==
 		      DECL_EXPR);
 	  tmp = COMPOUND_LITERAL_EXPR_DECL (tmp);
-	  gcc_assert (DECL_NAME (tmp) == NULL);
+	  gcc_assert (DECL_NAME (tmp) == NULL_TREE);
 	  tmp = DECL_INITIAL (tmp);
 	  loop_expr (tmp);
 	  ret = -2;
 	  goto nofound;
 	case SAVE_EXPR:
-	  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 1);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case C_MAYBE_CONST_EXPR:
-	  gcc_assert (TREE_OPERAND_LENGTH (tmp) == 2);
 	  tmp = TREE_OPERAND (tmp, 1);
 	  break;
 	default:
@@ -1956,7 +1900,7 @@ found:
 	case COMPONENT_REF:
 	  {
 	    gcc_assert (TREE_OPERAND_LENGTH (tmp) == 3);
-	    gcc_assert (TREE_OPERAND (tmp, 2) == NULL);
+	    gcc_assert (TREE_OPERAND (tmp, 2) == NULL_TREE);
 	    tree arg1 = TREE_OPERAND (tmp, 1);
 	    gcc_assert (TREE_CODE (arg1) == FIELD_DECL);
 	    if (DECL_NAME (arg1))
@@ -2000,6 +1944,64 @@ done:
   return ret;
 }
 
+static tree
+loop_stmt (tree node, bool detain_last)
+{
+  tree tmp;
+  tree_stmt_iterator i;
+  for (i = tsi_start (node); !tsi_end_p (i); tsi_next (&i))
+    {
+      tree t = tsi_stmt (i);
+      if (detain_last && tsi_one_before_end_p (i))
+	return t;
+      switch (TREE_CODE (t))
+	{
+	case DECL_EXPR:
+	  tmp = DECL_EXPR_DECL (t);
+	  tmp = DECL_INITIAL (tmp);
+	  loop_expr (tmp);
+	  break;
+	case BIND_EXPR:
+	  tmp = BIND_EXPR_BODY (t);
+	  if (TREE_CODE (tmp) == STATEMENT_LIST)
+	    loop_stmt (tmp, false);
+	  else
+	    loop_expr (tmp);
+	  break;
+	case LABEL_EXPR:
+	  break;
+	case GOTO_EXPR:
+	  tmp = GOTO_DESTINATION (t);
+	  loop_expr (tmp);
+	  break;
+	case ASM_EXPR:
+	  tmp = ASM_INPUTS (t);
+	  loop_expr (tmp);
+	  tmp = ASM_OUTPUTS (t);
+	  loop_expr (tmp);
+	  break;
+
+	case SWITCH_EXPR:
+	  tmp = SWITCH_COND (t);
+	  loop_expr (tmp);
+	  tmp = SWITCH_BODY (t);
+	  if (TREE_CODE (tmp) == STATEMENT_LIST)
+	    loop_stmt (tmp, false);
+	  else
+	    loop_expr (tmp);
+	  break;
+	case CASE_LABEL_EXPR:
+	  break;
+	  /* Some inner codes */
+	case PREDICT_EXPR:
+	  break;
+	default:
+	  loop_expr (t);
+	}
+    }
+  return NULL;
+}
+
 static void
 loop_expr (tree node)
 {
@@ -2010,7 +2012,6 @@ loop_expr (tree node)
   switch (TREE_CODE (node))
     {
     case MODIFY_EXPR:		/* =, +=, >>= and so on */
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
       arg0 = TREE_OPERAND (node, 0);
       if (print_gvar (arg0, ACCESS_WRITE, false) == 0)
 	loop_expr (arg0);
@@ -2018,18 +2019,16 @@ loop_expr (tree node)
       loop_expr (arg1);
       break;
     case ADDR_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
       arg0 = TREE_OPERAND (node, 0);
       if (print_gvar (arg0, ACCESS_ADDR, false) == 0)
 	loop_expr (arg0);
       break;
     case COND_EXPR:		/* .. ? .. : .. */
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 3);
-      arg0 = TREE_OPERAND (node, 0);
+      arg0 = COND_EXPR_COND (node);
       loop_expr (arg0);
-      arg1 = TREE_OPERAND (node, 1);
+      arg1 = COND_EXPR_THEN (node);
       loop_expr (arg1);
-      arg2 = TREE_OPERAND (node, 2);
+      arg2 = COND_EXPR_ELSE (node);
       loop_expr (arg2);
       break;
     case POINTER_PLUS_EXPR:	/* *(p + i) or p[i] */
@@ -2041,7 +2040,6 @@ loop_expr (tree node)
     case GE_EXPR:
     case EQ_EXPR:
     case NE_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
       arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
       arg1 = TREE_OPERAND (node, 1);
@@ -2051,7 +2049,6 @@ loop_expr (tree node)
     case PREINCREMENT_EXPR:
     case POSTDECREMENT_EXPR:
     case PREDECREMENT_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
       arg0 = TREE_OPERAND (node, 0);
       if (print_gvar (arg0, ACCESS_READ | ACCESS_WRITE, false) == 0)
 	loop_expr (arg0);
@@ -2066,7 +2063,6 @@ loop_expr (tree node)
     case NOP_EXPR:		/* cast: (struct abc*) p */
       ;
     case BIT_NOT_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
       arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
       break;
@@ -2087,7 +2083,6 @@ loop_expr (tree node)
     case TRUNC_DIV_EXPR:
     case TRUNC_MOD_EXPR:
     case RDIV_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
       arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
       arg1 = TREE_OPERAND (node, 1);
@@ -2105,9 +2100,12 @@ loop_expr (tree node)
     case TARGET_EXPR:		/* GNU extension on c99 6.5.2 postfix expression --
 				   statment in expression */
       /* Our callbacks symdb_begin/end_stmt_in_expr have sent all expressions
-       * in its statement block to us, so iterator the outer expression
-       * including the statmenet block is unnecessary. */
+       * in the statement block of this expression to us, so iterator this
+       * expression is unnecessary. */
+      tmp = TARGET_EXPR_INITIAL (node);
     case BIND_EXPR:
+      tmp = BIND_EXPR_BODY (tmp);
+      // loop_stmt (tmp, false);
       break;
     case TRUTH_AND_EXPR:
     case TRUTH_OR_EXPR:
@@ -2121,7 +2119,6 @@ loop_expr (tree node)
       break;
     case MAX_EXPR:
     case MIN_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
       arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
       arg1 = TREE_OPERAND (node, 1);
@@ -2131,12 +2128,10 @@ loop_expr (tree node)
     case ABS_EXPR:
     case SAVE_EXPR:
     case NON_LVALUE_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 1);
       arg0 = TREE_OPERAND (node, 0);
       loop_expr (arg0);
       break;
     case C_MAYBE_CONST_EXPR:
-      gcc_assert (TREE_OPERAND_LENGTH (node) == 2);
       arg1 = TREE_OPERAND (node, 1);
       loop_expr (arg1);
       break;
@@ -2144,7 +2139,7 @@ loop_expr (tree node)
       gcc_assert (TREE_CODE (COMPOUND_LITERAL_EXPR_DECL_EXPR (tmp)) ==
 		  DECL_EXPR);
       tmp = COMPOUND_LITERAL_EXPR_DECL (tmp);
-      gcc_assert (DECL_NAME (tmp) == NULL);
+      gcc_assert (DECL_NAME (tmp) == NULL_TREE);
       tmp = DECL_INITIAL (tmp);
       loop_expr (tmp);
       break;
@@ -2193,7 +2188,7 @@ symdb_end_expression (void *gcc_data, void *user_data)
   void *pair[2];
   pair[0] = node;
   pair[1] = (void *) expr.token_offset;
-  symdb_funp_alias (pair, NULL);
+  symdb_falias (pair, NULL);
 }
 
 static void
@@ -2237,12 +2232,12 @@ symdb_fnbody_pattern (void *gcc_data, void *user_data)
 {
   tree node = (tree) gcc_data, tmp;
   gcc_assert (TREE_CODE (node) == BIND_EXPR);
-  tree vars = TREE_OPERAND (node, 0);
-  if (vars != NULL)
+  tree vars = BIND_EXPR_VARS (node);
+  if (vars != NULL_TREE)
     /* You have declared a local var. */
     return;
-  tree body = TREE_OPERAND (node, 1);
-  tree block = TREE_OPERAND (node, 2);
+  tree body = BIND_EXPR_BODY (node);
+  tree block = BIND_EXPR_BLOCK (node);
 
   tmp = BLOCK_SUPERCONTEXT (block);
   gcc_assert (TREE_CODE (tmp) == FUNCTION_DECL);
@@ -2251,13 +2246,13 @@ symdb_fnbody_pattern (void *gcc_data, void *user_data)
   gcc_assert (TREE_CODE (result) == RESULT_DECL);
   if (TREE_CODE (TREE_TYPE (result)) == VOID_TYPE)
     {
-      if (args != NULL && TREE_CHAIN (args) == NULL)
+      if (args != NULL_TREE && TREE_CHAIN (args) == NULL_TREE)
 	/* Only a parameter is accepted. */
 	set_func (IDENTIFIER_POINTER (DECL_NAME (tmp)), body);
     }
   else
     {
-      if (args != NULL)
+      if (args != NULL_TREE)
 	return;
       get_func (IDENTIFIER_POINTER (DECL_NAME (tmp)), body);
     }
@@ -2298,7 +2293,7 @@ symdb_unit_init (void *gcc_data, void *user_data)
   def_init ();
   fcallf_init ();
   faccessv_init ();
-  funp_alias_init ();
+  falias_init ();
   mo_init ();
 }
 
@@ -2306,7 +2301,7 @@ static void
 symdb_unit_tini (void *gcc_data, void *user_data)
 {
   mo_tini ();
-  funp_alias_tini ();
+  falias_tini ();
   faccessv_tini ();
   fcallf_tini ();
   def_tini ();
@@ -2384,8 +2379,7 @@ plugin_init (struct plugin_name_args *plugin_info,
   register_callback ("symdb", PLUGIN_EXTERN_VAR, &symdb_extern_var, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_DECLSPECS,
 		     &symdb_declspecs, NULL);
-  register_callback ("symdb", PLUGIN_EXTERN_INITIALIZER, &symdb_funp_alias,
-		     NULL);
+  register_callback ("symdb", PLUGIN_EXTERN_INITIALIZER, &symdb_falias, NULL);
   register_callback ("symdb", PLUGIN_BEGIN_STMT_IN_EXPR,
 		     &symdb_begin_stmt_in_expr, NULL);
   register_callback ("symdb", PLUGIN_END_STMT_IN_EXPR,
