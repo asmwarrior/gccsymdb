@@ -24,7 +24,7 @@ dump_helper ()
 	elif [ "$1" = "ifdef" ]; then
 		sed 's/uvwxyz/.du chFile\n.du Ifdef/' abc123 > 123abc
 	elif [ "$1" = "falias" ]; then
-		sed 's/uvwxyz/.du FunpAlias\n.du Definition\n.du FunctionCall/' abc123 > 123abc
+		sed 's/uvwxyz/.du FunctionAlias\n.du Definition\n.du FunctionCall/' abc123 > 123abc
 	elif [ "$1" = "offsetof" ]; then
 		sed 's/uvwxyz/.du Definition\n.du Offsetof/' abc123 > 123abc
 	fi
@@ -70,7 +70,7 @@ test_it hash def
 echo PASS hash
 test_it cpptoken def
 echo PASS cpptoken
-test_it funp_alias falias
-echo PASS funp_alias
+test_it falias falias
+echo PASS falias
 test_it offsetof offsetof
 echo PASS offsetof

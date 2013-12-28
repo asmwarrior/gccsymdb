@@ -231,7 +231,7 @@ callee (const char *def)
 			"f.name, d.fileOffset, d.name, fa.mfp "
 			"from "
 			"FunctionCall as fc "
-			"left join FunpAlias fa on fc.name = fa.mfp "
+			"left join FunctionAlias fa on fc.name = fa.mfp "
 			"left join Definition as d on fc.callerID = d.id "
 			"left join chFile f on d.fileID = f.id "
 			"where fa.fundecl = '");
@@ -343,7 +343,7 @@ initdb (const char *path, const char *user_def)
 			  "(funcID, name, flag);"
 			  "create index idx_tempIfdef on Ifdef"
 			  "(fileID, flag, startOffset, endOffset);"
-			  "create index idx_tempFunpAlias on FunpAlias"
+			  "create index idx_tempFunctionAlias on FunctionAlias"
 			  "(fileID, mfp, funDecl, offset);"
 			  "create index idx_tempOffsetof on Offsetof"
 			  "(structID);");
@@ -364,7 +364,7 @@ enddb (const char *path)
   dyn_string_append_cstr (gbuf, ";");
   dyn_string_append_cstr (gbuf,
 			  "drop index idx_tempOffsetof;"
-			  "drop index idx_tempFunpAlias;"
+			  "drop index idx_tempFunctionAlias;"
 			  "drop index idx_tempIfdef;"
 			  "drop index idx_tempFunctionPattern;"
 			  "drop index idx_tempFunctionAccess;"

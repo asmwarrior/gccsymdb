@@ -80,7 +80,7 @@ create table Ifdef (
 
 -- For function alias feature.
 -- The table is used to store where a mfp is assigned.
-create table FunpAlias (
+create table FunctionAlias (
 	fileID integer references chFile (id),
 	mfp text, -- syntax pattern: structname::mfp
 	funDecl text,
@@ -119,7 +119,7 @@ from
 ;
 
 -- Search function-call relationship, query column calleeName if you only know func-decl.
--- Note: It's possible that FunpAlias hasn't a mfp record while the mfp exists in FunctionCall -- your function calls a mfp but forget to assigns it to some func-decl?
+-- Note: It's possible that FunctionAlias hasn't a mfp record while the mfp exists in FunctionCall -- your function calls a mfp but forget to assigns it to some func-decl?
 -- Note: the second query actually includes all rows in FunctionCall. It depends on the fact that mfp data of FunctionCall has a pattern '*::XX', it's used to query direct call relationship.
 -- Note: sqlite-3.6.20 hasn't a good query plan in the view, if the view only includes either the first or second query, it will use Alias2 and CalleeName indices individually. That's why app.c:callee() uses its code based on this.
 create view CallRelationship as
@@ -128,7 +128,7 @@ select
 	fc.fileID as calleePosFileID, f2.name as calleePosFileName, fc.fileOffset as calleePos, fa.fundecl as calleeName, fa.mfp as mfp
 from
 	FunctionCall as fc
-	left join FunpAlias fa on fc.name = fa.mfp
+	left join FunctionAlias fa on fc.name = fa.mfp
 	left join Definition as d on fc.callerID = d.id
 		left join chFile f on d.fileID = f.id
 	left join chFile f2 on fc.fileID = f2.id
@@ -144,13 +144,13 @@ from
 ;
 
 -- Search mfp alias and its position by mfp.
--- Note: It's possible that FunpAlias has a record but you can't find it in Defintion, maybe you assign the mfp to an assemble-entry.
+-- Note: It's possible that FunctionAlias has a record but you can't find it in Defintion, maybe you assign the mfp to an assemble-entry.
 create view MfpJumpto as
 select
 	fa.fileID as mfpFileID, f.name as mfpFileName, fa.offset as mfpOffset, fa.mfp as mfp,
 	d.fileID as funcFileID, f2.name as funcFileName, d.fileOffset as funcOffset, fa.funDecl as funcName
 from
-	FunpAlias as fa
+	FunctionAlias as fa
 	left join Definition as d on fa.funDecl = d.Name
 		left join chFile as f2 on d.fileID = f2.id
 	left join chFile as f on fa.fileID = f.id
@@ -179,9 +179,9 @@ create index FileName on chFile (name);
 
 create index DefName on Definition (name);
 
-create index Alias on FunpAlias (mfp);
+create index Alias on FunctionAlias (mfp);
 
-create index Alias2 on FunpAlias (funDecl);
+create index Alias2 on FunctionAlias (funDecl);
 
 create index CalleeName on FunctionCall (name);
 -- }])>
@@ -201,6 +201,6 @@ begin
 	delete from FileDependence where chID = old.id;
 	delete from Definition where fileID = old.id;
 	delete from Ifdef where fileID = old.id;
-	delete from FunpAlias where fileID = old.id;
+	delete from FunctionAlias where fileID = old.id;
 end;
 -- }])>

@@ -2,7 +2,6 @@
                          Gcc symbol database (symdb)
                              zyf.zeroos@gmail.com
                               November 24, 2009
-                           revised on May 24, 2012
 
 // Purpose <([{
 The file is used to record the idea I got -- collecting gcc internal data
@@ -38,12 +37,12 @@ Note: In my plugin, I patched gcc to use token file-offset, not token
 line/column which is more convenient for database sort purpose.
 1) The plugin only works on C not C++.
 2) Plugin can collect all extern definitins and dump them to database.
-3) As the convention, the members of an extern enum are collected and dumped
-to database.
+3) As the convention, the enumerators of an extern enum are collected and
+dumped to database.
 4) Funtion call relationship are collected too, just like cscope.
-5) Using `gs filedep/filedepee filename' to reconstruct file dependence
+5) Using `./gs filedep/filedepee filename' to reconstruct file dependence
 relationship.
-6) Not in cscope, you can use `gs addsym/rmsym' to re-edit the database,
+6) Not in cscope, you can use `./gs addsym/rmsym' to re-edit the database,
 remove the duplicate results and append new symbols to the database, see
 section <Multiple-results ...>.
 7) I finished a vim script `helper.vim' to help you using the database in vim.
@@ -63,10 +62,10 @@ block.
 The feature treats `ext2_open' as an alias of `open'. So when you search
 `open', jump to `ext2_open'. Of course, you can get `ext2_open' is called by
 `foo' reversely. Note to simplify my code, only simple syntax is supported
-which showed in above assign-expression. See test/funp_alias/a.c for more.
-Syntax pattern (member-function-pointer) is `struct::fun_pointer = fun_decl'
-and call the pattern, complex struct::...::struct::__pattern__ is supported,
-but only the last two levels are imported into database.
+which showed in above assign-expression. See test/falias/a.c for more. Syntax
+pattern (member-function-pointer) is `struct::fun_pointer = fun_decl' and call
+the pattern, complex struct::...::struct::__pattern__ is supported, but only
+the last two levels are imported into database.
     ./gs falias open
 11) Get macro expansion process by later steps
     a) ./gs macro a.h 0
@@ -125,8 +124,27 @@ in mind, if struct isn't anonymous, data will be linked to the struct itself.
     } td;
     ./gs offsetof anonv i
     ./gs offsetof td j
+13) Faccessv.
+In brief, tell you where/how a global variable is accessed by which functions.
+    int i; int* p;
+    void foo(void)
+    {
+        i++, &i; (*p)++;
+    }
+    ./gs faccessv i
+    a.c 20 foo i rw&
+    ./gs faccessv p
+    a.c 20 foo p RW
+As you've seen, (only) five signs are showed, `RW' is applied to indirect r/w.
+And data is recorded by the file-offset of the outer expression not statement.
+Later cases can be smart-joined:
+    (x = lx).v; (i = j, x).v;
+Data is stored as x.v not x.
+The only defect of the feature is I can't know which tree instances are still
+not included by my plugin so if you find your code can make my plugin crashed,
+insert `./gs ctrl faccessv f' after `./gs initdb ./' to disable it
+temporarially.
 // }])>
-
 // User Manual <([{
 Note: Using my plugin on correct code, buggy code maybe cause my plugin
 infinite-loop or crashed. And since I must patch gcc to support my plugin,
@@ -182,7 +200,6 @@ assigned and assigned-definition.
 Testing my plugin:
 1) cd test && ./run.sh
 // }])>
-
 // Multiple-results from my database and my solution <([{
 Things are not always perfect, here I list some cases which makes my plugin
 return multiple-resuls when search a definition.
@@ -200,7 +217,7 @@ store the third line to database, but stores the fifth.
         ...
     };
 The syntax is correct. `gs' will return two results, one is DEF_TYPEDEF,
-another is DEF_STRUCT. In gcc-4.6.2, search `cpp_reader' will see the case.
+another is DEF_STRUCT. In gcc-4.6.4, search `cpp_reader' will see the case.
 
     #define X a
     #include "afile"
@@ -224,12 +241,11 @@ every file is compiled two times in glibc internal
 It causes the strange case.
 
 Fortunately, I add two commands (not in cscope :)
-    gs addsym/rmsym filename definition fileoffset
-So you can remove the item you doesn't like by them. `gs addsym' is also
+    ./gs addsym/rmsym filename definition fileoffset
+So you can remove the item you doesn't like by them. `./gs addsym' is also
 useful since you can use it to append the symbols which are invisible from my
-plugin, such as `gs addsym arch/mips/kernel/vmlinux.lds jiffies 6601'.
+plugin, such as `./gs addsym arch/mips/kernel/vmlinux.lds jiffies 6601'.
 // }])>
-
 // Tested projects (gcc, glibc and linux) <([{
 Prepare gcc support packages:
 gmp-5.0.1
@@ -254,7 +270,6 @@ glibc-2.13 (mips):
 linux-2.6.35 (mips):
     *) Change linux.src/Makefile: `KBUILD_CFLAGS := '.
 // }])>
-
 // Know Issues <([{
 1) Be careful if you updated a file and try to re-update my database. Here is
 a case
@@ -267,7 +282,7 @@ all header files after config.h maybe includes some old definitions not
 belonging to new option because from database, definitions are linked to file
 and are updated only if the file is updated.
 By the way, control the feature by init.sql:ProjectOverview::canUpdateFile,
-the default is 'off', I recommend recreate the database totally.
+the default is 't', I recommend recreate the database totally.
 2) Currently, my plugin doesn't support nested functions but if a nested
 function calls other functions, all of them are treated as the callees of
 outest function.
@@ -275,9 +290,7 @@ outest function.
 gcc on converting tokens from cpp stage to c/c++ stage -- g++ tries to convert
 all cpp_tokens to cp_tokens at one time, it violates the architecture of my
 plugin.
-4) Execute `:Gs falais open' by vim in linux.src is slow, in fact, it is a
-combination command, try `:Gs falias open' and `:Gs def XXX' individually.
-5) omp extension and objc of gcc aren't supported.
+4) omp extension and objc of gcc aren't supported.
 // }])>
 
 For Developer, need to sychronize with the up-to-dated code.
@@ -313,7 +326,6 @@ By the way, preprocess stage also combines all soft carriage line -- tailing
 with `\' into a line, so the first 2 lines are combined, and `\' itself isn't
 cpp token.
 // }])>
-
 // Macro Expansion Overview, based on gcc-4.6.4 <([{
 The fold records gcc macro expansion internal flow and my implementation,
 generally when macro expansion occurs, new context is pushed into
@@ -379,7 +391,6 @@ detect whether pfile.context.prev == NULL, however section <GCC cascaded macro
 expansion> shows there's a trap in it. Read replace_args carefully, it will
 help to understand mo_maybe_cascaded.
 // }])>
-
 // GCC Cancel Macro Expansion <([{
 Consider the case
     #define Z(a) a
@@ -401,7 +412,6 @@ even macro expansion is canceled):
 
 By the way, my plugin only cares about 1-level macro cancel.
 // }])>
-
 // GCC Cascaded Macro Expansion <([{
 Consider the case
     #define Z(a) a
@@ -466,7 +476,6 @@ I'm also sure in gcc-4.8.x, new function `in_macro_expansion_p' can solve it.
 It seems that the only solution to migrate the function from 4.8 to 4.6.4,
 also the priority of the job is very low due to nobody write code like this.
 // }])>
-
 // GCC Cancel + Cascaded Macro Expansion <([{
 Consider the case
     #define Z(p) a
@@ -506,7 +515,6 @@ To the fifth line, the sequence is
 
 To the fourth line, two cb_macro_start and three cb_macro_end are called.
 // }])>
-
 // Paste in Macro Expansion <([{
 The section is used to show some special context is pushed/poped along with
 normal macro expansion.
@@ -523,7 +531,6 @@ normal macro expansion.
     cb_macro_end(paste case context, prev = NULL)
     cb_macro_end(base context is poped, prev = NULL)
 // }])>
-
 // Patch Overview <([{
 // symdb_enhance_libcpp <([{
 Several new callbacks are appended into libpp/include/cpplib.h:cpp_callbacks:
@@ -573,14 +580,12 @@ c_parser_declaration_or_fndef,
     TYPE_CONTEXT (tmp) = tmp;
 // }])>
 // }])>
-
 // Database (init.sql) <([{
 *) User should use the fields of ProjectOverview to control the plugin.
 
 init.sql has been organized by vim fold feature. Meanwhile table chFile is
 the root -- all remain tables has a direct/indirect link to it.
 // }])>
-
 // Function Alias Feature <([{
 member function pointer abbr. mfp. Its syntax can't be function pointer array
 or two-level function pointer as <Feature List> showed. To assignment syntax,
@@ -588,16 +593,15 @@ but assigned value must be function declaration not a function pointer.
 
 The feature is consist of two parts:
 1) Where a mfp is assigned.
-Database init.sql:FunpAlias stores assignment position data.
-Code so.c:<funp-alias fold> manages FunpAlias table.
-Code so.c:symdb_funp_alias is called by gcc from two positions, one is when
+Database init.sql:FunctionAlias stores assignment position data.
+Code so.c:<falias fold> manages FunctionAlias table.
+Code so.c:symdb_falias is called by gcc from two positions, one is when
 parsing an expression, another is parsing initializer-list of a variable.
 2) Where a mfp variable is called.
 Database init.sql:Definition, `flag' field has a new type --
 DEF_CALLED_POINTER. `name' field is just like `struct::member' or `::member'.
 Code so.c:symdb_call_func is enhanced to collect a mfp variable is called.
 // }])>
-
 // Misc. <([{
 Gcc defines a default cpp_callbacks::file_change, to listen the callback in my
 patch to monitor file depedence, I replace the value in symdb_unit_init and

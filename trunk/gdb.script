@@ -11,7 +11,7 @@ set logging off
 cd ~/src/symdb.gcc/
 target exec /home/zyf/gcc/host-i686-pc-linux-gnu/gcc/xgcc
 file /home/zyf/gcc/host-i686-pc-linux-gnu/gcc/xgcc
-set args -B/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/ a.c --sysroot=/home/zyf/src/symdb.gcc//test -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
+set args -std=gnu99 -B/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/ a.c --sysroot=/home/zyf/src/symdb.gcc//test -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb
 b main
 r
 set follow-fork-mode child
