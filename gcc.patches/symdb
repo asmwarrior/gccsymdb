@@ -308,17 +308,7 @@ Index: gcc/gcc/c-parser.c
    return ret;
  }
  
-@@ -6118,7 +6164,9 @@ c_parser_postfix_expression (c_parser *p
- 	      break;
- 	    }
- 	  stmt = c_begin_stmt_expr ();
-+	  invoke_plugin_callbacks (PLUGIN_BEGIN_STMT_IN_EXPR, NULL);
- 	  c_parser_compound_statement_nostart (parser);
-+	  invoke_plugin_callbacks (PLUGIN_END_STMT_IN_EXPR, NULL);
- 	  c_parser_skip_until_found (parser, CPP_CLOSE_PAREN,
- 				     "expected %<)%>");
- 	  pedwarn (loc, OPT_pedantic,
-@@ -6563,6 +6611,12 @@ c_parser_postfix_expression_after_primar
+@@ -6563,6 +6609,12 @@ c_parser_postfix_expression_after_primar
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -331,7 +321,7 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-@@ -6686,6 +6740,8 @@ static struct c_expr
+@@ -6686,6 +6738,8 @@ static struct c_expr
  c_parser_expression (c_parser *parser)
  {
    struct c_expr expr;
@@ -340,7 +330,7 @@ Index: gcc/gcc/c-parser.c
    expr = c_parser_expr_no_commas (parser, NULL);
    while (c_parser_next_token_is (parser, CPP_COMMA))
      {
-@@ -6706,6 +6762,7 @@ c_parser_expression (c_parser *parser)
+@@ -6706,6 +6760,7 @@ c_parser_expression (c_parser *parser)
        expr.original_code = COMPOUND_EXPR;
        expr.original_type = next.original_type;
      }
@@ -348,7 +338,7 @@ Index: gcc/gcc/c-parser.c
    return expr;
  }
  
-@@ -6717,8 +6774,11 @@ c_parser_expression_conv (c_parser *pars
+@@ -6717,8 +6772,11 @@ c_parser_expression_conv (c_parser *pars
  {
    struct c_expr expr;
    location_t loc = c_parser_peek_token (parser)->location;
@@ -391,7 +381,7 @@ Index: gcc/gcc/doc/plugins.texi
 ===================================================================
 --- gcc.orig/gcc/doc/plugins.texi
 +++ gcc/gcc/doc/plugins.texi
-@@ -183,6 +183,30 @@ enum plugin_event
+@@ -183,6 +183,27 @@ enum plugin_event
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
    PLUGIN_NEW_PASS,
@@ -416,9 +406,6 @@ Index: gcc/gcc/doc/plugins.texi
 +  PLUGIN_END_EXPRESSION,
 +  /* Test function pattern. */
 +  PLUGIN_FNBODY_PATTERN,
-+  /* Statement in expression is encountered. */
-+  PLUGIN_BEGIN_STMT_IN_EXPR,
-+  PLUGIN_END_STMT_IN_EXPR,
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
@@ -452,7 +439,7 @@ Index: gcc/gcc/plugin.c
 ===================================================================
 --- gcc.orig/gcc/plugin.c
 +++ gcc/gcc/plugin.c
-@@ -438,6 +438,20 @@ register_callback (const char *plugin_na
+@@ -438,6 +438,18 @@ register_callback (const char *plugin_na
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -468,12 +455,10 @@ Index: gcc/gcc/plugin.c
 +      case PLUGIN_BEGIN_EXPRESSION:
 +      case PLUGIN_END_EXPRESSION:
 +      case PLUGIN_FNBODY_PATTERN:
-+      case PLUGIN_BEGIN_STMT_IN_EXPR:
-+      case PLUGIN_END_STMT_IN_EXPR:
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -514,6 +528,20 @@ invoke_plugin_callbacks_full (int event,
+@@ -514,6 +526,18 @@ invoke_plugin_callbacks_full (int event,
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -489,8 +474,6 @@ Index: gcc/gcc/plugin.c
 +      case PLUGIN_BEGIN_EXPRESSION:
 +      case PLUGIN_END_EXPRESSION:
 +      case PLUGIN_FNBODY_PATTERN:
-+      case PLUGIN_BEGIN_STMT_IN_EXPR:
-+      case PLUGIN_END_STMT_IN_EXPR:
          {
            /* Iterate over every callback registered with this event and
               call it.  */
@@ -498,7 +481,7 @@ Index: gcc/gcc/plugin.def
 ===================================================================
 --- gcc.orig/gcc/plugin.def
 +++ gcc/gcc/plugin.def
-@@ -89,6 +89,44 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
+@@ -89,6 +89,40 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
  
@@ -535,10 +518,6 @@ Index: gcc/gcc/plugin.def
 +
 +/* Test function pattern. */
 +DEFEVENT (PLUGIN_FNBODY_PATTERN)
-+
-+/* Statement in expression is encountered. */
-+DEFEVENT (PLUGIN_BEGIN_STMT_IN_EXPR)
-+DEFEVENT (PLUGIN_END_STMT_IN_EXPR)
 +
  /* After the hard-coded events above, plugins can dynamically allocate events
     at run time.

@@ -1174,10 +1174,11 @@ static struct
 static struct
 {
   int token_offset;
-    VEC (int, heap) * nested_level;
+  int nested_level;
   /* Since print_gvar can be called recursively -- print_gvar >> loop_expr >>
    * print_gvar, so the member is used just like a stack in print_gvar. */
     VEC (tree, heap) * gvar;
+  bool fun_pattern;
 } expr =
 {
 .nested_level = 0};
@@ -1185,17 +1186,13 @@ static struct
 static void
 pcallbacks_init (void)
 {
-  expr.nested_level = VEC_alloc (int, heap, 10);
   expr.gvar = VEC_alloc (tree, heap, 10);
-  VEC_safe_push (int, heap, expr.nested_level, 0);
 }
 
 static void
 pcallbacks_tini (void)
 {
   VEC_free (tree, heap, expr.gvar);
-  gcc_assert (VEC_length (int, expr.nested_level) == 1);
-  VEC_free (int, heap, expr.nested_level);
 }
 
 /* falias auxiliary <([{ */
@@ -1706,31 +1703,98 @@ symdb_falias (void *gcc_data, void *user_data)
 
 /* }])> */
 /* faccessv callbacks <([{ */
-static void loop_expr (tree);
-static tree loop_stmt (tree node, bool detain_last);
+static void loop_expr (tree, int);
+static void loop_stmt (tree);
+static int print_gvar (tree, int);
+static void expand_node (tree);
+
+/* An assert function for those trees appear after an indirect_ref tree.
+ * Assert based from c99 6.5.3 unary-expression:
+ *     unary-operator(*) cast-expression.
+ * Then substitute other syntax relationship into the above repeatedly.
+ * */
 static int
-print_gvar (tree node, int flag, bool fun_pattern)
+indirect_ref_assert (tree node)
 {
-  tree tmp = node, arg0, arg1;
-  int ret, code, pos = VEC_length (tree, expr.gvar);
-  bool print = false, indirect = false;
-
-  while (TREE_CODE (tmp) == INDIRECT_REF)
-    {
-      tmp = TREE_OPERAND (tmp, 0);
-      indirect = true;
-    }
-
-  code = TREE_CODE (tmp);
+  tree tmp = node;
+  int code = TREE_CODE (tmp);
   switch (TREE_CODE_CLASS (code))
     {
+    case tcc_expression:
+      switch (code)
+	{
+	  /* c99 6.5.3, unary expression. */
+	case PREINCREMENT_EXPR:
+	case PREDECREMENT_EXPR:
+	  /* c99 6.5.2, postfix expression. */
+	case POSTINCREMENT_EXPR:
+	case POSTDECREMENT_EXPR:
+	  return 0x0;
+	  /* c99 6.5.1, primary expression, gnu extension, stmt-in-expr. */
+	case C_MAYBE_CONST_EXPR:
+	case TARGET_EXPR:
+	  return 0x11;
+	  /* And if stmt-in-expr returns BIND_EXPR whose operand should be VOID
+	   * type, so it's impossible that BIND_EXPR becomes the operand of
+	   * INDIRECT_REF. */
+	case BIND_EXPR:
+	default:
+	  gcc_assert (false);
+	}
+    case tcc_unary:
+      switch (code)
+	{
+	  /* c99 6.5.4, cast expression. */
+	case NOP_EXPR:
+	case CONVERT_EXPR:
+	  return 0x20;
+	default:
+	  gcc_assert (false);
+	}
+    case tcc_binary:
+      switch (code)
+	{
+	  /* c99 6.5.1, primary expression. */
+	case POINTER_PLUS_EXPR:
+	  return 0x30;
+	default:
+	  gcc_assert (false);
+	}
+    case tcc_reference:
+    case tcc_declaration:
+      return 0x0;
+    case tcc_statement:
+    case tcc_comparison:
+    case tcc_vl_exp:
+    case tcc_exceptional:
+    case tcc_constant:
+    case tcc_type:
+    default:
+      gcc_assert (false);
+    }
+}
+
+static void
+expand_node_2 (tree node, int flag)
+{
+  tree tmp = node, arg0, arg1;
+
+  if (tmp == NULL)
+    return;
+
+  int code = TREE_CODE (tmp);
+  switch (TREE_CODE_CLASS (code))
+    {
+    case tcc_statement:
+      loop_stmt (tmp);
+      goto out;
     case tcc_expression:
     case tcc_comparison:
     case tcc_unary:
     case tcc_binary:
     case tcc_vl_exp:
-      ret = 0;
-      goto nofound;
+      loop_expr (tmp, flag);
+      goto out;
     case tcc_exceptional:
       switch (code)
 	{
@@ -1738,11 +1802,17 @@ print_gvar (tree node, int flag, bool fun_pattern)
 	  {
 	    int cnt;
 	    tree value;
-	    FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (node), cnt, value)
-	      loop_expr (value);
+	    FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (tmp), cnt, value)
+	      expand_node (value);
 	  }
-	  ret = -1;
-	  goto nofound;
+	  goto out;
+	case STATEMENT_LIST:
+	  {
+	    tree_stmt_iterator iter;
+	    for (iter = tsi_start (tmp); !tsi_end_p (iter); tsi_next (&iter))
+	      expand_node (tsi_stmt (iter));
+	  }
+	  goto out;
 	default:
 	  gcc_assert (false);
 	}
@@ -1750,149 +1820,215 @@ print_gvar (tree node, int flag, bool fun_pattern)
       switch (code)
 	{
 	case VIEW_CONVERT_EXPR:	/* cast from vector to other types. */
-	  arg0 = TREE_OPERAND (node, 0);
-	  loop_expr (arg0);
-	  ret = -1;
-	  goto nofound;
+	  arg0 = TREE_OPERAND (tmp, 0);
+	  expand_node (arg0);
+	  goto out;
 	case MEM_REF:		/* __builtin_memcpy(&ui, char_arr[4], 4). */
-	  arg0 = TREE_OPERAND (node, 0);
-	  loop_expr (arg0);
-	  arg1 = TREE_OPERAND (node, 1);
-	  loop_expr (arg1);
-	  ret = -1;
-	  goto nofound;
+	  arg0 = TREE_OPERAND (tmp, 0);
+	  expand_node (arg0);
+	  arg1 = TREE_OPERAND (tmp, 1);
+	  expand_node (arg1);
+	  goto out;
+	case INDIRECT_REF:
+	  while (TREE_CODE (tmp) == INDIRECT_REF)
+	    tmp = TREE_OPERAND (tmp, 0);
+	  indirect_ref_assert (tmp);
+	  gcc_assert (flag != ACCESS_ADDR);
+	  flag <<= 3;		/* shift flag to pointer r/w. */
+	  expand_node_2 (tmp, flag);
+	  goto out;
+	default:
+	  break;
 	}
+      goto pg;
     case tcc_declaration:
+      switch (code)
+	{
+	case CONST_DECL:
+	case TYPE_DECL:
+	  gcc_assert (false);
+	default:
+	  break;
+	}
+      goto pg;
     case tcc_constant:
-      break;
+      goto pg;
+    case tcc_type:
     default:
       gcc_assert (false);
     }
+pg:
+  print_gvar (node, flag);
+out:;
+}
 
-  /* Iterator a leaf node, some expressions can occur in it. */
+static void
+expand_node (tree node)
+{
+  expand_node_2 (node, ACCESS_READ);
+}
+
+static int
+print_gvar (tree node, int flag)
+{
+  tree tmp = node;
+  int ret, pos = VEC_length (tree, expr.gvar);
+
+  switch (TREE_CODE (tmp))
+    {
+    case RESULT_DECL:
+      ret = 3;
+      goto nofound;
+    case FUNCTION_DECL:	/* Function pointer assignment: fp = foo_decl; */
+      ret = 3;
+      goto nofound;
+    case INTEGER_CST:
+    case REAL_CST:
+    case FIXED_CST:
+    case COMPLEX_CST:
+    case VECTOR_CST:
+    case STRING_CST:
+      ret = 4;
+      goto nofound;
+    case LABEL_DECL:
+      ret = 5;
+      goto nofound;
+    default:
+      break;
+    }
+
+  /* Iterator a leaf node chain, some expressions can occur in it. */
   while (true)
     {
       switch (TREE_CODE (tmp))
 	{
+	  /* later cases are just leaf itself. */
 	case VAR_DECL:
+	  if (!DECL_NAME (tmp))
+	    {			/* an inner temporary variable. */
+	      ret = 16;
+	      goto nofound;
+	    }
 	  if (DECL_CONTEXT (tmp))
 	    {			/* local variable. */
-	      ret = 16;
+	      ret = 17;
 	      goto nofound;
 	    }
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  goto found;
-	case ADDR_EXPR:
+	case PARM_DECL:
+	  ret = 2;
+	  goto nofound;
+	case CALL_EXPR:	/* Function call. */
+	  expand_node (tmp);
+	  ret = -2;
+	  goto nofound;
+
+	  /* later cases are just intermediate nodes. */
+	  /* tcc_reference. */
+	case COMPONENT_REF:
+	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  gcc_assert (TREE_CODE (TREE_OPERAND (tmp, 1)) == FIELD_DECL);
+	  tmp = TREE_OPERAND (tmp, 0);
+	  break;
+	case ARRAY_REF:
+	  expand_node (TREE_OPERAND (tmp, 1));
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case INDIRECT_REF:
 	  VEC_safe_push (tree, heap, expr.gvar, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
-	  switch (TREE_CODE (tmp))
-	    {
-	    case POSTINCREMENT_EXPR:
-	    case PREINCREMENT_EXPR:
-	    case POSTDECREMENT_EXPR:
-	    case PREDECREMENT_EXPR:
-	      ;
-	    case POINTER_PLUS_EXPR:
-	      loop_expr (tmp);
-	      ret = -2;
-	      goto nofound;
-	    default:
-	      break;
-	    }
 	  break;
-	case ARRAY_REF:
-	  loop_expr (TREE_OPERAND (tmp, 1));
-	case COMPONENT_REF:
-	  VEC_safe_push (tree, heap, expr.gvar, tmp);
-	  tmp = TREE_OPERAND (tmp, 0);
-	  break;
-	case PARM_DECL:
-	  ret = 2;
-	  goto nofound;
-	case FUNCTION_DECL:	/* Function pointer assignment: fp = foo_decl; */
-	  ret = 3;
-	  goto nofound;
-	case INTEGER_CST:
-	case REAL_CST:
-	case FIXED_CST:
-	case COMPLEX_CST:
-	case VECTOR_CST:
-	case STRING_CST:
-	  ret = 4;
-	  goto nofound;
-	case LABEL_DECL:
-	  ret = 5;
-	  goto nofound;
+	  /* the remain tcc_*, some can continue, some not */
 	case COMPOUND_EXPR:
-	  loop_expr (TREE_OPERAND (tmp, 0));
+	  expand_node (TREE_OPERAND (tmp, 0));
 	  tmp = TREE_OPERAND (tmp, 1);
 	  break;
 	case MODIFY_EXPR:
-	  loop_expr (TREE_OPERAND (tmp, 1));
+	  expand_node (TREE_OPERAND (tmp, 1));
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case TARGET_EXPR:
 	  tmp = TARGET_EXPR_INITIAL (tmp);
 	  tmp = BIND_EXPR_BODY (tmp);
-	  gcc_assert (TREE_CODE (tmp) == STATEMENT_LIST);
-	  tmp = tsi_stmt (tsi_last (tmp));
-	  if (TREE_CODE (tmp) == MODIFY_EXPR)	/* the lvalue is an inner temporary
-						   variable. */
-	    tmp = TREE_OPERAND (tmp, 1);
-	  ret = -2;
-	  goto nofound;
-	case CALL_EXPR:
+	  if (TREE_CODE (tmp) == STATEMENT_LIST)
+	    {
+	      tree_stmt_iterator iter;
+	      for (iter = tsi_start (tmp); !tsi_one_before_end_p (iter);
+		   tsi_next (&iter))
+		expand_node (tsi_stmt (iter));
+	      tmp = tsi_stmt (tsi_last (tmp));
+	      gcc_assert (TREE_CODE (tmp) == MODIFY_EXPR);
+	      /* its lvalue is an inner temporary variable. */
+	      gcc_assert (DECL_NAME (TREE_OPERAND (tmp, 0)) == NULL);
+	      tmp = TREE_OPERAND (tmp, 1);
+	    }
+	  break;
+	case C_MAYBE_CONST_EXPR:
+	  tmp = TREE_OPERAND (tmp, 1);
+	  break;
 	case COND_EXPR:
-	  loop_expr (tmp);
+	  expand_node (tmp);
 	  ret = -2;
 	  goto nofound;
 	case CONSTRUCTOR:	/* cast: pointer to union. */
 	  gcc_assert (TREE_CODE (TREE_TYPE (tmp)) == UNION_TYPE);
-	case NOP_EXPR:
-	case CONVERT_EXPR:
-	  loop_expr (tmp);
+	  expand_node (tmp);
 	  ret = -2;
 	  goto nofound;
-	  /* Some inner codes */
 	case COMPOUND_LITERAL_EXPR:	/* c99 6.5.2, initializer list. */
 	  gcc_assert (TREE_CODE (COMPOUND_LITERAL_EXPR_DECL_EXPR (tmp)) ==
 		      DECL_EXPR);
 	  tmp = COMPOUND_LITERAL_EXPR_DECL (tmp);
 	  gcc_assert (DECL_NAME (tmp) == NULL_TREE);
 	  tmp = DECL_INITIAL (tmp);
-	  loop_expr (tmp);
+	  expand_node (tmp);
 	  ret = -2;
 	  goto nofound;
 	case SAVE_EXPR:
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
-	case C_MAYBE_CONST_EXPR:
-	  tmp = TREE_OPERAND (tmp, 1);
+	  /* later cases should be the operands of INDIRECT_REF. */
+	case PREINCREMENT_EXPR:
+	case PREDECREMENT_EXPR:
+	case POSTINCREMENT_EXPR:
+	case POSTDECREMENT_EXPR:
+	  ;
+	case ADDR_EXPR:
+	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
+	case NOP_EXPR:
+	case CONVERT_EXPR:
+	  ;
+	case POINTER_PLUS_EXPR:
+	  expand_node (tmp);
+	  ret = -2;
+	  goto nofound;
 	default:
 	  gcc_assert (false);
 	}
     }
 
 found:
+  tmp = VEC_pop (tree, expr.gvar);
+  gcc_assert (TREE_CODE (tmp) == VAR_DECL);
+  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
+  int print = 0;
   while (VEC_length (tree, expr.gvar) != pos)
     {
       tmp = VEC_pop (tree, expr.gvar);
       switch (TREE_CODE (tmp))
 	{
-	case VAR_DECL:
-	  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
-	  break;
 	case ADDR_EXPR:
-	  /* Here, `&' is used to cancel `*' if they're neighbor each other. */
-	  print = false;
+	  /* Even gcc can cancel out `&*x' and `*&x', but to case `({ &x; })->i;'
+	   * we still get a sample that ADDR_EXPR neighboring to INDIRECT_REF, to
+	   * make user get `x.i' in database, I introduce print variable. */
+	  print--;
 	  break;
 	case INDIRECT_REF:
-	  print = true;
+	  print++;
 	  break;
 	case ARRAY_REF:
 	  dyn_string_append_cstr (gbuf, "[]");
@@ -1905,9 +2041,10 @@ found:
 	    gcc_assert (TREE_CODE (arg1) == FIELD_DECL);
 	    if (DECL_NAME (arg1))
 	      {
+		gcc_assert (print >= 0);
 		if (print)
 		  {
-		    print = false;
+		    print = 0;
 		    dyn_string_append_cstr (gbuf, "->");
 		  }
 		else
@@ -1925,12 +2062,7 @@ found:
 	}
     }
   ret = 1;
-  if (indirect)
-    {
-      gcc_assert (flag != ACCESS_ADDR);
-      flag <<= 3;
-    }
-  if (fun_pattern)
+  if (expr.fun_pattern)
     faccessv_insert_fpattern (gbuf, flag);
   else
     faccessv_insert (gbuf, flag, expr.token_offset);
@@ -1944,92 +2076,72 @@ done:
   return ret;
 }
 
-static tree
-loop_stmt (tree node, bool detain_last)
+/* Note, loop_stmt deals with some cases not belonging to tcc_statement.*/
+static void
+loop_stmt (tree node)
 {
-  tree tmp;
-  tree_stmt_iterator i;
-  for (i = tsi_start (node); !tsi_end_p (i); tsi_next (&i))
+  tree tmp = node, arg0, arg1;
+  switch (TREE_CODE (tmp))
     {
-      tree t = tsi_stmt (i);
-      if (detain_last && tsi_one_before_end_p (i))
-	return t;
-      switch (TREE_CODE (t))
-	{
-	case DECL_EXPR:
-	  tmp = DECL_EXPR_DECL (t);
-	  tmp = DECL_INITIAL (tmp);
-	  loop_expr (tmp);
-	  break;
-	case BIND_EXPR:
-	  tmp = BIND_EXPR_BODY (t);
-	  if (TREE_CODE (tmp) == STATEMENT_LIST)
-	    loop_stmt (tmp, false);
-	  else
-	    loop_expr (tmp);
-	  break;
-	case LABEL_EXPR:
-	  break;
-	case GOTO_EXPR:
-	  tmp = GOTO_DESTINATION (t);
-	  loop_expr (tmp);
-	  break;
-	case ASM_EXPR:
-	  tmp = ASM_INPUTS (t);
-	  loop_expr (tmp);
-	  tmp = ASM_OUTPUTS (t);
-	  loop_expr (tmp);
-	  break;
-
-	case SWITCH_EXPR:
-	  tmp = SWITCH_COND (t);
-	  loop_expr (tmp);
-	  tmp = SWITCH_BODY (t);
-	  if (TREE_CODE (tmp) == STATEMENT_LIST)
-	    loop_stmt (tmp, false);
-	  else
-	    loop_expr (tmp);
-	  break;
-	case CASE_LABEL_EXPR:
-	  break;
-	  /* Some inner codes */
-	case PREDICT_EXPR:
-	  break;
-	default:
-	  loop_expr (t);
-	}
+    case DECL_EXPR:
+      tmp = DECL_EXPR_DECL (tmp);
+      tmp = DECL_INITIAL (tmp);
+      expand_node (tmp);
+      break;
+    case LABEL_EXPR:
+      break;
+    case GOTO_EXPR:
+      tmp = GOTO_DESTINATION (tmp);
+      expand_node (tmp);
+      break;
+    case ASM_EXPR:
+      arg0 = ASM_INPUTS (tmp);
+      if (arg0 != NULL)
+	expand_node (TREE_VALUE (arg0));
+      arg1 = ASM_OUTPUTS (tmp);
+      if (arg1 != NULL)
+	expand_node_2 (TREE_VALUE (arg1), ACCESS_WRITE);
+      break;
+    case SWITCH_EXPR:
+      arg0 = SWITCH_COND (tmp);
+      expand_node (arg0);
+      arg1 = SWITCH_BODY (tmp);
+      expand_node (arg1);
+      break;
+    case CASE_LABEL_EXPR:
+      break;
+    case RETURN_EXPR:
+      expand_node (TREE_OPERAND (tmp, 0));
+      break;
+    default:
+      gcc_assert (false);
     }
-  return NULL;
 }
 
 static void
-loop_expr (tree node)
+loop_expr (tree node, int flag)
 {
   tree tmp = node, arg0, arg1, arg2;
-  if (print_gvar (node, ACCESS_READ, false) != 0)
-    return;
 
   switch (TREE_CODE (node))
     {
     case MODIFY_EXPR:		/* =, +=, >>= and so on */
       arg0 = TREE_OPERAND (node, 0);
-      if (print_gvar (arg0, ACCESS_WRITE, false) == 0)
-	loop_expr (arg0);
+      expand_node_2 (arg0, ACCESS_WRITE);
       arg1 = TREE_OPERAND (node, 1);
-      loop_expr (arg1);
+      expand_node (arg1);
       break;
     case ADDR_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      if (print_gvar (arg0, ACCESS_ADDR, false) == 0)
-	loop_expr (arg0);
+      expand_node_2 (arg0, ACCESS_ADDR);
       break;
     case COND_EXPR:		/* .. ? .. : .. */
       arg0 = COND_EXPR_COND (node);
-      loop_expr (arg0);
+      expand_node (arg0);
       arg1 = COND_EXPR_THEN (node);
-      loop_expr (arg1);
+      expand_node (arg1);
       arg2 = COND_EXPR_ELSE (node);
-      loop_expr (arg2);
+      expand_node (arg2);
       break;
     case POINTER_PLUS_EXPR:	/* *(p + i) or p[i] */
     case COMPOUND_EXPR:	/* i, j */
@@ -2041,19 +2153,17 @@ loop_expr (tree node)
     case EQ_EXPR:
     case NE_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      loop_expr (arg0);
+      expand_node (arg0);
       arg1 = TREE_OPERAND (node, 1);
-      loop_expr (arg1);
+      expand_node (arg1);
       break;
     case POSTINCREMENT_EXPR:
     case PREINCREMENT_EXPR:
     case POSTDECREMENT_EXPR:
     case PREDECREMENT_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      if (print_gvar (arg0, ACCESS_READ | ACCESS_WRITE, false) == 0)
-	loop_expr (arg0);
+      expand_node_2 (arg0, ACCESS_READ | ACCESS_WRITE);
       break;
-    case INDIRECT_REF:		/* p->i */
     case NEGATE_EXPR:		/* -i */
     case FLOAT_EXPR:		/* f = i */
     case FIX_TRUNC_EXPR:	/* i = f */
@@ -2064,7 +2174,7 @@ loop_expr (tree node)
       ;
     case BIT_NOT_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      loop_expr (arg0);
+      expand_node (arg0);
       break;
     case EXACT_DIV_EXPR:	/* int *p, *q; p - q */
       ;
@@ -2084,28 +2194,25 @@ loop_expr (tree node)
     case TRUNC_MOD_EXPR:
     case RDIV_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      loop_expr (arg0);
+      expand_node (arg0);
       arg1 = TREE_OPERAND (node, 1);
-      loop_expr (arg1);
+      expand_node (arg1);
       break;
     case CALL_EXPR:
       gcc_assert (CALL_EXPR_FN (node) != NULL);
       gcc_assert (CALL_EXPR_STATIC_CHAIN (node) == NULL);
       {
 	call_expr_arg_iterator iter;
-	FOR_EACH_CALL_EXPR_ARG (tmp, iter, node) loop_expr (tmp);
+	FOR_EACH_CALL_EXPR_ARG (tmp, iter, node) expand_node (tmp);
       }
       break;
       /* Some inner codes */
     case TARGET_EXPR:		/* GNU extension on c99 6.5.2 postfix expression --
 				   statment in expression */
-      /* Our callbacks symdb_begin/end_stmt_in_expr have sent all expressions
-       * in the statement block of this expression to us, so iterator this
-       * expression is unnecessary. */
       tmp = TARGET_EXPR_INITIAL (node);
     case BIND_EXPR:
       tmp = BIND_EXPR_BODY (tmp);
-      // loop_stmt (tmp, false);
+      expand_node (tmp);
       break;
     case TRUTH_AND_EXPR:
     case TRUTH_OR_EXPR:
@@ -2113,27 +2220,27 @@ loop_expr (tree node)
     case LROTATE_EXPR:		/* ui = (ui << 7) | (ui >> (32 - 7)) */
     case RROTATE_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      loop_expr (arg0);
+      expand_node (arg0);
       arg1 = TREE_OPERAND (node, 1);
-      loop_expr (arg1);
+      expand_node (arg1);
       break;
     case MAX_EXPR:
     case MIN_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      loop_expr (arg0);
+      expand_node (arg0);
       arg1 = TREE_OPERAND (node, 1);
-      loop_expr (arg1);
+      expand_node (arg1);
       break;
     case TRUTH_NOT_EXPR:	/* Its operand is _Bool type. */
     case ABS_EXPR:
     case SAVE_EXPR:
     case NON_LVALUE_EXPR:
       arg0 = TREE_OPERAND (node, 0);
-      loop_expr (arg0);
+      expand_node (arg0);
       break;
     case C_MAYBE_CONST_EXPR:
       arg1 = TREE_OPERAND (node, 1);
-      loop_expr (arg1);
+      expand_node (arg1);
       break;
     case COMPOUND_LITERAL_EXPR:	/* c99 6.5.2, initializer list. */
       gcc_assert (TREE_CODE (COMPOUND_LITERAL_EXPR_DECL_EXPR (tmp)) ==
@@ -2141,7 +2248,9 @@ loop_expr (tree node)
       tmp = COMPOUND_LITERAL_EXPR_DECL (tmp);
       gcc_assert (DECL_NAME (tmp) == NULL_TREE);
       tmp = DECL_INITIAL (tmp);
-      loop_expr (tmp);
+      expand_node (tmp);
+      break;
+    case PREDICT_EXPR:
       break;
     default:
       gcc_assert (false);
@@ -2149,27 +2258,12 @@ loop_expr (tree node)
 }
 
 static void
-symdb_begin_stmt_in_expr (void *gcc_data, void *user_data)
-{
-  VEC_safe_push (int, heap, expr.nested_level, 0);
-}
-
-static void
-symdb_end_stmt_in_expr (void *gcc_data, void *user_data)
-{
-  int tmp = VEC_pop (int, expr.nested_level);
-  gcc_assert (tmp == 0);
-}
-
-static void
 symdb_begin_expression (void *gcc_data, void *user_data)
 {
   if (block_list.access_var)
     return;
-  int tmp = VEC_pop (int, expr.nested_level);
-  if (tmp++ == 0 && VEC_length (int, expr.nested_level) == 0)
+  if (expr.nested_level++ == 0)
     expr.token_offset = (int) gcc_data;
-  VEC_safe_push (int, heap, expr.nested_level, tmp);
 }
 
 static void
@@ -2178,13 +2272,11 @@ symdb_end_expression (void *gcc_data, void *user_data)
   if (block_list.access_var)
     return;
   tree node = (tree) gcc_data;
-  int tmp = VEC_pop (int, expr.nested_level);
-  VEC_safe_push (int, heap, expr.nested_level, --tmp);
-  if (tmp != 0)
+  if (--expr.nested_level != 0)
     return;
   gcc_assert (VEC_length (tree, expr.gvar) == 0);
   if (control_panel.faccessv)
-    loop_expr (node);
+    expand_node (node);
   void *pair[2];
   pair[0] = node;
   pair[1] = (void *) expr.token_offset;
@@ -2201,7 +2293,9 @@ set_func (const char *fname, tree body)
   arg1 = TREE_OPERAND (body, 1);
   if (TREE_CODE (arg1) != PARM_DECL)
     return;
-  print_gvar (arg0, ACCESS_WRITE, true);
+  expr.fun_pattern = true;
+  expand_node_2 (arg0, ACCESS_WRITE);
+  expr.fun_pattern = false;
 }
 
 static void
@@ -2217,14 +2311,15 @@ get_func (const char *fname, tree body)
   if (TREE_CODE (arg0) != RESULT_DECL)
     return;
   arg1 = TREE_OPERAND (tmp, 1);
-  int code = TREE_CODE (arg1);
-  if (code == ADDR_EXPR)
+  expr.fun_pattern = true;
+  if (TREE_CODE (arg1) == ADDR_EXPR)
     {
       arg0 = TREE_OPERAND (arg1, 0);
-      print_gvar (arg0, ACCESS_ADDR, true);
+      expand_node_2 (arg0, ACCESS_ADDR);
     }
   else
-    print_gvar (arg1, ACCESS_READ, true);
+    expand_node (arg1);
+  expr.fun_pattern = false;
 }
 
 static void
@@ -2338,8 +2433,6 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_EXTERN_VAR);
   unregister_callback ("symdb", PLUGIN_EXTERN_DECLSPECS);
   unregister_callback ("symdb", PLUGIN_EXTERN_INITIALIZER);
-  unregister_callback ("symdb", PLUGIN_BEGIN_STMT_IN_EXPR);
-  unregister_callback ("symdb", PLUGIN_END_STMT_IN_EXPR);
   unregister_callback ("symdb", PLUGIN_BEGIN_EXPRESSION);
   unregister_callback ("symdb", PLUGIN_END_EXPRESSION);
   unregister_callback ("symdb", PLUGIN_FNBODY_PATTERN);
@@ -2380,10 +2473,6 @@ plugin_init (struct plugin_name_args *plugin_info,
   register_callback ("symdb", PLUGIN_EXTERN_DECLSPECS,
 		     &symdb_declspecs, NULL);
   register_callback ("symdb", PLUGIN_EXTERN_INITIALIZER, &symdb_falias, NULL);
-  register_callback ("symdb", PLUGIN_BEGIN_STMT_IN_EXPR,
-		     &symdb_begin_stmt_in_expr, NULL);
-  register_callback ("symdb", PLUGIN_END_STMT_IN_EXPR,
-		     &symdb_end_stmt_in_expr, NULL);
   register_callback ("symdb", PLUGIN_BEGIN_EXPRESSION,
 		     &symdb_begin_expression, NULL);
   register_callback ("symdb", PLUGIN_END_EXPRESSION, &symdb_end_expression,
