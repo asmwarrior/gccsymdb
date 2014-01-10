@@ -105,9 +105,11 @@ struct X {
 	struct Y* p;
 	struct Y** pp;
 	struct Y v;
+	void* jump_ptr;
 	struct { int anon_i; };
 } x, y, *px;
 int** pp;
+void* jump_ptr;
 struct X* ofo(void)
 {
 	return 0;
@@ -177,7 +179,7 @@ void bfr_test(void)
 	i = bfv.bf1 == 2 && bfv.bf3 == 3;
 }
 
-void stmt_in_expr(void)
+float stmt_in_expr(void)
 {
 	struct X lx; int li, lj;
 	(*({ &x.v; })).c;
@@ -200,6 +202,54 @@ void stmt_in_expr(void)
 	// COMPOUND_LITERAL_EXPR, later are an initializer statment, not compound statment.
 	((struct inner_type { int ii; int ij; }) { .ii = i + li }).ij;
 	(struct inner_type2 { int ii; }) { li };
+
+	({ }); // BIND_EXPR + STATMENT_LIST (null)
+	({
+	struct Y lx = { .c = i, }, ly = { .c = i, }; // two DECL_EXPR with VAR_DECL
+	int li = j, iter;
+
+	switch (ui) { // SWITCH_EXPR (arg0, arg1 = statement_list)
+		case 0: // <stmt> CASE_LABEL_EXPR, arg0 is const expression, arg1 is a LABEL_EXPR.
+			i = 1;
+			break;
+		default: // CASE_LABEL_EXPR, arg0 is null.
+			i = 2;
+	}
+
+	// Not like switch clause which has a SWITCH_EXPR tree, if, for, do, while is just consist of laber, cond, goto and statement block.
+	if (i > 1) // COND_EXPR + STATMENT_LIST. To if ... else if, COND_EXPR + COND_EXPR.
+		j = li;
+	else if (i == 0)
+		j = 1;
+	else
+		j = 0;
+	for (; i;) {
+		j = 0;
+	}
+	for (iter = ci; iter < i; iter++) {
+		j = 1;
+	}
+	do {
+		i = 1;
+	} while (i);
+	while (i) {
+		j = li + i;
+		if (j > 3) 
+			continue;
+	}
+	return f1; // RETURN_EXPR + MODIFY_EXPR (internal variable as target).
+
+	asm volatile ("movl %1, %0" : "=m" (j) : "r" (f2++, i)); // ASM_EXPR
+	asm goto ("jmp %l0" : : : : failed); // asm goto clause must use label identifier.
+	jump_ptr = &&failed; // ADDR_EXPR + LABEL_EXPR
+failed:
+	goto *x.anon_i; // CONVERT_EXPR typeof POINTER_TYPE
+	goto *x.jump_ptr; // COMPONENT_REF typeof POINTER_TYPE / LABEL_EXPR
+	goto *jump_ptr; // VAR_DECL.
+	goto *(i = j, x.jump_ptr); // COMPOUND_EXPR.
+	x;
+	}).v;
+	return 0;
 }
 
 union tu
@@ -234,4 +284,17 @@ char source[4];
 void mem_ref(void)
 {
 	__builtin_memcpy(&target, source, 4);
+}
+
+// List which trees can be the operand of INDIRECT_REF.
+void indirect_ref(void)
+{
+	q = *++pp; // INDIRECT_REF + PREINCREMENT_EXPR
+	q = *pp++; // INDIRECT_REF + POSTINCREMENT_EXPR, first *p, then p++.
+
+	(&*px); // NON_LVALUE_EXPR + VAR_DECL
+	(&*px)->v; // INDIRECT_REF + VAR_DECL
+	*&px; // VAR_DECL
+	({ &x; })->v; // INDIRECT_REF + C_MAYBE_CONST_EXPR + ADDR_EXPR + VAR_DECL, it's gnu extension of c99 6.5.2, and TARGET_EXPR + BIND_EXPR can substitute C_MAYBE_CONST_EXPR.
+	*(p + 32); // INDIRECT_REF + POINTER_PLUS_EXPR
 }
