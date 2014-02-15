@@ -1,6 +1,6 @@
-.PHONY: default clean format redo
+.PHONY: default clean format db test
 
-# If only compile the plugin, you can ignore any error from `redo' target.
+# If only compile the plugin, you can ignore any error from `db' target.
 
 # Compiling the plugin need gmp.h, mpfr.h and so on.
 # To cross-ng (mips), it should be crossng.build/mipsel-uxl-linux-gnu/build/static/.
@@ -20,16 +20,21 @@ GCC_BUILD_ROOT=/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/
 # The variable is useful for run test.
 GCC_BUILD_BIN=${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}
 
-default:
-	gcc -Wall -O3 -ggdb so.c ${GCC_BUILD_LIB}/libiberty.a -I. -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ -I${GCC_SRC}/libcpp/ -I${GCC_SRC}/libcpp/include -I${MY_ROOT}/include -lsqlite3 -DIN_GCC -fPIC -shared -o symdb.so
-	a=`cat ${GCC_SRC}/gcc/BASE-VER`; b=`svn info | grep 'Last Changed Rev:' | awk '{print $$4}'`; sed "s:<@a@>:$$a:" app.c | sed "s:<@b@>:$$b:" > _app.c;
-	gcc -Wall -O3 -ggdb -std=gnu99 _app.c -o gs -lsqlite3 -I${GCC_SRC}/ ${GCC_BUILD_LIB}/libiberty.a
-	rm _app.c
+default: symdb.so symdbcxx.so gs
+
+symdb.so: main.c
+	gcc -Wall -O3 -ggdb $< ${GCC_BUILD_LIB}/libiberty.a -I. -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ -I${GCC_SRC}/libcpp/ -I${GCC_SRC}/libcpp/include -I${MY_ROOT}/include -lsqlite3 -DIN_GCC -fPIC -shared -o $@
 	# selinux specific!
 	# chcon -t texrel_shlib_t symdb.so
-	make redo
 
-redo:
+gs: app.c
+	a=`cat ${GCC_SRC}/gcc/BASE-VER`; b=`svn info | grep 'Last Changed Rev:' | awk '{print $$4}'`; sed "s:<@a@>:$$a:" $< | sed "s:<@b@>:$$b:" > _$<;
+	gcc -Wall -O3 -ggdb -std=gnu99 _$< -o $@ -lsqlite3 -I${GCC_SRC}/ ${GCC_BUILD_LIB}/libiberty.a
+
+symdbcxx.so: main.c
+	gcc -Wall -O3 -ggdb $< ${GCC_BUILD_LIB}/libiberty.a -I. -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ -I${GCC_SRC}/libcpp/ -I${GCC_SRC}/libcpp/include -I${MY_ROOT}/include -lsqlite3 -DCXX_PLUGIN -DIN_GCC -fPIC -shared -o $@
+
+db:
 	./gs initdb ./
 	${GCC_BUILD_BIN} -std=gnu99 --sysroot=${SYMDB_ROOT}/test/ a.c -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb || true
 	# Sometime, -O3 can also produce errors.
@@ -38,13 +43,16 @@ redo:
 
 format:
 	# GNU code standard
-	indent -nbad -bap -nbc -bbo -bl -bli2 -bls -ncdb -nce -cp1 -cs -di2 -ndj -nfc1 -nfca -hnl -i2 -ip5 -lp -pcs -psl -nsc -nsob so.c app.c
+	indent -nbad -bap -nbc -bbo -bl -bli2 -bls -ncdb -nce -cp1 -cs -di2 -ndj -nfc1 -nfca -hnl -i2 -ip5 -lp -pcs -psl -nsc -nsob main.c app.c
 
 clean:
-	rm -f *.ii *.i *.s *.o a.out gs *.h.gch *.so *.c~
+	rm -f *.ii *.i *.s *.o a.out gs *.h.gch *.so *.c~ _app.c
 	(cd test && ./run.sh clean)
 	:> log.gdb
 	rm -f *.db *.db-journal
 
 quilt:
 	cd ${GCC_SRC} && QUILT_DIFF_OPTS=-pu quilt refresh --no-timestamps --sort
+
+test:
+	(cd test && ./run.sh)

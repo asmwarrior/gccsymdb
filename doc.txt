@@ -19,7 +19,7 @@ For gcc internal developer
 2) Sections <Gcc XXXX Macro Expansion> shows some complex cases linking to
 macro expansion, I list calling sequence from plugin-side and stack snapshot
 from gcc-side in every section, read them carefully, it's the key to
-understand so.c:class mo.  test/testplan.txt and test/macro have the
+understand main.c:class mo.  test/testplan.txt and test/macro have the
 testcases.
 3) Section <Patch Overview> makes focus on which files and how are changed in
 the patch.
@@ -68,24 +68,15 @@ the pattern, complex struct::...::struct::__pattern__ is supported, but only
 the last two levels are imported into database.
     ./gs falias open
 11) Get macro expansion process by later steps
-    a) ./gs macro a.h 0
-    b) re-compile all files which depends directly/indirectly on a.h by my
-        plugin.
+    a) ./gs macro a.c
+    b) re-compile a.c by my plugin.
     c) ./gs macro
-Note, later case will return multiple results
-    ---- a.h ----                     ---- <results> ----
-    X;                                def: a.c, 25
-    ---- a.c ----                     exp: X
-    int main(void)                    mo: int i
-    {                                 def: a.c, 64
-    #define X int i                   exp: X
-    #include"a.h"                     mo: int j
-    #undef X
-    #define X int j
-    #include"a.h"
-    #undef X
-    return 0;
-    }
+        macro occurs: a.c, 258
+        macro def: a.h, 8
+        macro tokens: INAH
+        macro-replaced tokens: oof ( ) -> memb ;
+The feature is mainly for IDE, so when user opens .c, it can let my plugin to
+recompile the file in background then show macro results one-by-one to user.
 12) offsetof and sizeof.
 Consider you've got a memory address by hardware debug tool in Linux and make
 sure it refers to a variable of task_struct, now you need compute the address
@@ -98,19 +89,15 @@ of tsk->mm, but it isn't easy since there're too much members before it
         ...
     };
 The feature will dump member offset and struct size to database. union and
-__attribute__((packed)) are also supported.
+__attribute__((packed or aligned)) are also supported.
     ./gs offsetof task_struct mm
     ./gs sizeof task_struct
-Note: to later case
+More cases:
     struct s {
         struct { int x; } m;
         struct snest { int y; } n;
         struct { int z; };
     };
-    struct snest v;
-Even you don't like, to C, struct declaration has global scope, so the last
-line is legal, but the plugin only stores file-scope struct, so `snest' can't
-use offsetof feature at all.
     ./gs offsetof s m.x
     ./gs offsetof s n.y
     ./gs offsetof s z
@@ -138,12 +125,16 @@ In brief, tell you where/how a global variable is accessed by which functions.
 As you've seen, (only) five signs are showed, `RW' is applied to indirect r/w.
 And data is recorded by the file-offset of the outer expression not statement.
 Later cases can be smart-joined:
-    (x = lx).v; (i = j, x).v;
+    (x = lx).v; (i = j, x).v; (i == 0 ? x : y).v; ({ i = 1; x; }).v;
 Data is stored as x.v not x.
-The only defect of the feature is I can't know which tree instances are still
-not included by my plugin so if you find your code can make my plugin crashed,
-insert `./gs ctrl faccessv f' after `./gs initdb ./' to disable it
-temporarially.
+The only defect of the feature is I can't know whether there're some
+expression not coveraged by my plugin so if you find your code can make my
+plugin crashed, insert `./gs ctrl faccessv f' after `./gs initdb ./' to
+disable it temporarially.
+Faccessv expansion, insert `./gs faccess-expansion task_struct mm' after `./gs
+initdb ./', will force plugin stores only fit with the pattern to database, it
+will store local, parameter or function-return variable too. After database is
+reestablished, `./gs faccess-expansion' to get all of them.
 // }])>
 // User Manual <([{
 Note: Using my plugin on correct code, buggy code maybe cause my plugin
@@ -217,7 +208,7 @@ store the third line to database, but stores the fifth.
         ...
     };
 The syntax is correct. `gs' will return two results, one is DEF_TYPEDEF,
-another is DEF_STRUCT. In gcc-4.6.4, search `cpp_reader' will see the case.
+another is DEF_STRUCT. Too much code do it.
 
     #define X a
     #include "afile"
@@ -286,11 +277,24 @@ the default is 't', I recommend recreate the database totally.
 2) Currently, my plugin doesn't support nested functions but if a nested
 function calls other functions, all of them are treated as the callees of
 outest function.
-3) About port the plugin to g++, there's a major different between g++ and
-gcc on converting tokens from cpp stage to c/c++ stage -- g++ tries to convert
-all cpp_tokens to cp_tokens at one time, it violates the architecture of my
-plugin.
-4) omp extension and objc of gcc aren't supported.
+3) omp extension and objc of gcc aren't supported.
+4) Generally, using file-name, offset and def-name can get a unique
+definition from database, but later
+    ---- a.c ----        ---- a.h ----
+    #define M \          M;
+        struct A { \
+            int i; \
+        }
+    #include "a.h"
+    #undef M
+    #define M
+        struct A { \
+            char c; \
+        }
+    #include "a.h"
+    #undef M
+My database only stores the first A of a.h and discard the second forever, in
+fact not only struct, function, variable and so on have the same problem.
 // }])>
 
 For Developer, need to sychronize with the up-to-dated code.
@@ -594,13 +598,13 @@ but assigned value must be function declaration not a function pointer.
 The feature is consist of two parts:
 1) Where a mfp is assigned.
 Database init.sql:FunctionAlias stores assignment position data.
-Code so.c:<falias fold> manages FunctionAlias table.
-Code so.c:symdb_falias is called by gcc from two positions, one is when
+Code main.c:<falias fold> manages FunctionAlias table.
+Code main.c:symdb_falias is called by gcc from two positions, one is when
 parsing an expression, another is parsing initializer-list of a variable.
 2) Where a mfp variable is called.
 Database init.sql:Definition, `flag' field has a new type --
 DEF_CALLED_POINTER. `name' field is just like `struct::member' or `::member'.
-Code so.c:symdb_call_func is enhanced to collect a mfp variable is called.
+Code main.c:symdb_call_func is enhanced to collect a mfp variable is called.
 // }])>
 // Misc. <([{
 Gcc defines a default cpp_callbacks::file_change, to listen the callback in my

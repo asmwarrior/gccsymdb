@@ -133,36 +133,38 @@ Index: gcc/gcc/c-parser.c
        c_parser_declaration_or_fndef (parser, true, true, true, false, true, NULL);
        break;
      }
-@@ -1457,6 +1461,16 @@ c_parser_declaration_or_fndef (c_parser 
+@@ -1457,6 +1461,18 @@ c_parser_declaration_or_fndef (c_parser 
        return;
      }
    finish_declspecs (specs);
-+  {
-+    tree tmp = specs->type;
-+    /* mark external struct/union. */
-+    if (!nested && (TREE_CODE (tmp) == RECORD_TYPE
-+                || TREE_CODE (tmp) == UNION_TYPE))
-+      TYPE_FILE_SCOPE (tmp) = true;
-+    if (!nested)
-+      invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, specs);
-+    TYPE_FILE_OFFSET (tmp) = -1;
-+  }
++  if (!nested)
++    {
++      tree tmp = specs->type;
++      /* mark external struct/union. */
++      if (TREE_CODE (tmp) == RECORD_TYPE || TREE_CODE (tmp) == UNION_TYPE)
++        TYPE_FILE_SCOPE (tmp) = true;
++      if (TYPE_FILE_OFFSET (tmp) > 0)
++	    {
++          invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, specs);
++          TYPE_FILE_OFFSET (tmp) = -TYPE_FILE_OFFSET (tmp);
++	    }
++    }
    if (c_parser_next_token_is (parser, CPP_SEMICOLON))
      {
        if (empty_ok)
-@@ -1590,6 +1604,11 @@ c_parser_declaration_or_fndef (c_parser 
+@@ -1590,6 +1606,11 @@ c_parser_declaration_or_fndef (c_parser 
  	{
  	  tree asm_name = NULL_TREE;
  	  tree postfix_attrs = NULL_TREE;
-+	  {
-+	    void* pair[2]; pair[0] = specs; pair[1] = declarator;
-+        if (!nested)
++      if (!nested)
++	    {
++	      void* pair[2]; pair[0] = specs; pair[1] = declarator;
 +          invoke_plugin_callbacks (PLUGIN_EXTERN_VAR, pair);
-+	  }
++	    }
  	  if (!diagnosed_no_specs && !specs->declspecs_seen_p)
  	    {
  	      diagnosed_no_specs = true;
-@@ -1607,6 +1626,7 @@ c_parser_declaration_or_fndef (c_parser 
+@@ -1607,6 +1628,7 @@ c_parser_declaration_or_fndef (c_parser 
  	      tree d;
  	      struct c_expr init;
  	      location_t init_loc;
@@ -170,7 +172,7 @@ Index: gcc/gcc/c-parser.c
  	      c_parser_consume_token (parser);
  	      /* The declaration of the variable is in effect while
  		 its initializer is parsed.  */
-@@ -1616,6 +1636,7 @@ c_parser_declaration_or_fndef (c_parser 
+@@ -1616,6 +1638,7 @@ c_parser_declaration_or_fndef (c_parser 
  		d = error_mark_node;
  	      start_init (d, asm_name, global_bindings_p ());
  	      init_loc = c_parser_peek_token (parser)->location;
@@ -178,21 +180,21 @@ Index: gcc/gcc/c-parser.c
  	      init = c_parser_initializer (parser);
  	      finish_init ();
  	      if (d != error_mark_node)
-@@ -1624,6 +1645,13 @@ c_parser_declaration_or_fndef (c_parser 
+@@ -1624,6 +1647,13 @@ c_parser_declaration_or_fndef (c_parser 
  		  finish_decl (d, init_loc, init.value,
  		      	       init.original_type, asm_name);
  		}
-+	    {
-+	      void* pair[2];
-+	      pair[0] = init.value;
-+	      pair[1] = (void*) file_offset;
-+          if (!nested)
-+        invoke_plugin_callbacks (PLUGIN_EXTERN_INITIALIZER, pair);
-+	    }
++        if (!nested)
++	      {
++	        void* pair[2];
++	        pair[0] = init.value;
++	        pair[1] = (void*) file_offset;
++            invoke_plugin_callbacks (PLUGIN_EXTERN_INITIALIZER, pair);
++	      }
  	    }
  	  else
  	    {
-@@ -1714,6 +1742,8 @@ c_parser_declaration_or_fndef (c_parser 
+@@ -1714,6 +1744,8 @@ c_parser_declaration_or_fndef (c_parser 
  	c_parser_declaration_or_fndef (parser, false, false, false,
  				       true, false, NULL);
        store_parm_decls ();
@@ -201,16 +203,15 @@ Index: gcc/gcc/c-parser.c
        DECL_STRUCT_FUNCTION (current_function_decl)->function_start_locus
  	= c_parser_peek_token (parser)->location;
        fnbody = c_parser_compound_statement (parser);
-@@ -1735,6 +1765,8 @@ c_parser_declaration_or_fndef (c_parser 
+@@ -1734,6 +1766,7 @@ c_parser_declaration_or_fndef (c_parser 
+ 	{
  	  add_stmt (fnbody);
  	  finish_function ();
++      invoke_plugin_callbacks (PLUGIN_FNBODY_PATTERN, fnbody);
  	}
-+      if (!nested)
-+        invoke_plugin_callbacks (PLUGIN_FNBODY_PATTERN, fnbody);
        break;
      }
- }
-@@ -2168,6 +2200,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2168,6 +2201,7 @@ c_parser_enum_specifier (c_parser *parse
    tree attrs;
    tree ident = NULL_TREE;
    location_t enum_loc;
@@ -218,7 +219,7 @@ Index: gcc/gcc/c-parser.c
    location_t ident_loc = UNKNOWN_LOCATION;  /* Quiet warning.  */
    gcc_assert (c_parser_next_token_is_keyword (parser, RID_ENUM));
    enum_loc = c_parser_peek_token (parser)->location;
-@@ -2180,6 +2213,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2180,6 +2214,7 @@ c_parser_enum_specifier (c_parser *parse
      {
        ident = c_parser_peek_token (parser)->value;
        ident_loc = c_parser_peek_token (parser)->location;
@@ -226,7 +227,7 @@ Index: gcc/gcc/c-parser.c
        enum_loc = ident_loc;
        c_parser_consume_token (parser);
      }
-@@ -2192,6 +2226,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2192,6 +2227,7 @@ c_parser_enum_specifier (c_parser *parse
        /* We chain the enumerators in reverse order, then put them in
  	 forward order at the end.  */
        tree values = NULL_TREE;
@@ -234,7 +235,7 @@ Index: gcc/gcc/c-parser.c
        c_parser_consume_token (parser);
        while (true)
  	{
-@@ -2214,6 +2249,7 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2214,6 +2250,7 @@ c_parser_enum_specifier (c_parser *parse
  	  /* Set the location in case we create a decl now.  */
  	  c_parser_set_source_position_from_token (token);
  	  decl_loc = value_loc = token->location;
@@ -242,7 +243,7 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_EQ))
  	    {
-@@ -2226,6 +2262,8 @@ c_parser_enum_specifier (c_parser *parse
+@@ -2226,6 +2263,8 @@ c_parser_enum_specifier (c_parser *parse
  	  enum_decl = build_enumerator (decl_loc, value_loc,
  	      				&the_enum, enum_id, enum_value);
  	  TREE_CHAIN (enum_decl) = values;
@@ -251,7 +252,7 @@ Index: gcc/gcc/c-parser.c
  	  values = enum_decl;
  	  seen_comma = false;
  	  if (c_parser_next_token_is (parser, CPP_COMMA))
-@@ -2324,6 +2362,7 @@ c_parser_struct_or_union_specifier (c_pa
+@@ -2324,6 +2363,7 @@ c_parser_struct_or_union_specifier (c_pa
    tree attrs;
    tree ident = NULL_TREE;
    location_t struct_loc;
@@ -259,7 +260,7 @@ Index: gcc/gcc/c-parser.c
    location_t ident_loc = UNKNOWN_LOCATION;
    enum tree_code code;
    switch (c_parser_peek_token (parser)->keyword)
-@@ -2348,6 +2387,7 @@ c_parser_struct_or_union_specifier (c_pa
+@@ -2348,6 +2388,7 @@ c_parser_struct_or_union_specifier (c_pa
      {
        ident = c_parser_peek_token (parser)->value;
        ident_loc = c_parser_peek_token (parser)->location;
@@ -267,7 +268,7 @@ Index: gcc/gcc/c-parser.c
        struct_loc = ident_loc;
        c_parser_consume_token (parser);
      }
-@@ -2369,6 +2409,7 @@ c_parser_struct_or_union_specifier (c_pa
+@@ -2369,6 +2410,7 @@ c_parser_struct_or_union_specifier (c_pa
  	 so we'll be minimizing the number of node traversals required
  	 by chainon.  */
        tree contents = NULL_TREE;
@@ -275,7 +276,7 @@ Index: gcc/gcc/c-parser.c
        c_parser_consume_token (parser);
        /* Handle the Objective-C @defs construct,
  	 e.g. foo(sizeof(struct{ @defs(ClassName) }));.  */
-@@ -2857,6 +2898,7 @@ c_parser_direct_declarator (c_parser *pa
+@@ -2857,6 +2899,7 @@ c_parser_direct_declarator (c_parser *pa
        struct c_declarator *inner
  	= build_id_declarator (c_parser_peek_token (parser)->value);
        *seen_id = true;
@@ -283,7 +284,7 @@ Index: gcc/gcc/c-parser.c
        inner->id_loc = c_parser_peek_token (parser)->location;
        c_parser_consume_token (parser);
        return c_parser_direct_declarator_inner (parser, *seen_id, inner);
-@@ -5208,6 +5250,8 @@ c_parser_expr_no_commas (c_parser *parse
+@@ -5208,6 +5251,8 @@ c_parser_expr_no_commas (c_parser *parse
    struct c_expr lhs, rhs, ret;
    enum tree_code code;
    location_t op_location, exp_location;
@@ -292,7 +293,7 @@ Index: gcc/gcc/c-parser.c
    gcc_assert (!after || c_dialect_objc ());
    lhs = c_parser_conditional_expression (parser, after);
    op_location = c_parser_peek_token (parser)->location;
-@@ -5247,6 +5291,7 @@ c_parser_expr_no_commas (c_parser *parse
+@@ -5247,6 +5292,7 @@ c_parser_expr_no_commas (c_parser *parse
        code = BIT_IOR_EXPR;
        break;
      default:
@@ -300,7 +301,7 @@ Index: gcc/gcc/c-parser.c
        return lhs;
      }
    c_parser_consume_token (parser);
-@@ -5264,6 +5309,7 @@ c_parser_expr_no_commas (c_parser *parse
+@@ -5264,6 +5310,7 @@ c_parser_expr_no_commas (c_parser *parse
        ret.original_code = ERROR_MARK;
      }
    ret.original_type = NULL;
@@ -308,7 +309,7 @@ Index: gcc/gcc/c-parser.c
    return ret;
  }
  
-@@ -6563,6 +6609,12 @@ c_parser_postfix_expression_after_primar
+@@ -6563,6 +6610,12 @@ c_parser_postfix_expression_after_primar
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
@@ -321,7 +322,7 @@ Index: gcc/gcc/c-parser.c
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
-@@ -6686,6 +6738,8 @@ static struct c_expr
+@@ -6686,6 +6739,8 @@ static struct c_expr
  c_parser_expression (c_parser *parser)
  {
    struct c_expr expr;
@@ -330,7 +331,7 @@ Index: gcc/gcc/c-parser.c
    expr = c_parser_expr_no_commas (parser, NULL);
    while (c_parser_next_token_is (parser, CPP_COMMA))
      {
-@@ -6706,6 +6760,7 @@ c_parser_expression (c_parser *parser)
+@@ -6706,6 +6761,7 @@ c_parser_expression (c_parser *parser)
        expr.original_code = COMPOUND_EXPR;
        expr.original_type = next.original_type;
      }
@@ -338,7 +339,7 @@ Index: gcc/gcc/c-parser.c
    return expr;
  }
  
-@@ -6717,8 +6772,11 @@ c_parser_expression_conv (c_parser *pars
+@@ -6717,8 +6773,11 @@ c_parser_expression_conv (c_parser *pars
  {
    struct c_expr expr;
    location_t loc = c_parser_peek_token (parser)->location;
@@ -362,26 +363,243 @@ Index: gcc/gcc/c-tree.h
    /* Except for cdk_id, the contained declarator.  For cdk_id, NULL.  */
    struct c_declarator *declarator;
    union {
+Index: gcc/gcc/cp/cp-tree.h
+===================================================================
+--- gcc.orig/gcc/cp/cp-tree.h
++++ gcc/gcc/cp/cp-tree.h
+@@ -4535,6 +4535,7 @@ struct cp_declarator {
+      to indicate this is a parameter pack.  */
+   BOOL_BITFIELD parameter_pack_p : 1;
+   location_t id_loc; /* Currently only set for cdk_id and cdk_function. */
++  int file_offset; /* Currently only set for cdk_id. */
+   /* Attributes that apply to this declarator.  */
+   tree attributes;
+   /* For all but cdk_id and cdk_error, the contained declarator.  For
+@@ -4807,7 +4808,7 @@ extern bool xref_basetypes			(tree, tree
+ extern tree start_enum				(tree, tree, tree, bool, bool *);
+ extern void finish_enum_value_list		(tree);
+ extern void finish_enum				(tree);
+-extern void build_enumerator			(tree, tree, tree, location_t);
++extern tree build_enumerator			(tree, tree, tree, location_t);
+ extern tree lookup_enumerator			(tree, tree);
+ extern void start_preparsed_function		(tree, tree, int);
+ extern int start_function			(cp_decl_specifier_seq *, const cp_declarator *, tree);
+Index: gcc/gcc/cp/decl.c
+===================================================================
+--- gcc.orig/gcc/cp/decl.c
++++ gcc/gcc/cp/decl.c
+@@ -11941,7 +11941,7 @@ finish_enum (tree enumtype)
+    LOC is the location of NAME.
+    Assignment of sequential values by default is handled here.  */
+ 
+-void
++tree
+ build_enumerator (tree name, tree value, tree enumtype, location_t loc)
+ {
+   tree decl;
+@@ -12078,6 +12078,7 @@ build_enumerator (tree name, tree value,
+ 
+   /* Add this enumeration constant to the list for this type.  */
+   TYPE_VALUES (enumtype) = tree_cons (name, decl, TYPE_VALUES (enumtype));
++  return decl;
+ }
+ 
+ /* Look for an enumerator with the given NAME within the enumeration
 Index: gcc/gcc/cp/parser.c
 ===================================================================
 --- gcc.orig/gcc/cp/parser.c
 +++ gcc/gcc/cp/parser.c
-@@ -545,8 +545,8 @@ cp_lexer_get_preprocessor_token (cp_lexe
+@@ -77,6 +77,8 @@ typedef struct GTY (()) cp_token {
+   BOOL_BITFIELD ambiguous_p : 1;
+   /* The location at which this token was found.  */
+   location_t location;
++  /* The file offset of the token.  */
++  int file_offset;
+   /* The value associated with this token, if any.  */
+   union cp_token_value {
+     /* Used for CPP_NESTED_NAME_SPECIFIER and CPP_TEMPLATE_ID.  */
+@@ -545,8 +547,8 @@ cp_lexer_get_preprocessor_token (cp_lexe
  
     /* Get a new token from the preprocessor.  */
    token->type
 -    = c_lex_with_flags (&token->u.value, &token->location, &token->flags,
 -			lexer == NULL ? 0 : C_LEX_STRING_NO_JOIN);
-+    = c_lex_with_flags (&token->u.value, &token->location, NULL,
++    = c_lex_with_flags (&token->u.value, &token->location, &token->file_offset,
 +            &token->flags, lexer == NULL ? 0 : C_LEX_STRING_NO_JOIN);
    token->keyword = RID_MAX;
    token->pragma_kind = PRAGMA_NONE;
  
+@@ -9609,8 +9611,11 @@ cp_parser_block_declaration (cp_parser *
+     cp_parser_static_assert (parser, /*member_p=*/false);
+   /* Anything else must be a simple-declaration.  */
+   else
+-    cp_parser_simple_declaration (parser, !statement_p,
++    {
++      invoke_plugin_callbacks (PLUGIN_EXTERN_DECL, NULL);
++      cp_parser_simple_declaration (parser, !statement_p,
+ 				  /*maybe_range_for_decl*/NULL);
++	}
+ }
+ 
+ /* Parse a simple-declaration.
+@@ -9662,6 +9667,20 @@ cp_parser_simple_declaration (cp_parser*
+ 				CP_PARSER_FLAGS_OPTIONAL,
+ 				&decl_specifiers,
+ 				&declares_class_or_enum);
++  if (function_definition_allowed_p)
++    {
++      tree tmp = decl_specifiers.type;
++      if (TREE_CODE (tmp) == TYPE_DECL)
++        tmp = TREE_TYPE (tmp);
++      /* mark external struct/union. */
++      if (TREE_CODE (tmp) == RECORD_TYPE || TREE_CODE (tmp) == UNION_TYPE)
++        TYPE_FILE_SCOPE (tmp) = true;
++      if (TYPE_FILE_OFFSET (tmp) > 0)
++        {
++          invoke_plugin_callbacks (PLUGIN_EXTERN_DECLSPECS, &decl_specifiers);
++          TYPE_FILE_OFFSET (tmp) = -TYPE_FILE_OFFSET (tmp);
++        }
++    }
+   /* We no longer need to defer access checks.  */
+   stop_deferring_access_checks ();
+ 
+@@ -13428,6 +13447,7 @@ cp_parser_enum_specifier (cp_parser* par
+   tree underlying_type = NULL_TREE;
+   cp_token *type_start_token = NULL;
+   bool saved_colon_corrects_to_scope_p = parser->colon_corrects_to_scope_p;
++  int file_offset = 0;
+ 
+   parser->colon_corrects_to_scope_p = false;
+ 
+@@ -13479,6 +13499,7 @@ cp_parser_enum_specifier (cp_parser* par
+     {
+       tree name;
+ 
++      file_offset = cp_lexer_peek_token (parser->lexer)->file_offset;
+       identifier = cp_parser_identifier (parser);
+       name =  cp_parser_lookup_name (parser, identifier,
+ 				     enum_type,
+@@ -13507,6 +13528,7 @@ cp_parser_enum_specifier (cp_parser* par
+     }
+   else
+     {
++      file_offset = cp_lexer_peek_token (parser->lexer)->file_offset;
+       if (cp_lexer_next_token_is (parser->lexer, CPP_NAME))
+ 	identifier = cp_parser_identifier (parser);
+       else
+@@ -13606,6 +13628,7 @@ cp_parser_enum_specifier (cp_parser* par
+      elaborated-type-specifier.  */
+   if (cp_lexer_next_token_is (parser->lexer, CPP_OPEN_BRACE))
+     {
++      TYPE_FILE_OFFSET (type) = file_offset;
+       if (nested_name_specifier)
+ 	{
+ 	  /* The following catches invalid code such as:
+@@ -13764,13 +13787,16 @@ cp_parser_enumerator_list (cp_parser* pa
+ static void
+ cp_parser_enumerator_definition (cp_parser* parser, tree type)
+ {
++  tree decl;
+   tree identifier;
+   tree value;
+   location_t loc;
++  int file_offset = 0;
+ 
+   /* Save the input location because we are interested in the location
+      of the identifier and not the location of the explicit value.  */
+   loc = cp_lexer_peek_token (parser->lexer)->location;
++  file_offset = cp_lexer_peek_token (parser->lexer)->file_offset;
+ 
+   /* Look for the identifier.  */
+   identifier = cp_parser_identifier (parser);
+@@ -13800,7 +13826,9 @@ cp_parser_enumerator_definition (cp_pars
+   value = fold_non_dependent_expr (value);
+ 
+   /* Create the enumerator.  */
+-  build_enumerator (identifier, value, type, loc);
++  decl = build_enumerator (identifier, value, type, loc);
++  DECL_FILE_OFFSET (decl) = file_offset;
++  invoke_plugin_callbacks (PLUGIN_ENUMERATOR, decl);
+ }
+ 
+ /* Parse a namespace-name.
+@@ -14550,6 +14578,7 @@ cp_parser_init_declarator (cp_parser* pa
+ 	{
+ 	  location_t func_brace_location
+ 	    = cp_lexer_peek_token (parser->lexer)->location;
++      invoke_plugin_callbacks (PLUGIN_EXTERN_FUNC, declarator);
+ 
+ 	  /* Neither attributes nor an asm-specification are allowed
+ 	     on a function-definition.  */
+@@ -14681,6 +14710,11 @@ cp_parser_init_declarator (cp_parser* pa
+     /* Enter the SCOPE.  That way unqualified names appearing in the
+        initializer will be looked up in SCOPE.  */
+     pushed_scope = push_scope (scope);
++    if (!member_p)
++      {
++    void* pair[2]; pair[0] = decl_specifiers; pair[1] = declarator;
++    invoke_plugin_callbacks (PLUGIN_EXTERN_VAR, pair);
++      }
+ 
+   /* Perform deferred access control checks, now that we know in which
+      SCOPE the declared entity resides.  */
+@@ -15364,6 +15398,7 @@ cp_parser_direct_declarator (cp_parser* 
+ 	    declarator = make_id_declarator (qualifying_scope,
+ 					     unqualified_name,
+ 					     sfk);
++	    declarator->file_offset = token->file_offset;
+ 	    declarator->id_loc = token->location;
+ 	    declarator->parameter_pack_p = pack_expansion_p;
+ 
+@@ -16926,6 +16961,8 @@ cp_parser_class_specifier (cp_parser* pa
+   /* Look for the `{'.  */
+   if (!cp_parser_require (parser, CPP_OPEN_BRACE, RT_OPEN_BRACE))
+     {
++      if (type != error_mark_node)
++        TYPE_FILE_OFFSET (type) = -1;
+       pop_deferring_access_checks ();
+       return error_mark_node;
+     }
+@@ -17140,7 +17177,10 @@ cp_parser_class_specifier (cp_parser* pa
+       VEC_truncate (cp_default_arg_entry, unparsed_funs_with_default_args, 0);
+       /* Now parse the body of the functions.  */
+       FOR_EACH_VEC_ELT (tree, unparsed_funs_with_definitions, ix, fn)
++	    {
++	invoke_plugin_callbacks (PLUGIN_CXX_METHOD, fn);
+ 	cp_parser_late_parsing_for_member (parser, fn);
++	    }
+       VEC_truncate (tree, unparsed_funs_with_definitions, 0);
+     }
+ 
+@@ -17570,7 +17610,10 @@ cp_parser_class_head (cp_parser* parser,
+     }
+ 
+   if (type)
+-    DECL_SOURCE_LOCATION (TYPE_NAME (type)) = type_start_token->location;
++    {
++      DECL_SOURCE_LOCATION (TYPE_NAME (type)) = type_start_token->location;
++      TYPE_FILE_OFFSET (type) = type_start_token->file_offset;
++	}
+   *attributes_p = attributes;
+  out:
+   parser->colon_corrects_to_scope_p = saved_colon_corrects_to_scope_p;
+@@ -18018,6 +18061,11 @@ cp_parser_member_declaration (cp_parser*
+ 							      &decl_specifiers,
+ 							      declarator,
+ 							      attributes);
++		  {
++		    cp_declarator *da = declarator;
++		    for (; da->kind != cdk_id; da = da->declarator);
++		    DECL_FILE_OFFSET (decl) = da->file_offset;
++		  }
+ 		  /* If the member was not a friend, declare it here.  */
+ 		  if (!friend_p)
+ 		    finish_member_declaration (decl);
 Index: gcc/gcc/doc/plugins.texi
 ===================================================================
 --- gcc.orig/gcc/doc/plugins.texi
 +++ gcc/gcc/doc/plugins.texi
-@@ -183,6 +183,27 @@ enum plugin_event
+@@ -183,6 +183,29 @@ enum plugin_event
    PLUGIN_EARLY_GIMPLE_PASSES_END,
    /* Called when a pass is first instantiated.  */
    PLUGIN_NEW_PASS,
@@ -406,6 +624,8 @@ Index: gcc/gcc/doc/plugins.texi
 +  PLUGIN_END_EXPRESSION,
 +  /* Test function pattern. */
 +  PLUGIN_FNBODY_PATTERN,
++  /* C++ class method. */
++  PLUGIN_CXX_METHOD,
  
    PLUGIN_EVENT_FIRST_DYNAMIC    /* Dummy event used for indexing callback
                                     array.  */
@@ -439,7 +659,7 @@ Index: gcc/gcc/plugin.c
 ===================================================================
 --- gcc.orig/gcc/plugin.c
 +++ gcc/gcc/plugin.c
-@@ -438,6 +438,18 @@ register_callback (const char *plugin_na
+@@ -438,6 +438,19 @@ register_callback (const char *plugin_na
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -455,10 +675,11 @@ Index: gcc/gcc/plugin.c
 +      case PLUGIN_BEGIN_EXPRESSION:
 +      case PLUGIN_END_EXPRESSION:
 +      case PLUGIN_FNBODY_PATTERN:
++      case PLUGIN_CXX_METHOD:
          {
            struct callback_info *new_callback;
            if (!callback)
-@@ -514,6 +526,18 @@ invoke_plugin_callbacks_full (int event,
+@@ -514,6 +527,19 @@ invoke_plugin_callbacks_full (int event,
        case PLUGIN_EARLY_GIMPLE_PASSES_START:
        case PLUGIN_EARLY_GIMPLE_PASSES_END:
        case PLUGIN_NEW_PASS:
@@ -474,6 +695,7 @@ Index: gcc/gcc/plugin.c
 +      case PLUGIN_BEGIN_EXPRESSION:
 +      case PLUGIN_END_EXPRESSION:
 +      case PLUGIN_FNBODY_PATTERN:
++      case PLUGIN_CXX_METHOD:
          {
            /* Iterate over every callback registered with this event and
               call it.  */
@@ -481,7 +703,7 @@ Index: gcc/gcc/plugin.def
 ===================================================================
 --- gcc.orig/gcc/plugin.def
 +++ gcc/gcc/plugin.def
-@@ -89,6 +89,40 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
+@@ -89,6 +89,43 @@ DEFEVENT (PLUGIN_EARLY_GIMPLE_PASSES_END
  /* Called when a pass is first instantiated.  */
  DEFEVENT (PLUGIN_NEW_PASS)
  
@@ -518,6 +740,9 @@ Index: gcc/gcc/plugin.def
 +
 +/* Test function pattern. */
 +DEFEVENT (PLUGIN_FNBODY_PATTERN)
++
++/* C++ class method. */
++DEFEVENT (PLUGIN_CXX_METHOD)
 +
  /* After the hard-coded events above, plugins can dynamically allocate events
     at run time.
