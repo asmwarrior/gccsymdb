@@ -27,21 +27,25 @@
 #include "tm.h"
 #include "tree.h"
 #include "tree-iterator.h"
-#include "gcc/c-tree.h"
-#include "c-family/c-common.h"
-#include "c-family/c-pragma.h"
+#ifndef CXX_PLUGIN
+#include "c-tree.h"
+#else
+#include "cp/cp-tree.h"
+#endif
 #include "input.h"
-#include "dyn-string.h"
-#include <sys/stat.h>
-#include <time.h>
+#ifndef CXX_PLUGIN
+#include "c-family/c-common.h"
+#endif
+#include "c-family/c-pragma.h"
+#include "include/dyn-string.h"
 #include "libcpp/include/cpplib.h"
 #include "libcpp/internal.h"
+#include <sys/stat.h>
+#include <time.h>
 #include <sqlite3.h>
 /* }])> */
 /* common <([{ */
 typedef const struct cpp_token *cpp_token_p;
-DEF_VEC_I (int);
-DEF_VEC_ALLOC_I (int, heap);
 
 static dyn_string_t gbuf;	/* Global temporary variable. */
 
@@ -85,6 +89,12 @@ static struct
   dyn_string_t main_file;
   bool can_update_file;
   bool faccessv;
+
+  bool macro;
+
+  bool faccessv_expansion;
+  dyn_string_t faccessv_struct;
+  dyn_string_t faccessv_field;
 } control_panel;
 
 static const char *
@@ -113,6 +123,7 @@ control_panel_init (const char *main_file)
   control_panel.main_file = dyn_string_new (PATH_MAX + 1);
   dyn_string_copy_cstr (control_panel.cwd, getpwd ());
   dyn_string_copy_cstr (control_panel.main_file, canonical_path (main_file));
+
   /* initilize control data. */
   db_error (sqlite3_get_table (db,
 			       "select projectRootPath, canUpdateFile, faccessv "
@@ -122,11 +133,32 @@ control_panel_init (const char *main_file)
   control_panel.can_update_file = strcmp (result[4], "t") == 0 ? true : false;
   control_panel.faccessv = strcmp (result[5], "t") == 0 ? true : false;
   sqlite3_free_table (result);
+
+  db_error (sqlite3_get_table (db,
+			       "select faccessvStruct, faccessvField "
+			       "from ProjectOverview;",
+			       &result, &nrow, &ncolumn, &error_msg));
+  control_panel.faccessv_struct = dyn_string_new (16);
+  control_panel.faccessv_field = dyn_string_new (16);
+  dyn_string_copy_cstr (control_panel.faccessv_struct, result[2]);
+  dyn_string_copy_cstr (control_panel.faccessv_field, result[3]);
+  control_panel.faccessv_expansion =
+    strcmp (dyn_string_buf (control_panel.faccessv_struct), "") != 0;
+  sqlite3_free_table (result);
+
+  db_error (sqlite3_get_table (db,
+			       "select macroFile from ProjectOverview;",
+			       &result, &nrow, &ncolumn, &error_msg));
+  control_panel.macro = strcmp (result[1], main_file) == 0;
+  sqlite3_free_table (result);
 }
 
 static void
 control_panel_tini (void)
 {
+  dyn_string_delete (control_panel.faccessv_field);
+  dyn_string_delete (control_panel.faccessv_struct);
+
   dyn_string_delete (control_panel.main_file);
   dyn_string_delete (control_panel.cwd);
   dyn_string_delete (control_panel.prj_dir);
@@ -391,8 +423,8 @@ static struct
 
   /* For Macro table of init.sql */
   int process;
-  int letFileID;
-  int letOffset;
+  int fileID;
+  int fileOffset;
   int defFileID;
   int defFileOffset;
   dyn_string_t expandedTokens;
@@ -431,13 +463,15 @@ mo_leave (void)
 {
   if (mo.process == 2)
     {
-      db_error (sqlite3_bind_int (mo.insert_macro, 1, mo.defFileID));
-      db_error (sqlite3_bind_int (mo.insert_macro, 2, mo.defFileOffset));
+      db_error (sqlite3_bind_int (mo.insert_macro, 1, mo.fileID));
+      db_error (sqlite3_bind_int (mo.insert_macro, 2, mo.fileOffset));
+      db_error (sqlite3_bind_int (mo.insert_macro, 3, mo.defFileID));
+      db_error (sqlite3_bind_int (mo.insert_macro, 4, mo.defFileOffset));
       db_error (sqlite3_bind_text
-		(mo.insert_macro, 3, dyn_string_buf (mo.expandedTokens),
+		(mo.insert_macro, 5, dyn_string_buf (mo.expandedTokens),
 		 dyn_string_length (mo.expandedTokens), SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(mo.insert_macro, 4, dyn_string_buf (mo.macroTokens),
+		(mo.insert_macro, 6, dyn_string_buf (mo.macroTokens),
 		 dyn_string_length (mo.macroTokens), SQLITE_STATIC));
       execute_sql (mo.insert_macro);
       dyn_string_copy_cstr (mo.expandedTokens, "");
@@ -452,10 +486,10 @@ mo_leave (void)
 static void
 mo_enter (cpp_reader * pfile, cpp_token_p token)
 {
-  if (mo.process == 1 &&
-      file_get_current_fid () == mo.letFileID
-      && token->file_offset == mo.letOffset)
+  if (mo.process == 1)
     {
+      mo.fileID = file_get_current_fid ();
+      mo.fileOffset = token->file_offset;
       cpp_macro *macro = token->val.node.node->value.macro;
       int file_offset = macro->file_offset;
       source_location sl = macro->line;
@@ -464,8 +498,13 @@ mo_enter (cpp_reader * pfile, cpp_token_p token)
 	{
 	  mo.defFileID = file_get_fid_from_db (canonical_path (lm->to_file));
 	  mo.defFileOffset = file_offset;
-	  mo.process = 2;
 	}
+      else
+	{
+	  mo.defFileID = -1;
+	  mo.defFileOffset = -1;
+	}
+      mo.process = 2;
     }
   mo_append_expanded_token (token);
   gcc_assert (mo.valid == false);
@@ -481,21 +520,13 @@ mo_isvalid (void)
 static void
 mo_init (void)
 {
-  int nrow, ncolumn;
-  char *error_msg, **result;
-  db_error (sqlite3_get_table (db,
-			       "select letFileID, letOffset from Macro;",
-			       &result, &nrow, &ncolumn, &error_msg));
-  if (nrow == 1)
-    {
-      mo.process = 1;
-      mo.letFileID = atoi (result[2]);
-      mo.letOffset = atoi (result[3]);
-    }
-  sqlite3_free_table (result);
+  if (control_panel.macro)
+    mo.process = 1;
+  else
+    mo.process = -1;
 
   db_error (sqlite3_prepare_v2 (db,
-				"insert into Macro values (NULL, NULL, ?, ?, ?, ?);",
+				"insert into Macro values (?, ?, ?, ?, ?, ?);",
 				-1, &mo.insert_macro, 0));
   mo.expandedTokens = dyn_string_new (128);
   mo.macroTokens = dyn_string_new (128);
@@ -520,8 +551,11 @@ __extension__ enum definition_flag
   DEF_STRUCT,
   DEF_UNION,
   DEF_ENUM,
-  DEF_ENUM_MEMBER,
+  DEF_ENUMERATOR,
   DEF_USER,
+
+  DEF_CLASS,
+  DEF_METHOD,
 };
 
 static struct
@@ -1160,7 +1194,7 @@ cb_direct_include (int file_offset, const char *fname, bool sys)
 /* plugin callbacks <([{ */
 /* The fold isn't class fold. All functions in subfold are public to every
  * subfolds. */
-/* The var is used to block some callbacks temporarily. */
+/* block_list is used to block some callbacks temporarily. */
 static struct
 {
   bool call_func;
@@ -1175,25 +1209,10 @@ static struct
 {
   int token_offset;
   int nested_level;
-  /* Since print_gvar can be called recursively -- print_gvar >> loop_expr >>
-   * print_gvar, so the member is used just like a stack in print_gvar. */
-    VEC (tree, heap) * gvar;
   bool fun_pattern;
 } expr =
 {
 .nested_level = 0};
-
-static void
-pcallbacks_init (void)
-{
-  expr.gvar = VEC_alloc (tree, heap, 10);
-}
-
-static void
-pcallbacks_tini (void)
-{
-  VEC_free (tree, heap, expr.gvar);
-}
 
 /* falias auxiliary <([{ */
 static bool
@@ -1209,7 +1228,7 @@ is_fun_p (tree node)
 }
 
 static bool
-var_is_mfp (tree var, tree * struct_name, tree * mfp)
+var_is_mfp (tree var, tree * strut, tree * mfp)
 {
   if (TREE_CODE (var) != COMPONENT_REF)
     return false;
@@ -1219,7 +1238,7 @@ var_is_mfp (tree var, tree * struct_name, tree * mfp)
   gcc_assert (TREE_CODE (*mfp) == FIELD_DECL);
   if (!is_fun_p (*mfp))
     return false;
-  *struct_name = TREE_TYPE (TREE_OPERAND (var, 0));
+  *strut = TREE_TYPE (TREE_OPERAND (var, 0));
   return true;
 }
 
@@ -1227,8 +1246,14 @@ static const char *
 get_typename (tree type)
 {
   const char *result = "";
-  if (TYPE_NAME (type) && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
-    result = IDENTIFIER_POINTER (TYPE_NAME (type));
+  if (TYPE_NAME (type))
+    {
+#ifndef CXX_PLUGIN
+      result = IDENTIFIER_POINTER (TYPE_NAME (type));
+#else
+      result = IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (type)));
+#endif
+    }
   return result;
 }
 
@@ -1238,17 +1263,26 @@ static bool
 is_anonymous_type (tree type)
 {
   return (TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
-    && TYPE_NAME (type) == NULL;
+    && TYPE_NAME (type) == NULL_TREE;
 }
 
 static void
 loop_struct (tree field, int base)
 {
-  if (field == NULL)
+#ifndef CXX_PLUGIN
+  if (field == NULL_TREE)
+#else
+  if (TREE_CODE (field) == TYPE_DECL)
+#endif
     /* The struct has nothing. */
     return;
   do
     {
+#ifdef CXX_PLUGIN
+      if (TREE_CODE (field) == VAR_DECL)
+	/* class static variable. */
+	continue;
+#endif
       gcc_assert (TREE_CODE (field) == FIELD_DECL);
       /* From __builtin_offsetof stack snapshot.
        *   size_binop_loc
@@ -1268,11 +1302,20 @@ loop_struct (tree field, int base)
 	  tmp = IDENTIFIER_POINTER (DECL_NAME (field));
 	  offsetof_commit (tmp, offset);
 	}
+#ifdef CXX_PLUGIN
+      else
+	{
+	  if (get_typename (type) != NULL)
+	    {			// Enumerate base classes.
+	      loop_struct (TYPE_FIELDS (type), offset);
+	      continue;
+	    }
+	}
+#endif
 
       if ((TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE)
 	  && !TYPE_FILE_SCOPE (type))
 	{
-	  /* Enumerate anonymous struct/union. */
 	  if (tmp != NULL)
 	    offsetof_push (tmp);
 	  loop_struct (TYPE_FIELDS (type), offset);
@@ -1280,16 +1323,22 @@ loop_struct (tree field, int base)
 	    offsetof_pop ();
 	}
     }
+#ifndef CXX_PLUGIN
   while ((field = TREE_CHAIN (field)) != NULL_TREE);
+#else
+  while ((TREE_CODE (field = TREE_CHAIN (field))) != TYPE_DECL);
+#endif
 }
 
 static void
 struct_offsetof (int structid, tree node)
 {
   tree field;
-  if (!offsetof_prepare (structid))
+  if (TREE_CODE (node) == ENUMERAL_TYPE)
     return;
 
+  if (!offsetof_prepare (structid))
+    return;
   /* From sizeof stack snapshot.
    *   size_binop_loc
    *   c_sizeof_or_alignof_type
@@ -1369,11 +1418,12 @@ static void
 symdb_call_func (void *gcc_data, void *user_data)
 {
   void **pair = (void **) gcc_data;
-  tree decl = (tree) pair[0], struct_name = NULL_TREE, mfp;
+  tree decl = (tree) pair[0], strut = NULL_TREE, mfp;
   int file_offset = (int) pair[1];
   bool is_mfp = false;
   if (block_list.call_func)
     return;
+
   if (TREE_CODE (decl) == FUNCTION_DECL)
     {
       if (DECL_BUILT_IN (decl))
@@ -1383,17 +1433,15 @@ symdb_call_func (void *gcc_data, void *user_data)
     {
       while (TREE_CODE (decl) == INDIRECT_REF)
 	decl = TREE_OPERAND (decl, 0);
-      if (var_is_mfp (decl, &struct_name, &mfp))
+      if (var_is_mfp (decl, &strut, &mfp))
 	is_mfp = true;
       else
 	goto done;
     }
+
   if (is_mfp)
     {
-      if (struct_name != NULL_TREE)
-	dyn_string_copy_cstr (gbuf, get_typename (struct_name));
-      else
-	dyn_string_copy_cstr (gbuf, "");
+      dyn_string_copy_cstr (gbuf, get_typename (strut));
       dyn_string_append_cstr (gbuf, "::");
       dyn_string_append_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (mfp)));
     }
@@ -1422,10 +1470,14 @@ symdb_enumerator (void *gcc_data, void *user_data)
   if (block_list.enum_spec)
     return;
 
+#ifndef CXX_PLUGIN
   tree tmp = TREE_PURPOSE (enum_decl);
+#else
+  tree tmp = enum_decl;
+#endif
   gcc_assert (TREE_CODE (tmp) == CONST_DECL);
   dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
-  def_append (DEF_ENUM_MEMBER, gbuf, DECL_FILE_OFFSET (tmp));
+  def_append (DEF_ENUMERATOR, gbuf, DECL_FILE_OFFSET (tmp));
 }
 
 /*
@@ -1448,12 +1500,24 @@ symdb_enumerator (void *gcc_data, void *user_data)
 static void
 symdb_extern_func (void *gcc_data, void *user_data)
 {
+#ifndef CXX_PLUGIN
   const struct c_declarator *da = (const struct c_declarator *) gcc_data;
+#else
+  const struct cp_declarator *da = (const struct cp_declarator *) gcc_data;
+#endif
   for (; da->kind != cdk_id; da = da->declarator);
   gcc_assert (da->declarator == NULL);
 
+#ifndef CXX_PLUGIN
   dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id));
   def_append (DEF_FUNC, gbuf, da->file_offset);
+#else
+  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id.unqualified_name));
+  if (da->u.id.qualifying_scope)
+    def_append (DEF_METHOD, gbuf, da->file_offset);
+  else
+    def_append (DEF_FUNC, gbuf, da->file_offset);
+#endif
 
   block_list.enum_spec = true;
   block_list.call_func = false;
@@ -1491,14 +1555,27 @@ static void
 symdb_extern_var (void *gcc_data, void *user_data)
 {
   void **pair = (void **) gcc_data;
+#ifndef CXX_PLUGIN
   const struct c_declspecs *ds = pair[0];
   const struct c_declarator *da = pair[1];
+#else
+  const struct cp_decl_specifier_seq *ds = pair[0];
+  const struct cp_declarator *da = pair[1];
+#endif
   enum definition_flag df = DEF_VAR;
 
+#ifndef CXX_PLUGIN
   if (ds->storage_class == csc_extern)
+#else
+  if (ds->storage_class == sc_extern)
+#endif
     /* User needn't the kind of definition at all. */
     goto done;
+#ifndef CXX_PLUGIN
   else if (ds->storage_class == csc_typedef)
+#else
+  else if (ds->specs[ds_typedef] != 0)
+#endif
     df = DEF_TYPEDEF;
 
   for (; da->declarator != NULL; da = da->declarator)
@@ -1514,7 +1591,11 @@ symdb_extern_var (void *gcc_data, void *user_data)
 	break;
     }
 
+#ifndef CXX_PLUGIN
   dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id));
+#else
+  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (da->u.id.unqualified_name));
+#endif
   int id = def_append (df, gbuf, da->file_offset);
 
   if (is_anonymous_type (ds->type))
@@ -1547,20 +1628,25 @@ done:;
  *   enum attributes[opt] identifier[opt] { enumerator-list } attributes[opt]
  *   enum attributes[opt] identifier[opt] { enumerator-list , } attributes[opt]
  *   enum attributes[opt] identifier
+ *
+ * C++ hasn't typeof-specifier.
  */
 static void
 symdb_declspecs (void *gcc_data, void *user_data)
 {
+#ifndef CXX_PLUGIN
   const struct c_declspecs *ds = (const struct c_declspecs *) gcc_data;
+#else
+  const struct cp_decl_specifier_seq *ds =
+    (const struct cp_decl_specifier_seq *) gcc_data;
+#endif
   enum definition_flag df;
   tree type = ds->type;
 
-  if (TYPE_FILE_OFFSET (type) == -1)
-    /* Not definition. */
-    goto done;
-
+#ifndef CXX_PLUGIN
   if (ds->typespec_kind == ctsk_typeof)
     goto done;
+#endif
 
   switch (TREE_CODE (type))
     {
@@ -1569,6 +1655,10 @@ symdb_declspecs (void *gcc_data, void *user_data)
       break;
     case RECORD_TYPE:
       df = DEF_STRUCT;
+#ifdef CXX_PLUGIN
+      if (CLASSTYPE_DECLARED_CLASS (type))
+	df = DEF_CLASS;
+#endif
       break;
     case UNION_TYPE:
       df = DEF_UNION;
@@ -1602,11 +1692,10 @@ symdb_extern_decl (void *gcc_data, void *user_data)
 static void
 constructor_loop (tree node, int offset)
 {
-  tree struct_name = TREE_TYPE (node);
-  if (TREE_CODE (struct_name) != RECORD_TYPE
-      && TREE_CODE (struct_name) != UNION_TYPE)
+  tree strut = TREE_TYPE (node);
+  if (TREE_CODE (strut) != RECORD_TYPE && TREE_CODE (strut) != UNION_TYPE)
     {
-      gcc_assert (TREE_CODE (struct_name) == ARRAY_TYPE);
+      gcc_assert (TREE_CODE (strut) == ARRAY_TYPE);
       return;
     }
 
@@ -1630,7 +1719,7 @@ constructor_loop (tree node, int offset)
       continue;
     const char *a = IDENTIFIER_POINTER (DECL_NAME (index));
     const char *b = IDENTIFIER_POINTER (DECL_NAME (value));
-    const char *c = get_typename (struct_name);
+    const char *c = get_typename (strut);
     falias_append (c, a, b, offset);
   }
 }
@@ -1640,8 +1729,8 @@ modify_expr (tree node, int offset)
 {
   if (!is_fun_p (node))
     return;
-  tree struct_name, mfp;
-  if (!var_is_mfp (TREE_OPERAND (node, 0), &struct_name, &mfp))
+  tree strut, mfp;
+  if (!var_is_mfp (TREE_OPERAND (node, 0), &strut, &mfp))
     return;
   tree tmp = TREE_OPERAND (node, 1);
   if (TREE_CODE (tmp) == NOP_EXPR)
@@ -1652,7 +1741,7 @@ modify_expr (tree node, int offset)
     return;
   const char *a = IDENTIFIER_POINTER (DECL_NAME (mfp));
   const char *b = IDENTIFIER_POINTER (DECL_NAME (tmp));
-  const char *c = get_typename (struct_name);
+  const char *c = get_typename (strut);
   falias_append (c, a, b, offset);
 }
 
@@ -1712,9 +1801,10 @@ static void expand_node (tree);
  * Assert based from c99 6.5.3 unary-expression:
  *     unary-operator(*) cast-expression.
  * Then substitute other syntax relationship into the above repeatedly.
- * */
-static int
-indirect_ref_assert (tree node)
+ *
+ * There's some inner such as SAVE_EXPR can be the operand of INDIRECT_REF.
+ */
+static int __attribute__ ((used)) indirect_ref_assert (tree node)
 {
   tree tmp = node;
   int code = TREE_CODE (tmp);
@@ -1734,10 +1824,21 @@ indirect_ref_assert (tree node)
 	case C_MAYBE_CONST_EXPR:
 	case TARGET_EXPR:
 	  return 0x11;
+	  /* c99 6.5.15, conditional expression. */
+	case COND_EXPR:
+	  return 0x12;
+	  /* c99 6.5.16, assignment expression. */
+	case MODIFY_EXPR:
+	  return 0x13;
+	  /* c99 6.5.17, comma expression. */
+	case COMPOUND_EXPR:
+	  return 0x14;
 	  /* And if stmt-in-expr returns BIND_EXPR whose operand should be VOID
 	   * type, so it's impossible that BIND_EXPR becomes the operand of
 	   * INDIRECT_REF. */
 	case BIND_EXPR:
+	  /* Gcc can simplify `*&' case. */
+	case ADDR_EXPR:
 	default:
 	  gcc_assert (false);
 	}
@@ -1760,12 +1861,19 @@ indirect_ref_assert (tree node)
 	default:
 	  gcc_assert (false);
 	}
+    case tcc_vl_exp:
+      switch (code)
+	{
+	case CALL_EXPR:
+	  return 0x40;
+	default:
+	  gcc_assert (false);
+	}
     case tcc_reference:
     case tcc_declaration:
       return 0x0;
     case tcc_statement:
     case tcc_comparison:
-    case tcc_vl_exp:
     case tcc_exceptional:
     case tcc_constant:
     case tcc_type:
@@ -1779,7 +1887,7 @@ expand_node_2 (tree node, int flag)
 {
   tree tmp = node, arg0, arg1;
 
-  if (tmp == NULL)
+  if (tmp == NULL_TREE)
     return;
 
   int code = TREE_CODE (tmp);
@@ -1798,7 +1906,7 @@ expand_node_2 (tree node, int flag)
     case tcc_exceptional:
       switch (code)
 	{
-	case CONSTRUCTOR:	/* transparent union. */
+	case CONSTRUCTOR:
 	  {
 	    int cnt;
 	    tree value;
@@ -1832,7 +1940,7 @@ expand_node_2 (tree node, int flag)
 	case INDIRECT_REF:
 	  while (TREE_CODE (tmp) == INDIRECT_REF)
 	    tmp = TREE_OPERAND (tmp, 0);
-	  indirect_ref_assert (tmp);
+	  // indirect_ref_assert (tmp);
 	  gcc_assert (flag != ACCESS_ADDR);
 	  flag <<= 3;		/* shift flag to pointer r/w. */
 	  expand_node_2 (tmp, flag);
@@ -1868,76 +1976,108 @@ expand_node (tree node)
   expand_node_2 (node, ACCESS_READ);
 }
 
+/* Set up leaf node chain and output them to database. <([{ */
+/* Leaf node is just `a.mem.eme', `j' and `1' of expression `a.mem.eme + j *
+ * 1'. It consists of tree vector. leaf node can include expression `(i = j,
+ * a).mem' and statement block `({ i = j; a; }).mem', later is gnu extension of
+ * c99 6.5.2. Not like expand_node which represents syntax node. Quick tip to
+ * distinguish them is the tail of leaf node must be FIELD_DECL or such as
+ * VAR_DECL, CONST_DECL.
+ */
+#define leaf_chain VEC (tree, heap) *
+
+/* To smart-join COND_EXPR `(i < j ? a : b).mem' to `a.mem' and `b.mem', I use
+ * the unused fields -- cond_expr_tree->exp.operands[4/5].
+ */
+#define CHAIN1_COND_EXPR tmp->exp.operands[4]
+#define CHAIN2_COND_EXPR tmp->exp.operands[5]
+
+/* Smart-join COND_EXPR makes leaf chain just like a binary tree, except the
+ * trunk, others must end with a COND_EXPR tree or a twig chain.
+ * make_leaf_chain will do it.
+ */
 static int
-print_gvar (tree node, int flag)
+make_leaf_chain (tree node, leaf_chain * dest)
 {
   tree tmp = node;
-  int ret, pos = VEC_length (tree, expr.gvar);
-
-  switch (TREE_CODE (tmp))
-    {
-    case RESULT_DECL:
-      ret = 3;
-      goto nofound;
-    case FUNCTION_DECL:	/* Function pointer assignment: fp = foo_decl; */
-      ret = 3;
-      goto nofound;
-    case INTEGER_CST:
-    case REAL_CST:
-    case FIXED_CST:
-    case COMPLEX_CST:
-    case VECTOR_CST:
-    case STRING_CST:
-      ret = 4;
-      goto nofound;
-    case LABEL_DECL:
-      ret = 5;
-      goto nofound;
-    default:
-      break;
-    }
+  int ret;
+  bool faccessv_expansion = false;
 
   /* Iterator a leaf node chain, some expressions can occur in it. */
   while (true)
     {
       switch (TREE_CODE (tmp))
 	{
-	  /* later cases are just leaf itself. */
+	  /* later cases are just leaf end itself. */
+	case RESULT_DECL:	/* To `return &x;': 
+				   RETURN_EXPR + MODIFY_EXPR(RESULT_DECL, ..) */
+	case FUNCTION_DECL:	/* Function pointer assignment: fp = foo_decl; */
+	case LABEL_DECL:	/* go: v = && go; ((struct A*) &&go)->i; */
+	case INTEGER_CST:	/* ((struct A*) 0)->i; */
+	case REAL_CST:
+	case FIXED_CST:
+	case COMPLEX_CST:
+	case VECTOR_CST:
+	case STRING_CST:	/* "123"[0]; */
+	  ret = 1;
+	  goto done;
 	case VAR_DECL:
+	  VEC_safe_push (tree, heap, *dest, tmp);
 	  if (!DECL_NAME (tmp))
 	    {			/* an inner temporary variable. */
-	      ret = 16;
-	      goto nofound;
+	      ret = 2;
+	      goto done;
 	    }
 	  if (DECL_CONTEXT (tmp))
 	    {			/* local variable. */
-	      ret = 17;
-	      goto nofound;
+	      ret = 2;
+	      goto done;
 	    }
-	  VEC_safe_push (tree, heap, expr.gvar, tmp);
-	  goto found;
+	  ret = 0;
+	  goto done;
 	case PARM_DECL:
+	  VEC_safe_push (tree, heap, *dest, tmp);
 	  ret = 2;
-	  goto nofound;
+	  goto done;
 	case CALL_EXPR:	/* Function call. */
+	  VEC_safe_push (tree, heap, *dest, tmp);
 	  expand_node (tmp);
-	  ret = -2;
-	  goto nofound;
+	  ret = 2;
+	  goto done;
 
 	  /* later cases are just intermediate nodes. */
 	  /* tcc_reference. */
 	case COMPONENT_REF:
-	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  VEC_safe_push (tree, heap, *dest, tmp);
 	  gcc_assert (TREE_CODE (TREE_OPERAND (tmp, 1)) == FIELD_DECL);
+	  if (control_panel.faccessv_expansion)
+	    {
+	      tree field = TREE_OPERAND (tmp, 1);
+	      if (DECL_NAME (field))
+		{
+		  if (strcmp
+		      (dyn_string_buf (control_panel.faccessv_field),
+		       IDENTIFIER_POINTER (DECL_NAME (field))) == 0)
+		    {
+		      tree type = DECL_CONTEXT (field);
+		      if (TYPE_NAME (type)
+			  && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
+			if (strcmp
+			    (dyn_string_buf (control_panel.faccessv_struct),
+			     IDENTIFIER_POINTER (TYPE_NAME (type))) == 0)
+			  faccessv_expansion = true;
+		    }
+		}
+	    }
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case ARRAY_REF:
 	  expand_node (TREE_OPERAND (tmp, 1));
-	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  VEC_safe_push (tree, heap, *dest, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case INDIRECT_REF:
-	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  VEC_safe_push (tree, heap, *dest, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	  /* the remain tcc_*, some can continue, some not */
@@ -1961,7 +2101,7 @@ print_gvar (tree node, int flag)
 	      tmp = tsi_stmt (tsi_last (tmp));
 	      gcc_assert (TREE_CODE (tmp) == MODIFY_EXPR);
 	      /* its lvalue is an inner temporary variable. */
-	      gcc_assert (DECL_NAME (TREE_OPERAND (tmp, 0)) == NULL);
+	      gcc_assert (DECL_NAME (TREE_OPERAND (tmp, 0)) == NULL_TREE);
 	      tmp = TREE_OPERAND (tmp, 1);
 	    }
 	  break;
@@ -1969,14 +2109,41 @@ print_gvar (tree node, int flag)
 	  tmp = TREE_OPERAND (tmp, 1);
 	  break;
 	case COND_EXPR:
-	  expand_node (tmp);
-	  ret = -2;
-	  goto nofound;
-	case CONSTRUCTOR:	/* cast: pointer to union. */
+	  {
+	    expand_node (COND_EXPR_COND (tmp));
+	    leaf_chain chain1 = VEC_alloc (tree, heap, 16);
+	    int a = make_leaf_chain (COND_EXPR_THEN (tmp), &chain1);
+	    if (a != 0)
+	      {
+		VEC_free (tree, heap, chain1);
+		CHAIN1_COND_EXPR = NULL_TREE;
+	      }
+	    else
+	      CHAIN1_COND_EXPR = (tree) chain1;
+	    leaf_chain chain2 = VEC_alloc (tree, heap, 16);
+	    int b = make_leaf_chain (COND_EXPR_ELSE (tmp), &chain2);
+	    if (b != 0)
+	      {
+		VEC_free (tree, heap, chain2);
+		CHAIN2_COND_EXPR = NULL_TREE;
+	      }
+	    else
+	      CHAIN2_COND_EXPR = (tree) chain2;
+	    if (a != 0 && b != 0)
+	      ret = -1;
+	    else
+	      {
+		VEC_safe_push (tree, heap, *dest, tmp);
+		ret = 0;
+	      }
+	    goto done;
+	  }
+	case CONSTRUCTOR:	/* cast pointer to union.
+				   `union u { int* i; }; ((union u) p).i' */
 	  gcc_assert (TREE_CODE (TREE_TYPE (tmp)) == UNION_TYPE);
 	  expand_node (tmp);
-	  ret = -2;
-	  goto nofound;
+	  ret = -1;
+	  goto done;
 	case COMPOUND_LITERAL_EXPR:	/* c99 6.5.2, initializer list. */
 	  gcc_assert (TREE_CODE (COMPOUND_LITERAL_EXPR_DECL_EXPR (tmp)) ==
 		      DECL_EXPR);
@@ -1984,8 +2151,8 @@ print_gvar (tree node, int flag)
 	  gcc_assert (DECL_NAME (tmp) == NULL_TREE);
 	  tmp = DECL_INITIAL (tmp);
 	  expand_node (tmp);
-	  ret = -2;
-	  goto nofound;
+	  ret = -1;
+	  goto done;
 	case SAVE_EXPR:
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
@@ -1996,7 +2163,7 @@ print_gvar (tree node, int flag)
 	case POSTDECREMENT_EXPR:
 	  ;
 	case ADDR_EXPR:
-	  VEC_safe_push (tree, heap, expr.gvar, tmp);
+	  VEC_safe_push (tree, heap, *dest, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	case NOP_EXPR:
@@ -2004,31 +2171,107 @@ print_gvar (tree node, int flag)
 	  ;
 	case POINTER_PLUS_EXPR:
 	  expand_node (tmp);
-	  ret = -2;
-	  goto nofound;
+	  ret = -1;
+	  goto done;
 	default:
 	  gcc_assert (false);
 	}
     }
 
-found:
-  tmp = VEC_pop (tree, expr.gvar);
-  gcc_assert (TREE_CODE (tmp) == VAR_DECL);
-  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
-  int print = 0;
-  while (VEC_length (tree, expr.gvar) != pos)
+done:
+  if (control_panel.faccessv_expansion)
     {
-      tmp = VEC_pop (tree, expr.gvar);
+      if (faccessv_expansion)
+	{
+	  if (ret == 2)		/* accept more cases in expansion feature. */
+	    ret = 0;
+	}
+      else
+	ret = 3;
+    }
+  return ret;
+}
+
+/* print_var_chain returns
+ *   0 means the source is a twig, is printed, ready for free.
+ *   1 means the source is a branch which is still locked for further print.
+ *   2 means the source is a branch with two twigs and all of them have printed,
+ *     ready for free.
+ */
+static int
+print_var_chain (leaf_chain source)
+{
+  tree tmp = VEC_last (tree, source);
+  int ret, indirect_operator = 0, ix;
+  /* 0 and 2 are the main results of the conditional statement. */
+  if (TREE_CODE (tmp) != COND_EXPR)
+    {
+      bool func = false;
+      if (TREE_CODE (tmp) == CALL_EXPR)
+	{
+	  tmp = CALL_EXPR_FN (tmp);
+	  gcc_assert (TREE_CODE (tmp) == ADDR_EXPR);
+	  tmp = TREE_OPERAND (tmp, 0);
+	  func = true;
+	}
+      dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
+      if (func)
+	dyn_string_append_cstr (gbuf, "()");
+      ret = 0;
+    }
+  else
+    {
+      if (CHAIN1_COND_EXPR != NULL_TREE)
+	{
+	  leaf_chain chain1 = (leaf_chain) CHAIN1_COND_EXPR;
+	  ret = print_var_chain (chain1);
+	  if (ret != 1)
+	    {
+	      VEC_free (tree, heap, chain1);
+	      CHAIN1_COND_EXPR = NULL_TREE;
+	    }
+	  if (ret != 2)
+	    {
+	      /* convert ret = 0 to 1, let next iterator to free it. */
+	      ret = 1;
+	      goto cont_print;
+	    }
+	}
+      if (CHAIN2_COND_EXPR != NULL_TREE)
+	{
+	  leaf_chain chain2 = (leaf_chain) CHAIN2_COND_EXPR;
+	  ret = print_var_chain (chain2);
+	  if (ret != 1)
+	    {
+	      VEC_free (tree, heap, chain2);
+	      CHAIN2_COND_EXPR = NULL_TREE;
+	    }
+	  if (ret != 2)
+	    {
+	      /* convert ret = 0 to 1, let next iterator to free it. */
+	      ret = 1;
+	      goto cont_print;
+	    }
+	}
+      ret = 2;
+      goto done;
+    }
+
+cont_print:
+  for (ix = VEC_length (tree, source) - 2;
+       VEC_iterate (tree, source, ix, tmp); ix--)
+    {
       switch (TREE_CODE (tmp))
 	{
 	case ADDR_EXPR:
 	  /* Even gcc can cancel out `&*x' and `*&x', but to case `({ &x; })->i;'
 	   * we still get a sample that ADDR_EXPR neighboring to INDIRECT_REF, to
-	   * make user get `x.i' in database, I introduce print variable. */
-	  print--;
+	   * make user get `x.i' in database, I introduce indirect_operator
+	   * variable. */
+	  indirect_operator--;
 	  break;
 	case INDIRECT_REF:
-	  print++;
+	  indirect_operator++;
 	  break;
 	case ARRAY_REF:
 	  dyn_string_append_cstr (gbuf, "[]");
@@ -2041,10 +2284,10 @@ found:
 	    gcc_assert (TREE_CODE (arg1) == FIELD_DECL);
 	    if (DECL_NAME (arg1))
 	      {
-		gcc_assert (print >= 0);
-		if (print)
+		gcc_assert (indirect_operator >= 0);
+		if (indirect_operator)
 		  {
-		    print = 0;
+		    indirect_operator = 0;
 		    dyn_string_append_cstr (gbuf, "->");
 		  }
 		else
@@ -2058,23 +2301,46 @@ found:
 	  }
 	  break;
 	default:
-	  break;
+	  gcc_assert (false);
 	}
     }
-  ret = 1;
-  if (expr.fun_pattern)
-    faccessv_insert_fpattern (gbuf, flag);
-  else
-    faccessv_insert (gbuf, flag, expr.token_offset);
-  goto done;
-
-nofound:
-  while (VEC_length (tree, expr.gvar) != pos)
-    VEC_pop (tree, expr.gvar);
 
 done:
   return ret;
 }
+
+static void
+output_leaf_chain (leaf_chain chain, int flag)
+{
+  while (true)
+    {
+      int ret = print_var_chain (chain);
+      if (ret == 2)
+	break;
+      if (expr.fun_pattern)
+	faccessv_insert_fpattern (gbuf, flag);
+      else
+	faccessv_insert (gbuf, flag, expr.token_offset);
+      if (ret == 0)
+	break;
+    }
+}
+
+static int
+print_gvar (tree node, int flag)
+{
+  tree tmp = node;
+  int ret;
+
+  leaf_chain chain = VEC_alloc (tree, heap, 16);
+  if ((ret = make_leaf_chain (tmp, &chain)) == 0)
+    output_leaf_chain (chain, flag);
+  VEC_free (tree, heap, chain);
+
+  return ret;
+}
+
+/* }])> */
 
 /* Note, loop_stmt deals with some cases not belonging to tcc_statement.*/
 static void
@@ -2096,10 +2362,10 @@ loop_stmt (tree node)
       break;
     case ASM_EXPR:
       arg0 = ASM_INPUTS (tmp);
-      if (arg0 != NULL)
+      if (arg0 != NULL_TREE)
 	expand_node (TREE_VALUE (arg0));
       arg1 = ASM_OUTPUTS (tmp);
-      if (arg1 != NULL)
+      if (arg1 != NULL_TREE)
 	expand_node_2 (TREE_VALUE (arg1), ACCESS_WRITE);
       break;
     case SWITCH_EXPR:
@@ -2199,8 +2465,8 @@ loop_expr (tree node, int flag)
       expand_node (arg1);
       break;
     case CALL_EXPR:
-      gcc_assert (CALL_EXPR_FN (node) != NULL);
-      gcc_assert (CALL_EXPR_STATIC_CHAIN (node) == NULL);
+      gcc_assert (CALL_EXPR_FN (node) != NULL_TREE);
+      gcc_assert (CALL_EXPR_STATIC_CHAIN (node) == NULL_TREE);
       {
 	call_expr_arg_iterator iter;
 	FOR_EACH_CALL_EXPR_ARG (tmp, iter, node) expand_node (tmp);
@@ -2208,7 +2474,7 @@ loop_expr (tree node, int flag)
       break;
       /* Some inner codes */
     case TARGET_EXPR:		/* GNU extension on c99 6.5.2 postfix expression --
-				   statment in expression */
+				   statement in expression */
       tmp = TARGET_EXPR_INITIAL (node);
     case BIND_EXPR:
       tmp = BIND_EXPR_BODY (tmp);
@@ -2274,7 +2540,6 @@ symdb_end_expression (void *gcc_data, void *user_data)
   tree node = (tree) gcc_data;
   if (--expr.nested_level != 0)
     return;
-  gcc_assert (VEC_length (tree, expr.gvar) == 0);
   if (control_panel.faccessv)
     expand_node (node);
   void *pair[2];
@@ -2354,6 +2619,16 @@ symdb_fnbody_pattern (void *gcc_data, void *user_data)
 }
 
 /* }])> */
+/* c++ callbacks <([{ */
+static void
+symdb_cxx_method (void *gcc_data, void *user_data)
+{
+  tree node = (tree) gcc_data;
+  dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (node)));
+  def_append (DEF_METHOD, gbuf, DECL_FILE_OFFSET (node));
+}
+
+/* }])> */
 
 /* }])> */
 
@@ -2380,7 +2655,6 @@ symdb_unit_init (void *gcc_data, void *user_data)
 	     (db, "begin exclusive transaction;", NULL, 0, NULL)));
 
   gbuf = dyn_string_new (1024);
-  pcallbacks_init ();
   control_panel_init (main_input_filename);
   offsetof_init ();
   ifdef_init ();
@@ -2404,7 +2678,6 @@ symdb_unit_tini (void *gcc_data, void *user_data)
   ifdef_tini ();
   offsetof_tini ();
   control_panel_tini ();
-  pcallbacks_tini ();
   dyn_string_delete (gbuf);
 
   db_error ((sqlite3_exec (db, "end transaction;", NULL, 0, NULL)));
@@ -2436,6 +2709,7 @@ plugin_tini (void *gcc_data, void *user_data)
   unregister_callback ("symdb", PLUGIN_BEGIN_EXPRESSION);
   unregister_callback ("symdb", PLUGIN_END_EXPRESSION);
   unregister_callback ("symdb", PLUGIN_FNBODY_PATTERN);
+  unregister_callback ("symdb", PLUGIN_CXX_METHOD);
 }
 
 int
@@ -2479,6 +2753,7 @@ plugin_init (struct plugin_name_args *plugin_info,
 		     NULL);
   register_callback ("symdb", PLUGIN_FNBODY_PATTERN, &symdb_fnbody_pattern,
 		     NULL);
+  register_callback ("symdb", PLUGIN_CXX_METHOD, &symdb_cxx_method, NULL);
 
   cpp_callbacks *cb = cpp_get_callbacks (parse_in);
   cb->macro_start_expand = cb_macro_start;

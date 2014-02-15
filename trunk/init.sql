@@ -11,9 +11,14 @@ create table ProjectOverview (
 	userDefInfo text,
 	-- plugin control parameters.
 	canUpdateFile boolean,
-	faccessv boolean
+	faccessv boolean,
+	-- macro feature.
+	macroFile text,
+	-- Faccessv expansion.
+	faccessvStruct text,
+	faccessvField text
 );
-insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 0, 0, "user data", 't', 't');
+insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 0, 0, "user data", 't', 't', "", "", "");
 
 -- chFile is the root of all tables, see trigger fold for more, delete the table will delete all things in the file.
 -- But currently, macro feature doesn't depend on chFile table, which is transient.
@@ -87,13 +92,10 @@ create table FunctionAlias (
 	offset integer
 );
 
--- For macro feature of `./gs macro XX'.
+-- For macro feature.
 create table Macro (
-	-- user request.
-	letFileID integer,
-	letOffset integer,
-
-	-- result.
+	fileID integer,
+	fileOffset integer,
 	defFileID integer,
 	defFileOffset integer,
 	expandedTokens text,

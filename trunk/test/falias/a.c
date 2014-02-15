@@ -65,6 +65,7 @@ int main(void)
 	(x.y.eme)();
 	(x.py->eme)();
 	// Later lines are too complex syntax.
+	(*x.pp)();
 	(x.arr[1])();
 	(*(x.pp + 1))();
 

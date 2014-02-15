@@ -62,7 +62,6 @@ void set_p(int p1)
 
 int main(void)
 {
-	__label__ __here; __here: &&__here;
 	int m, n;
 	struct {
 		char c;
@@ -154,6 +153,13 @@ void foo(char* parm1, struct X* parm2)
 	((struct X*) (x.pp[j]))->cp;
 	((struct X*) i)->p[j].c;
 	((union ucast) p).i;
+
+	// sample which const is used as the top of leaf node.
+__here:
+	&&__here;
+	((struct X*) &&__here)->cp;
+	"123"[0];
+	((struct X*) 0)->cp;
 }
 
 #include<stdarg.h>
@@ -297,4 +303,25 @@ void indirect_ref(void)
 	*&px; // VAR_DECL
 	({ &x; })->v; // INDIRECT_REF + C_MAYBE_CONST_EXPR + ADDR_EXPR + VAR_DECL, it's gnu extension of c99 6.5.2, and TARGET_EXPR + BIND_EXPR can substitute C_MAYBE_CONST_EXPR.
 	*(p + 32); // INDIRECT_REF + POINTER_PLUS_EXPR
+}
+
+struct cond_C
+{
+	int c1;
+	char c2;
+} cond_v;
+struct cond_B
+{
+	struct cond_C b1;
+	struct cond_C b2;
+} cond_z, cond_u;
+struct cond_A
+{
+	struct cond_B a1;
+	struct cond_B a2;
+} cond_x, cond_y;
+void cond_expr(void)
+{
+	(i ? cond_x.a1 : (k, cond_x.a2)).b1;
+	(i ? (i ? (i ? cond_x : cond_y).a1 : cond_z).b1 : (j ? cond_z.b2 : cond_u.b1)).c1;
 }

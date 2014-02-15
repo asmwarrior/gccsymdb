@@ -4,6 +4,7 @@ MY_ROOT=/home/zyf/root/
 SYMDB_ROOT=/home/zyf/src/symdb.gcc/
 GCC_BUILD_ROOT=/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/
 GCC_BUILD_BIN="${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}/"
+GXX_BUILD_BIN="${GCC_BUILD_ROOT}/g++ -B${GCC_BUILD_ROOT}/"
 
 if [ "$1" = "clean" ]; then
 	find . -name 'new' -exec rm -f {} \;
@@ -36,8 +37,13 @@ dump_helper ()
 test_it ()
 {
 (cd ../ && ./gs initdb ./)
-(cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
-(cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -O3 test/$1/a.c)
+if [ "$3" = "gcc" ]; then
+	(cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
+	(cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -O3 test/$1/a.c)
+else
+	(cd ../ && ${GXX_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdbcxx.so -fplugin-arg-symdbcxx-dbfile=./gccsym.db -ggdb test/$1/a.c)
+	(cd ../ && ${GXX_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdbcxx.so -fplugin-arg-symdbcxx-dbfile=./gccsym.db -O3 test/$1/a.c)
+fi
 (cd ../ && ./gs enddb ./)
 (cd ../ && cat > abc123 << "EOF"
 .output log.gdb
@@ -52,25 +58,27 @@ diff $1/orig $1/new || exit 1
 # }])>
 
 find . -\( -name '*.h' -or -name '*.c' -\) -exec touch -t 201201010101.00 {} \;
-test_it faccessv faccessv
+test_it faccessv faccessv gcc
 echo PASS faccessv
-test_it fcallf fcallf
+test_it fcallf fcallf gcc
 echo PASS fcallf
-test_it ifdef ifdef
+test_it ifdef ifdef gcc
 echo PASS ifdef
-test_it basic def
-echo PASS basic
-test_it macro def
+test_it def def gcc
+echo PASS def
+test_it macro def gcc
 echo PASS macro
-test_it paren_declarator def
-echo PASS paren_declarator
-test_it file_dependence file
-echo PASS file_dependence
-test_it hash def
+test_it parendef def gcc
+echo PASS parendef
+test_it filedep file gcc
+echo PASS filedep
+test_it hash def gcc
 echo PASS hash
-test_it cpptoken def
+test_it cpptoken def gcc
 echo PASS cpptoken
-test_it falias falias
+test_it falias falias gcc
 echo PASS falias
-test_it offsetof offsetof
+test_it offsetof offsetof gcc
 echo PASS offsetof
+test_it cxx offsetof g++
+echo PASS cxx
