@@ -149,6 +149,8 @@ void foo(char* parm1, struct X* parm2)
 	x.anon_i;
 	px->anon_i;
 	(px->next ? px->next : px)->p;
+	(px++)->anon_i;
+	(++px)->anon_i;
 
 	((struct X*) (x.pp[j]))->cp;
 	((struct X*) i)->p[j].c;
@@ -255,6 +257,8 @@ failed:
 	goto *(i = j, x.jump_ptr); // COMPOUND_EXPR.
 	x;
 	}).v;
+
+	ui = ({ __label__ here; here: (unsigned long) &&here; });
 	return 0;
 }
 

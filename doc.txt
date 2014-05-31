@@ -19,7 +19,7 @@ For gcc internal developer
 2) Sections <Gcc XXXX Macro Expansion> shows some complex cases linking to
 macro expansion, I list calling sequence from plugin-side and stack snapshot
 from gcc-side in every section, read them carefully, it's the key to
-understand main.c:class mo.  test/testplan.txt and test/macro have the
+understand so.c:class mo.  test/testplan.txt and test/macro have the
 testcases.
 3) Section <Patch Overview> makes focus on which files and how are changed in
 the patch.
@@ -53,6 +53,7 @@ source) and skip `#ifdef/#if'.
 block.
 10) Function alias. To linux, later code often makes you confusion.
     f_ops fs = { .open = ext2_open, };
+	void oof(FUNC pf) { fs.open = pf; }
     void foo(void)
     {
         fs.open = ext2_open;
@@ -67,6 +68,15 @@ pattern (member-function-pointer) is `struct::fun_pointer = fun_decl' and call
 the pattern, complex struct::...::struct::__pattern__ is supported, but only
 the last two levels are imported into database.
     ./gs falias open
+By the way, database will record original struct name if possible
+    struct orig { ... };
+    typedef orig td1;
+    typedef orig td2;
+    typedef td1 td11;
+    typedef struct { ... } tdanon;
+    typedef tdanon td3;
+In the cases, orig and tdanon are called original struct name, the convention
+is used by other features too.
 11) Get macro expansion process by later steps
     a) ./gs macro a.c
     b) re-compile a.c by my plugin.
@@ -131,39 +141,33 @@ The only defect of the feature is I can't know whether there're some
 expression not coveraged by my plugin so if you find your code can make my
 plugin crashed, insert `./gs ctrl faccessv f' after `./gs initdb ./' to
 disable it temporarially.
-Faccessv expansion, insert `./gs faccess-expansion task_struct mm' after `./gs
-initdb ./', will force plugin stores only fit with the pattern to database, it
-will store local, parameter or function-return variable too. After database is
-reestablished, `./gs faccess-expansion' to get all of them.
+I'm also honor to introduce faccessv expansion which do the case when you
+found there's some field of a varaible changed unexpectedly in the heap and you
+want to see which functions are the candidates,
+    ./gs initdb ./
+    ./gs faccess-expansion struct_name field_name
+    # reestablish database, only nodes fit with will be stored.
+    ./gs faccess-expansion
+Hope it will help you to solve the problem which isn't reduplicated easily
+during weeks or months.
 // }])>
 // User Manual <([{
 Note: Using my plugin on correct code, buggy code maybe cause my plugin
-infinite-loop or crashed. And since I must patch gcc to support my plugin,
-you're advised using patched-gcc for my plugin only.
+infinite-loop or crashed. And since I must patch gcc to support my plugin
+(some change has impacted binary file), you're advised using patched-gcc for
+my plugin only.
 
 Prepare stage (patch on gcc-4.6.4):
-1) cp gcc.patches/* gcc.src/patches
-2) quilt push -a
-3) ./configure --with-mpc=/mpc.dev.install/ --with-gmp=/gmp.dev.install/
---with-mpfr=/mpfr.dev.install
-4) make STAGE1_CFLAGS="-ggdb" all-stage1
-More about compilation suite (such as crosstool-ng-1.13.2, mips):
-1) Disable compile static toolchain option.
-2) append `CT_CC_GCC_ENABLE_PLUGINS=y' to your crossng.config manually.
-3) cp gcc.patches/* crossng.install/lib/ct-ng-1.13.2/patches/gcc/4.6.4/ and
-change my patch to the pattern just like others in the directory.
-4) make # as usual
+See <Steps for ... with patch> folds.
 
 Compiling plugin by patched gcc (cd myplugin.src/):
 1) Open Makefile, change the path in it.
 2) make
-To compile a cross-plugin, follow the instruction in `myplugin.src/Makefile'.
 
 Make database on your project:
 1) cp gs helper.vim init.sql symdb.so mygcc.py /prj.src/ && cd /prj.src/
 2) ./gs initdb ./ "user data (such as svn revision)" # Initialize database.
-If you want to custom the plugin, update plugin-control-fields of
-database:ProjectOverview.
+If you want to custom the plugin, run `./gs' and `./gs ctrl XXX YYY'.
 3) Open mygcc.py, change pathes in it.
 4) CC=/prj.src/mygcc.py ./configure ... && make.
 5) It will cost more time to compile your project, and SMP can't help you --
@@ -189,6 +193,9 @@ assigned and assigned-definition.
 ./gs is designed to access the database. `./gs help'.
 
 Testing my plugin:
+Open test/run.sh, change the path in it, the testcases are passed on x86, but
+to test/faccessv/a.c which includes clauses like `__attribute__ ((__target__
+("sse")))', so don't run it on mips.
 1) cd test && ./run.sh
 // }])>
 // Multiple-results from my database and my solution <([{
@@ -295,6 +302,32 @@ definition from database, but later
     #undef M
 My database only stores the first A of a.h and discard the second forever, in
 fact not only struct, function, variable and so on have the same problem.
+// }])>
+
+// Steps for building gcc with patch (x86) <([{
+cd $HOME/src/gmp-5.0.1
+./configure --prefix=$HOME/root/ --enable-shared=no && make -j install
+cd $HOME/src/mpfr-3.0.1
+./configure --prefix=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
+cd $HOME/src/mpc-0.9
+./configure --prefix=$HOME/root/ --with-mpfr=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
+cd $HOME/src/gcc-4.6.4
+ln -s $HOME/src//symdb.gcc/gcc.patches/ patches
+quilt push -a
+./configure --prefix=$HOME/root/ --with-mpc=$HOME/root/ --with-gmp=$HOME/root/ --with-mpfr=$HOME/root/ --enable-stage1-languages=c++
+make STAGE1_CFLAGS="-ggdb" all-stage1
+// }])>
+// Steps for crosstool-ng with patch (mips) <([{
+cd $HOME/src/crosstool-ng-1.19.0
+./configure --enable-local
+make
+ln -s $HOME/src//symdb.gcc/gcc.patches/symdb patches/gcc/4.6.4/900-symdb.patch
+mkdir mips && cd mips
+cp $HOME/src//symdb.gcc/crossng.config $HOME/src/crosstool-ng-1.19.0/mips/.config
+../ct-ng menuconfig
+# Do more configs as you wish, make sure binutils is 2.21+ for enabling gcc
+# plugin feature.
+../ct-ng build
 // }])>
 
 For Developer, need to sychronize with the up-to-dated code.
@@ -598,13 +631,13 @@ but assigned value must be function declaration not a function pointer.
 The feature is consist of two parts:
 1) Where a mfp is assigned.
 Database init.sql:FunctionAlias stores assignment position data.
-Code main.c:<falias fold> manages FunctionAlias table.
-Code main.c:symdb_falias is called by gcc from two positions, one is when
+Code so.c:<falias fold> manages FunctionAlias table.
+Code so.c:symdb_falias is called by gcc from two positions, one is when
 parsing an expression, another is parsing initializer-list of a variable.
 2) Where a mfp variable is called.
 Database init.sql:Definition, `flag' field has a new type --
 DEF_CALLED_POINTER. `name' field is just like `struct::member' or `::member'.
-Code main.c:symdb_call_func is enhanced to collect a mfp variable is called.
+Code so.c:symdb_call_func is enhanced to collect a mfp variable is called.
 // }])>
 // Misc. <([{
 Gcc defines a default cpp_callbacks::file_change, to listen the callback in my

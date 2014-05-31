@@ -446,7 +446,7 @@ Index: gcc/gcc/cp/parser.c
  				CP_PARSER_FLAGS_OPTIONAL,
  				&decl_specifiers,
  				&declares_class_or_enum);
-+  if (function_definition_allowed_p)
++  if (function_definition_allowed_p && decl_specifiers.type != NULL)
 +    {
 +      tree tmp = decl_specifiers.type;
 +      if (TREE_CODE (tmp) == TYPE_DECL)

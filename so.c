@@ -992,7 +992,7 @@ static struct
 
 void
 falias_append (const char *struct_name, const char *mfp_name,
-	       const char *fun_decl, int offset)
+	       const char *func_decl, int offset)
 {
   int fileid = file_get_current_fid ();
   dyn_string_copy_cstr (gbuf, struct_name);
@@ -1003,7 +1003,7 @@ falias_append (const char *struct_name, const char *mfp_name,
 	    (falias.select_falias, 2, dyn_string_buf (gbuf),
 	     dyn_string_length (gbuf), SQLITE_STATIC));
   db_error (sqlite3_bind_text
-	    (falias.select_falias, 3, fun_decl, -1, SQLITE_STATIC));
+	    (falias.select_falias, 3, func_decl, -1, SQLITE_STATIC));
   db_error (sqlite3_bind_int (falias.select_falias, 4, offset));
   if (sqlite3_step (falias.select_falias) != SQLITE_ROW)
     {
@@ -1012,7 +1012,7 @@ falias_append (const char *struct_name, const char *mfp_name,
 		(falias.insert_falias, 2, dyn_string_buf (gbuf),
 		 dyn_string_length (gbuf), SQLITE_STATIC));
       db_error (sqlite3_bind_text
-		(falias.insert_falias, 3, fun_decl, -1, SQLITE_STATIC));
+		(falias.insert_falias, 3, func_decl, -1, SQLITE_STATIC));
       db_error (sqlite3_bind_int (falias.insert_falias, 4, offset));
       execute_sql (falias.insert_falias);
     }
@@ -1025,11 +1025,11 @@ falias_init (void)
   db_error (sqlite3_prepare_v2 (db,
 				"select rowid from FunctionAlias "
 				"where fileID = ?"
-				" and mfp = ? and funDecl = ?"
+				" and mfp = ? and funcDecl = ?"
 				" and offset = ?;",
 				-1, &falias.select_falias, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into FunctionAlias values (?, ?, ?, ?);",
+				"insert into FunctionAlias values (?, ?, ?, ?, ?);",
 				-1, &falias.insert_falias, 0));
 }
 
@@ -1209,7 +1209,7 @@ static struct
 {
   int token_offset;
   int nested_level;
-  bool fun_pattern;
+  bool func_pattern;
 } expr =
 {
 .nested_level = 0};
@@ -1246,14 +1246,15 @@ static const char *
 get_typename (tree type)
 {
   const char *result = "";
-  if (TYPE_NAME (type))
-    {
-#ifndef CXX_PLUGIN
-      result = IDENTIFIER_POINTER (TYPE_NAME (type));
-#else
-      result = IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (type)));
-#endif
-    }
+  gcc_assert (!TYPE_STRUCTURAL_EQUALITY_P (type));
+  tree orig_type = TYPE_CANONICAL (type);
+  gcc_assert (TYPE_CANONICAL (orig_type) == orig_type);
+  if (TYPE_NAME (orig_type) != NULL)
+    result = IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (orig_type)));
+  /* To `typedef struct { ... } a_t;', return a_t, otherwise return original
+   * struct name. */
+  if (orig_type != type && strcmp (result, "") == 0)
+    result = IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (type)));
   return result;
 }
 
@@ -1305,8 +1306,8 @@ loop_struct (tree field, int base)
 #ifdef CXX_PLUGIN
       else
 	{
-	  if (get_typename (type) != NULL)
-	    {			// Enumerate base classes.
+	  if (strcmp (get_typename (type), "") != 0)
+	    {			/* Enumerate base classes. */
 	      loop_struct (TYPE_FIELDS (type), offset);
 	      continue;
 	    }
@@ -1737,12 +1738,15 @@ modify_expr (tree node, int offset)
     tmp = TREE_OPERAND (tmp, 0);
   if (TREE_CODE (tmp) == ADDR_EXPR)
     tmp = TREE_OPERAND (tmp, 0);
-  if (TREE_CODE (tmp) != FUNCTION_DECL)
+  if (TREE_CODE (tmp) != FUNCTION_DECL && TREE_CODE (tmp) != PARM_DECL)
     return;
   const char *a = IDENTIFIER_POINTER (DECL_NAME (mfp));
   const char *b = IDENTIFIER_POINTER (DECL_NAME (tmp));
   const char *c = get_typename (strut);
-  falias_append (c, a, b, offset);
+  if (TREE_CODE (tmp) == FUNCTION_DECL)
+    falias_append (c, a, b, offset);
+  else
+    falias_append (c, a, "", offset);
 }
 
 /*
@@ -1940,7 +1944,7 @@ expand_node_2 (tree node, int flag)
 	case INDIRECT_REF:
 	  while (TREE_CODE (tmp) == INDIRECT_REF)
 	    tmp = TREE_OPERAND (tmp, 0);
-	  // indirect_ref_assert (tmp);
+	  /* indirect_ref_assert (tmp); */
 	  gcc_assert (flag != ACCESS_ADDR);
 	  flag <<= 3;		/* shift flag to pointer r/w. */
 	  expand_node_2 (tmp, flag);
@@ -2060,12 +2064,10 @@ make_leaf_chain (tree node, leaf_chain * dest)
 		       IDENTIFIER_POINTER (DECL_NAME (field))) == 0)
 		    {
 		      tree type = DECL_CONTEXT (field);
-		      if (TYPE_NAME (type)
-			  && TREE_CODE (TYPE_NAME (type)) == IDENTIFIER_NODE)
-			if (strcmp
-			    (dyn_string_buf (control_panel.faccessv_struct),
-			     IDENTIFIER_POINTER (TYPE_NAME (type))) == 0)
-			  faccessv_expansion = true;
+		      if (strcmp
+			  (dyn_string_buf (control_panel.faccessv_struct),
+			   get_typename (type)) == 0)
+			faccessv_expansion = true;
 		    }
 		}
 	    }
@@ -2157,15 +2159,16 @@ make_leaf_chain (tree node, leaf_chain * dest)
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
 	  /* later cases should be the operands of INDIRECT_REF. */
-	case PREINCREMENT_EXPR:
-	case PREDECREMENT_EXPR:
 	case POSTINCREMENT_EXPR:
 	case POSTDECREMENT_EXPR:
-	  ;
+	  tmp = TREE_OPERAND (tmp, 0);
+	  break;
 	case ADDR_EXPR:
 	  VEC_safe_push (tree, heap, *dest, tmp);
 	  tmp = TREE_OPERAND (tmp, 0);
 	  break;
+	case PREINCREMENT_EXPR:
+	case PREDECREMENT_EXPR:
 	case NOP_EXPR:
 	case CONVERT_EXPR:
 	  ;
@@ -2317,7 +2320,7 @@ output_leaf_chain (leaf_chain chain, int flag)
       int ret = print_var_chain (chain);
       if (ret == 2)
 	break;
-      if (expr.fun_pattern)
+      if (expr.func_pattern)
 	faccessv_insert_fpattern (gbuf, flag);
       else
 	faccessv_insert (gbuf, flag, expr.token_offset);
@@ -2351,8 +2354,13 @@ loop_stmt (tree node)
     {
     case DECL_EXPR:
       tmp = DECL_EXPR_DECL (tmp);
-      tmp = DECL_INITIAL (tmp);
-      expand_node (tmp);
+      if (TREE_CODE (tmp) != LABEL_DECL)
+	{
+	  tmp = DECL_INITIAL (tmp);
+	  expand_node (tmp);
+	}
+      /* LABEL_EXPR is initialized to error_mark_node accoring to
+       * define_label(). */
       break;
     case LABEL_EXPR:
       break;
@@ -2558,9 +2566,9 @@ set_func (const char *fname, tree body)
   arg1 = TREE_OPERAND (body, 1);
   if (TREE_CODE (arg1) != PARM_DECL)
     return;
-  expr.fun_pattern = true;
+  expr.func_pattern = true;
   expand_node_2 (arg0, ACCESS_WRITE);
-  expr.fun_pattern = false;
+  expr.func_pattern = false;
 }
 
 static void
@@ -2576,7 +2584,7 @@ get_func (const char *fname, tree body)
   if (TREE_CODE (arg0) != RESULT_DECL)
     return;
   arg1 = TREE_OPERAND (tmp, 1);
-  expr.fun_pattern = true;
+  expr.func_pattern = true;
   if (TREE_CODE (arg1) == ADDR_EXPR)
     {
       arg0 = TREE_OPERAND (arg1, 0);
@@ -2584,7 +2592,7 @@ get_func (const char *fname, tree body)
     }
   else
     expand_node (arg1);
-  expr.fun_pattern = false;
+  expr.func_pattern = false;
 }
 
 static void

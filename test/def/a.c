@@ -52,8 +52,10 @@ int ofo(int);
 int ofo(int i __attribute__((unused))) {}
 int ofo(int);
 int* fof(int i __attribute__((unused))) {}
-static void (*ararefuncdecl(void *pVfs, float q))(char p);
-static void (*ararefuncdecl(void *pVfs, float q))(char p){
+// Later case comes from sqlite-3.8/src/os.c:sqlite3OsDlSym,
+// ararefuncdecl returns a function pointer whose prototype is short* (*)(char).
+static short* (*ararefuncdecl(void *pVfs, float q))(char p);
+static short* (*ararefuncdecl(void *pVfs, float q))(char p){
 	return pVfs;
 }
 
