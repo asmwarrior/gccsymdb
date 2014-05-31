@@ -1,6 +1,5 @@
 #!/bin/sh
 # vim: foldmarker=<([{,}])> foldmethod=marker
-MY_ROOT=/home/zyf/root/
 SYMDB_ROOT=/home/zyf/src/symdb.gcc/
 GCC_BUILD_ROOT=/home/zyf/gcc/host-i686-pc-linux-gnu/gcc/
 GCC_BUILD_BIN="${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}/"

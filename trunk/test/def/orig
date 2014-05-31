@@ -30,8 +30,8 @@ INSERT INTO "Definition" VALUES(20,1,'main',2,553);
 INSERT INTO "Definition" VALUES(21,1,'c',1,703);
 INSERT INTO "Definition" VALUES(22,1,'ofo',2,748);
 INSERT INTO "Definition" VALUES(23,1,'fof',2,805);
-INSERT INTO "Definition" VALUES(24,1,'ararefuncdecl',2,916);
-INSERT INTO "Definition" VALUES(25,1,'off',2,990);
+INSERT INTO "Definition" VALUES(24,1,'ararefuncdecl',2,1062);
+INSERT INTO "Definition" VALUES(25,1,'off',2,1136);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin

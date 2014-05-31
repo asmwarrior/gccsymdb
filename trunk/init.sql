@@ -48,7 +48,7 @@ create table Definition (
 	fileOffset integer
 );
 
--- fun-call-fun, or fun-call-mfp feature, abbr. f-call-f.
+-- func-call-func, or func-call-mfp feature, abbr. f-call-f.
 create table FunctionCall (
 	callerID integer references Definition (id),
 	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
@@ -56,7 +56,7 @@ create table FunctionCall (
 	fileOffset integer
 );
 
--- fun-access-var <([{
+-- func-access-var <([{
 create table FunctionAccess (
 	funcID integer references Definition (id),
 	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
@@ -88,7 +88,7 @@ create table Ifdef (
 create table FunctionAlias (
 	fileID integer references chFile (id),
 	mfp text, -- syntax pattern: structname::mfp
-	funDecl text,
+	funcDecl text,
 	offset integer
 );
 
@@ -127,7 +127,7 @@ from
 create view CallRelationship as
 select
 	d.fileID as callerFileID, f.name as callerFileName, d.fileOffset as callerFileOffset, d.id as callerID, d.name as callerName,
-	fc.fileID as calleePosFileID, f2.name as calleePosFileName, fc.fileOffset as calleePos, fa.fundecl as calleeName, fa.mfp as mfp
+	fc.fileID as calleePosFileID, f2.name as calleePosFileName, fc.fileOffset as calleePos, fa.funcDecl as calleeName, fa.mfp as mfp
 from
 	FunctionCall as fc
 	left join FunctionAlias fa on fc.name = fa.mfp
@@ -146,18 +146,17 @@ from
 ;
 
 -- Search mfp alias and its position by mfp.
--- Note: It's possible that FunctionAlias has a record but you can't find it in Defintion, maybe you assign the mfp to an assemble-entry.
+-- Note: It's possible that FunctionAlias has a record but you can't find it in Defintion, maybe you assign the mfp to an assemble-entry, in the case, funcName is null.
 create view MfpJumpto as
 select
 	fa.fileID as mfpFileID, f.name as mfpFileName, fa.offset as mfpOffset, fa.mfp as mfp,
-	d.fileID as funcFileID, f2.name as funcFileName, d.fileOffset as funcOffset, fa.funDecl as funcName
+	d.fileID as funcFileID, f2.name as funcFileName, d.fileOffset as funcOffset, fa.funcDecl as funcName,
+	case when d.flag = 2 then 't' else 'f' end as flag -- DEF_FUNC.
 from
 	FunctionAlias as fa
-	left join Definition as d on fa.funDecl = d.Name
+	left join Definition as d on fa.funcDecl = d.Name
 		left join chFile as f2 on d.fileID = f2.id
 	left join chFile as f on fa.fileID = f.id
-where
-	d.flag = 2; -- DEF_FUNC
 ;
 
 -- Search variable access by variable name.
@@ -183,7 +182,7 @@ create index DefName on Definition (name);
 
 create index Alias on FunctionAlias (mfp);
 
-create index Alias2 on FunctionAlias (funDecl);
+create index Alias2 on FunctionAlias (funcDecl);
 
 create index CalleeName on FunctionCall (name);
 -- }])>

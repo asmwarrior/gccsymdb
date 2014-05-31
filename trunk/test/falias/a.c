@@ -45,6 +45,12 @@ struct abc
 	.pp = (F*) ofo,
 };
 struct abc* jump;
+typedef struct abc abc_t;
+typedef abc_t abc_t2;
+
+typedef struct {
+	F mem;
+} anon_td;
 
 struct ghi
 {
@@ -52,8 +58,17 @@ struct ghi
 	struct def y;
 } y = { foo, { foo } };
 
+void assigned_by_parm(F pf)
+{
+	struct abc l;
+	l.mem = pf;
+}
+
 int main(void)
 {
+	// Local initializer isn't supported.
+	struct ghi local_ghi = { .mem = foo, };
+
 	jump = &x;
 
 	// calling sample.
@@ -81,5 +96,9 @@ int main(void)
 	x.arr[1] = ofo_expr;
 	// And don't assign function pointer, just function declaration.
 	x.mem = f;
+	abc_t* p; p->mem = foo;
+	abc_t2* p2; p2->mem = foo;
+	anon_td* p3; p3->mem = foo;
+	(p->mem)();
 	return 0;
 }
