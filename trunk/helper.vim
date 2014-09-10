@@ -53,7 +53,7 @@ function! s:showSelection()
 		echo 'GS multiple definition:'
 		let s:i = 1
 		for s:element in s:alist
-			echo s:i . ')' . s:element
+			echo s:i . ') ' . s:element
 			let s:i += 1
 		endfor
 		let s:selection = str2nr(input('? '))
@@ -136,7 +136,7 @@ function! s:GS_falias()
 endfunction
 " }])>
 " Gs_list <([{
-" The fold is based on taglist.vim.
+" Code is mainly coming from taglist.vim.
 let gs_taglist_window_title = "__Gs_TagList__"
 let s:taglist = {}
 let s:taglist_file = ''
@@ -179,7 +179,6 @@ function! s:GS_Window_Refresh()
 	silent! setlocal modifiable
 	silent! setlocal noreadonly
 	silent! %delete _
-	let l:current = -1
 	call append(1, s:taglist_file)
 	let l:current = 2
 	call append(l:current, "struct/enum/union/typedef")
@@ -207,6 +206,9 @@ function! s:GS_Window_Refresh()
 	let l:current += 1
 	let l:count = s:GS_Load_Tag(5, l:current)
 	execute l:current . ',' . (l:current + l:count) . 'fold'
+	if l:current == 7
+		call append(l:current, "The file maybe isn't compiled!")
+	endif
 	silent! setlocal nomodifiable
 	silent! setlocal nomodified
 endfunction

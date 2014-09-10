@@ -36,6 +36,9 @@ dump_helper ()
 test_it ()
 {
 (cd ../ && ./gs initdb ./)
+if [ "$1" = "faccessvex" ]; then
+	(cd ../ && ./gs faccessv-expansion task_t mm)
+fi
 if [ "$3" = "gcc" ]; then
 	(cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -ggdb test/$1/a.c)
 	(cd ../ && ${GCC_BUILD_BIN} --sysroot=${SYMDB_ROOT}/test/ -fplugin=./symdb.so -fplugin-arg-symdb-dbfile=./gccsym.db -O3 test/$1/a.c)
@@ -57,6 +60,8 @@ diff $1/orig $1/new || exit 1
 # }])>
 
 find . -\( -name '*.h' -or -name '*.c' -\) -exec touch -t 201201010101.00 {} \;
+test_it faccessvex faccessv gcc
+echo PASS faccessvex
 test_it faccessv faccessv gcc
 echo PASS faccessv
 test_it fcallf fcallf gcc
