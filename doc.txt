@@ -168,7 +168,7 @@ Make database on your project:
 1) cp gs helper.vim init.sql symdb.so mygcc.py /prj.src/ && cd /prj.src/
 2) ./gs initdb ./ "user data (such as svn revision)" # Initialize database.
 If you want to custom the plugin, run `./gs' and `./gs ctrl XXX YYY'.
-3) Open mygcc.py, change pathes in it.
+3) Open mygcc.py, change pathes in it and caution.
 4) CC=/prj.src/mygcc.py ./configure ... && make.
 5) It will cost more time to compile your project, and SMP can't help you --
 sqlite doesn't support write-access database simultaneously, do it overnight.

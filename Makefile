@@ -3,6 +3,7 @@
 # If only compile the plugin, you can ignore any error from `db' target.
 
 # CROSSNG=${HOME}/src/crosstool-ng-1.19.0/mips
+# As you seen from doc.txt, x86 plugin is set up directely from gcc pass-1.
 
 # Compiling the plugin need gmp.h, mpfr.h and so on.
 # To cross-ng (mips), MY_ROOT=${CROSSNG}/build/mips-zyf-linux-gnu/buildtools
@@ -19,7 +20,6 @@ GCC_BUILD_LIB=${HOME}/gcc/host-i686-pc-linux-gnu/libiberty/
 GCC_BUILD_ROOT=${HOME}/gcc/host-i686-pc-linux-gnu/gcc/
 
 # To cross-ng (mips), GCC_BUILD_BIN=${CROSSNG}/install/bin/mips-zyf-linux-gnu-gcc
-# The variable is useful for run test.
 GCC_BUILD_BIN=${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}
 
 default: symdb.so symdbcxx.so gs

@@ -1,0 +1,23 @@
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunctionAccess (
+	funcID integer references Definition (id),
+	fileID integer references chFile (id), -- note, a function body can be across multiple files, so we need the field too.
+	name text,
+	flag integer,
+	fileOffset integer
+);
+INSERT INTO "FunctionAccess" VALUES(8,1,'pfunc()->mm',2,268);
+INSERT INTO "FunctionAccess" VALUES(8,1,'foo()->mm',2,328);
+INSERT INTO "FunctionAccess" VALUES(8,1,'p->mm->map->arr',2,420);
+INSERT INTO "FunctionAccess" VALUES(8,1,'p3->mm',2,486);
+INSERT INTO "FunctionAccess" VALUES(8,1,'init.mm',2,519);
+COMMIT;
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE FunctionPattern (
+	funcID integer references Definition (id),
+	name text,
+	flag integer
+);
+COMMIT;

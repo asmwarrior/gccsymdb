@@ -123,6 +123,8 @@ union ucast
 };
 void foo(char* parm1, struct X* parm2)
 {
+	static int li = 0;
+	li = i; // local static variable is excluded.
 	struct X lx;
 	x.p->c = 0;
 	parm1 += 2;

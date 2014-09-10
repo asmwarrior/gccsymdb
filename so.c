@@ -1029,7 +1029,7 @@ falias_init (void)
 				" and offset = ?;",
 				-1, &falias.select_falias, 0));
   db_error (sqlite3_prepare_v2 (db,
-				"insert into FunctionAlias values (?, ?, ?, ?, ?);",
+				"insert into FunctionAlias values (?, ?, ?, ?);",
 				-1, &falias.insert_falias, 0));
 }
 
@@ -1216,7 +1216,7 @@ static struct
 
 /* falias auxiliary <([{ */
 static bool
-is_fun_p (tree node)
+is_func_p (tree node)
 {
   tree type = TREE_TYPE (node);
   if (TREE_CODE (type) != POINTER_TYPE)
@@ -1236,7 +1236,7 @@ var_is_mfp (tree var, tree * strut, tree * mfp)
   gcc_assert (TREE_OPERAND (var, 2) == NULL_TREE);
   *mfp = TREE_OPERAND (var, 1);
   gcc_assert (TREE_CODE (*mfp) == FIELD_DECL);
-  if (!is_fun_p (*mfp))
+  if (!is_func_p (*mfp))
     return false;
   *strut = TREE_TYPE (TREE_OPERAND (var, 0));
   return true;
@@ -1250,7 +1250,11 @@ get_typename (tree type)
   tree orig_type = TYPE_CANONICAL (type);
   gcc_assert (TYPE_CANONICAL (orig_type) == orig_type);
   if (TYPE_NAME (orig_type) != NULL)
+#ifndef CXX_PLUGIN
+    result = IDENTIFIER_POINTER (TYPE_NAME (orig_type));
+#else
     result = IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (orig_type)));
+#endif
   /* To `typedef struct { ... } a_t;', return a_t, otherwise return original
    * struct name. */
   if (orig_type != type && strcmp (result, "") == 0)
@@ -1710,7 +1714,7 @@ constructor_loop (tree node, int offset)
 	continue;
       }
     gcc_assert (TREE_CODE (index) == FIELD_DECL);
-    if (!is_fun_p (index))
+    if (!is_func_p (index))
       continue;
     if (TREE_CODE (value) == NOP_EXPR)
       value = TREE_OPERAND (value, 0);
@@ -1728,7 +1732,7 @@ constructor_loop (tree node, int offset)
 static void
 modify_expr (tree node, int offset)
 {
-  if (!is_fun_p (node))
+  if (!is_func_p (node))
     return;
   tree strut, mfp;
   if (!var_is_mfp (TREE_OPERAND (node, 0), &strut, &mfp))
@@ -1751,8 +1755,8 @@ modify_expr (tree node, int offset)
 
 /*
  * The feature supports
- * 1) var.mfp = fun-decl # Note, not var.mfp = a-fun-pointer.
- * 2) var = { initializer-list } # as above, assign a mfp with fun-decl.
+ * 1) var.mfp = func-decl # Note, not var.mfp = a-func-pointer.
+ * 2) var = { initializer-list } # as above, assign a mfp with func-decl.
  *
  * 1)
  * expression:
@@ -1982,11 +1986,11 @@ expand_node (tree node)
 
 /* Set up leaf node chain and output them to database. <([{ */
 /* Leaf node is just `a.mem.eme', `j' and `1' of expression `a.mem.eme + j *
- * 1'. It consists of tree vector. leaf node can include expression `(i = j,
- * a).mem' and statement block `({ i = j; a; }).mem', later is gnu extension of
- * c99 6.5.2. Not like expand_node which represents syntax node. Quick tip to
- * distinguish them is the tail of leaf node must be FIELD_DECL or such as
- * VAR_DECL, CONST_DECL.
+ * 1'. Constrast to syntax node which includes `*' and `+' too.
+ * Leaf node can include expression `(i = j, a).mem' and statement block
+ * `({ i = j; a; }).mem', later is gnu extension of c99 6.5.2.
+ * Quick tip to distinguish them is the tail of leaf node must be FIELD_DECL or
+ * such as VAR_DECL, CONST_DECL.
  */
 #define leaf_chain VEC (tree, heap) *
 
@@ -1998,7 +2002,6 @@ expand_node (tree node)
 
 /* Smart-join COND_EXPR makes leaf chain just like a binary tree, except the
  * trunk, others must end with a COND_EXPR tree or a twig chain.
- * make_leaf_chain will do it.
  */
 static int
 make_leaf_chain (tree node, leaf_chain * dest)
@@ -2033,7 +2036,7 @@ make_leaf_chain (tree node, leaf_chain * dest)
 	      goto done;
 	    }
 	  if (DECL_CONTEXT (tmp))
-	    {			/* local variable. */
+	    {			/* local variable or local static variable. */
 	      ret = 2;
 	      goto done;
 	    }
@@ -2063,7 +2066,7 @@ make_leaf_chain (tree node, leaf_chain * dest)
 		      (dyn_string_buf (control_panel.faccessv_field),
 		       IDENTIFIER_POINTER (DECL_NAME (field))) == 0)
 		    {
-		      tree type = DECL_CONTEXT (field);
+		      tree type = TREE_TYPE (TREE_OPERAND (tmp, 0));
 		      if (strcmp
 			  (dyn_string_buf (control_panel.faccessv_struct),
 			   get_typename (type)) == 0)
@@ -2213,8 +2216,10 @@ print_var_chain (leaf_chain source)
       if (TREE_CODE (tmp) == CALL_EXPR)
 	{
 	  tmp = CALL_EXPR_FN (tmp);
-	  gcc_assert (TREE_CODE (tmp) == ADDR_EXPR);
-	  tmp = TREE_OPERAND (tmp, 0);
+	  if (TREE_CODE (tmp) == ADDR_EXPR)
+	    tmp = TREE_OPERAND (tmp, 0);
+	  else
+	    gcc_assert (TREE_CODE (tmp) == VAR_DECL);
 	  func = true;
 	}
       dyn_string_copy_cstr (gbuf, IDENTIFIER_POINTER (DECL_NAME (tmp)));
