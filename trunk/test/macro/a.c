@@ -1,5 +1,6 @@
-//*
-#define MUL_DEFINITION \
+// There're some spaces at the tail of later two lines.
+//*  
+#define MUL_DEFINITION \   
 	int i; \
 	int j; \
 	int main(
