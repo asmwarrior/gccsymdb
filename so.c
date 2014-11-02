@@ -333,6 +333,7 @@ reinsert:
 	     "according to ProjectOverview::canUpdateFile parameter.");
 	  gcc_assert (false);
 	}
+      /* There are delete triggers in database to do the remain jobs. */
       sprintf (dyn_string_buf (gbuf), "delete from chFile where id = %d;",
 	       *file_id);
       db_error ((sqlite3_exec (db, dyn_string_buf (gbuf), NULL, 0, NULL)));
@@ -2731,13 +2732,7 @@ plugin_init (struct plugin_name_args *plugin_info,
 {
   /* When `-E' is passed, symdb_unit_init is skipped. */
   if (flag_preprocess_only)
-    {
-      fprintf (stderr,
-	       "`-E' or `-save-temps' aren't coexisted with symdb.so.\n");
-      fprintf (stderr,
-	       "And such like `gcc x.S' which calls those parameters implicitly.\n");
-      return 0;
-    }
+    return 0;
   /* We only accept a param -- `dbfile', using ProjectOverview table of
    * database to do more configs. */
   gcc_assert (plugin_info->argc == 1

@@ -179,35 +179,37 @@ function! s:GS_Window_Refresh()
 	silent! setlocal modifiable
 	silent! setlocal noreadonly
 	silent! %delete _
-	call append(1, s:taglist_file)
-	let l:current = 2
-	call append(l:current, "struct/enum/union/typedef")
-	let l:current += 1
-	let l:count = s:GS_Load_Tag(1, l:current)
-	execute l:current . ',' . (l:current + l:count) . 'fold'
-	let l:current += l:count
-	call append(l:current, "var")
-	let l:current += 1
-	let l:count = s:GS_Load_Tag(2, l:current)
-	execute l:current . ',' . (l:current + l:count) . 'fold'
-	let l:current += l:count
-	call append(l:current, "function")
-	let l:current += 1
-	let l:count = s:GS_Load_Tag(3, l:current)
-	execute l:current . ',' . (l:current + l:count) . 'fold'
-	execute l:current . ',' . (l:current + l:count) . 'foldopen'
-	let l:current += l:count
-	call append(l:current, "enumerator")
-	let l:current += 1
-	let l:count = s:GS_Load_Tag(4, l:current)
-	execute l:current . ',' . (l:current + l:count) . 'fold'
-	let l:current += l:count
-	call append(l:current, "macro")
-	let l:current += 1
-	let l:count = s:GS_Load_Tag(5, l:current)
-	execute l:current . ',' . (l:current + l:count) . 'fold'
-	if l:current == 7
-		call append(l:current, "The file maybe isn't compiled!")
+	let s:str = system('./gs testfile ' . s:taglist_file)
+	if v:shell_error != 0
+		call append(1, s:taglist_file . ' ' . get(split(s:str, '\n'), 0))
+	else
+		call append(1, s:taglist_file)
+		let l:current = 2
+		call append(l:current, "struct/enum/union/typedef")
+		let l:current += 1
+		let l:count = s:GS_Load_Tag(1, l:current)
+		execute l:current . ',' . (l:current + l:count) . 'fold'
+		let l:current += l:count
+		call append(l:current, "var")
+		let l:current += 1
+		let l:count = s:GS_Load_Tag(2, l:current)
+		execute l:current . ',' . (l:current + l:count) . 'fold'
+		let l:current += l:count
+		call append(l:current, "function")
+		let l:current += 1
+		let l:count = s:GS_Load_Tag(3, l:current)
+		execute l:current . ',' . (l:current + l:count) . 'fold'
+		execute l:current . ',' . (l:current + l:count) . 'foldopen'
+		let l:current += l:count
+		call append(l:current, "enumerator")
+		let l:current += 1
+		let l:count = s:GS_Load_Tag(4, l:current)
+		execute l:current . ',' . (l:current + l:count) . 'fold'
+		let l:current += l:count
+		call append(l:current, "macro")
+		let l:current += 1
+		let l:count = s:GS_Load_Tag(5, l:current)
+		execute l:current . ',' . (l:current + l:count) . 'fold'
 	endif
 	silent! setlocal nomodifiable
 	silent! setlocal nomodified

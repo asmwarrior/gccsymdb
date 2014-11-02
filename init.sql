@@ -20,8 +20,8 @@ create table ProjectOverview (
 );
 insert into ProjectOverview values ("1.0", "X.0", "4.6.X", "3.6.X", "/project/root/path/", 0, 0, "user data", 't', 't', "", "", "");
 
--- chFile is the root of all tables, see trigger fold for more, delete the table will delete all things in the file.
--- But currently, macro feature doesn't depend on chFile table, which is transient.
+-- chFile is the root of all tables, see trigger fold for more, delete the records of the table will delete all things in the file.
+-- But currently, Macro table doesn't depend on chFile table, which is used by `./gs macro' only.
 
 -- File tables <([{
 create table chFile (
@@ -188,7 +188,7 @@ create index CalleeName on FunctionCall (name);
 -- }])>
 
 -- Triggger <([{
--- Delete trigger note: all can be indexed directely or indirectely by chFile::id. But to Definition fold, two additional trigger must be set up.
+-- Delete trigger note: all records can be accessed directely or indirectely by chFile::id.
 create trigger DelDefinition after delete on Definition
 begin
 	delete from FunctionCall where callerID = old.id;

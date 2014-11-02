@@ -16,6 +16,9 @@
 static dyn_string_t gbuf;
 static dyn_string_t gbuf2;
 
+// Additional to print informative text to user, gs also returns error code.
+static int ret = EXIT_SUCCESS;
+
 static const char *
 lltoa (long long i)
 {
@@ -97,26 +100,33 @@ get_mtime (const char *file_name)
 }
 
 static void
-db_error (int cond, dyn_string_t sql, int query)
+db_error (int ret)
 {
-  if (sql != NULL)
-    {
-      if (query)
-	{
-	  cond = sqlite3_get_table (db, dyn_string_buf (sql), &table,
-				    &nrow, &ncolumn, &error_msg);
-	}
-      else
-	{
-	  cond = sqlite3_exec (db, dyn_string_buf (sql), NULL, 0, NULL);
-	}
-    }
-  if (cond)
+  if (ret)
     {
       sqlite3_close (db);
       fprintf (stderr, "SQLite3 error: %s\n", sqlite3_errmsg (db));
       exit (1);
     }
+}
+
+static void
+db_execute (dyn_string_t sql, int query)
+{
+  int ret = 0;
+  if (sql != NULL)
+    {
+      if (query)
+	{
+	  ret = sqlite3_get_table (db, dyn_string_buf (sql), &table,
+				   &nrow, &ncolumn, &error_msg);
+	}
+      else
+	{
+	  ret = sqlite3_exec (db, dyn_string_buf (sql), NULL, 0, NULL);
+	}
+    }
+  db_error (ret);
 }
 
 static int
@@ -140,6 +150,7 @@ usage (void)
   printf ("    gs listtsue filename\n");
   printf ("    gs listenumerator filename\n");
   printf ("    gs listmacro filename\n");
+  printf ("    gs testfile filename\n");
   printf ("    gs macro filename fileoffset\n");
   printf ("    gs macro\n");
   printf ("    gs sizeof struct\n");
@@ -187,7 +198,7 @@ dep_get_fid (const char *file_name)
   dyn_string_copy_cstr (dep.str, "select id from chFile where name = '");
   dyn_string_append_cstr (dep.str, file_name);
   dyn_string_append_cstr (dep.str, "';");
-  db_error (0, dep.str, 1);
+  db_execute (dep.str, 1);
   assert (nrow <= 1 && ncolumn <= 1);
   if (nrow == 0 && ncolumn == 0)
     return NULL;
@@ -203,7 +214,7 @@ recursive_dependence (const char *fid, dyn_string_t result)
 			"select hID from FileDependence where chID = ");
   dyn_string_append_cstr (dep.str, fid);
   dyn_string_append_cstr (dep.str, ";");
-  db_error (0, dep.str, 1);
+  db_execute (dep.str, 1);
   for (int i = 1; i <= nrow; i++)
     {
       dyn_string_copy_cstr (dep.str, " ");
@@ -239,7 +250,7 @@ dep_init (void)
   dep.str = dyn_string_new (256);
   dep.prj_dir = dyn_string_new (PATH_MAX + 1);
   dyn_string_copy_cstr (gbuf, "select projectRootPath from ProjectOverview;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   dyn_string_copy_cstr (dep.prj_dir, table[1]);
   sqlite3_free_table (table);
 }
@@ -264,7 +275,7 @@ def (const char *file_name, const char *def)
   dyn_string_append_cstr (gbuf, "' and ");
   dyn_string_append (gbuf, gbuf2);
   dyn_string_append_cstr (gbuf, ";");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   for (int i = 1; i <= nrow; i++)
     printf ("%s %s %s\n", table[i * ncolumn + 0], table[i * ncolumn + 1],
 	    def_flags[atoi (table[i * ncolumn + 2])].str);
@@ -297,7 +308,7 @@ callee (const char *def)
 			  "where fc.name = '");
   dyn_string_append_cstr (gbuf, def);
   dyn_string_append_cstr (gbuf, "');");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   for (int i = 1; i <= nrow; i++)
     printf ("%s %s %s %s\n", table[i * ncolumn + 0],
 	    table[i * ncolumn + 1], table[i * ncolumn + 2],
@@ -320,7 +331,7 @@ addsym (const char *file_name, const char *def, const char *fileoffset)
       dyn_string_append_cstr (gbuf, "', ");
       dyn_string_append_cstr (gbuf, lltoa (mtime));
       dyn_string_append_cstr (gbuf, ", 'false');");
-      db_error (0, gbuf, 0);
+      db_execute (gbuf, 0);
       fid = dep_get_fid (file_name);
     }
   dyn_string_copy_cstr (gbuf, "insert into Definition values (NULL, ");
@@ -332,7 +343,7 @@ addsym (const char *file_name, const char *def, const char *fileoffset)
   dyn_string_append_cstr (gbuf, ", ");
   dyn_string_append_cstr (gbuf, fileoffset);
   dyn_string_append_cstr (gbuf, ");");
-  db_error (0, gbuf, 0);
+  db_execute (gbuf, 0);
 }
 
 static void
@@ -350,7 +361,7 @@ rmsym (const char *file_name, const char *def, const char *fileoffset)
   dyn_string_append_cstr (gbuf, " and fileoffset = ");
   dyn_string_append_cstr (gbuf, fileoffset);
   dyn_string_append_cstr (gbuf, ";");
-  db_error (0, gbuf, 0);
+  db_execute (gbuf, 0);
 }
 
 static void
@@ -444,7 +455,7 @@ ifdef (const char *file_name, const char *offset)
   dyn_string_append_cstr (gbuf, " and endOffset > ");
   dyn_string_append_cstr (gbuf, offset);
   dyn_string_append_cstr (gbuf, ";");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   int no_skipped = 0;
   for (int i = 1; i <= nrow; i++)
     {
@@ -501,7 +512,7 @@ falias (const char *mfp)
       dyn_string_append_cstr (gbuf, mfp);
       dyn_string_append_cstr (gbuf, "';");
     }
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   for (int i = 1; i <= nrow; i++)
     printf ("%s %s %s %s\n", table[i * ncolumn + 0],
 	    table[i * ncolumn + 1], table[i * ncolumn + 2],
@@ -573,7 +584,7 @@ faccessv (const char *var)
   dyn_string_append_cstr (gbuf, var);
   dyn_string_append_cstr (gbuf,
 			  "%' order by FuncFileName, FuncFileOffset, FuncName, VarName;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   faccessv_output ();
   sqlite3_free_table (table);
 }
@@ -587,7 +598,7 @@ faccessv_expansion (const char *strut, const char *field)
 			    "select FuncFileName, FuncFileOffset, FuncName, "
 			    "VarName, VarAccessFlag "
 			    "from AccessRelationship order by FuncFileName, FuncFileOffset, FuncName, VarName;");
-      db_error (0, gbuf, 1);
+      db_execute (gbuf, 1);
       faccessv_output ();
       sqlite3_free_table (table);
     }
@@ -599,7 +610,7 @@ faccessv_expansion (const char *strut, const char *field)
       dyn_string_append_cstr (gbuf, "', faccessvField = '");
       dyn_string_append_cstr (gbuf, field);
       dyn_string_append_cstr (gbuf, "';");
-      db_error (0, gbuf, 0);
+      db_execute (gbuf, 0);
     }
 }
 
@@ -627,7 +638,7 @@ filedep (const char *file_name, int dep)
     dyn_string_append_cstr (gbuf, " hID = ");
   dyn_string_append_cstr (gbuf, fid);
   dyn_string_append_cstr (gbuf, " order by offset;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   for (int i = 1; i <= nrow; i++)
     printf ("%s %s %s\n", table[i * ncolumn + 0], table[i * ncolumn + 1],
 	    table[i * ncolumn + 2]);
@@ -661,9 +672,27 @@ listXX (const char *file_name, int flag)
   else if (flag == 5)
     dyn_string_append_cstr (gbuf, lltoa (DEF_MACRO));
   dyn_string_append_cstr (gbuf, ");");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   for (int i = 1; i <= nrow; i++)
     printf ("%s %s\n", table[i * ncolumn + 0], table[i * ncolumn + 1]);
+  sqlite3_free_table (table);
+}
+
+static void
+testfile (const char *file_name)
+{
+  dyn_string_copy_cstr (gbuf, "select rowid from chFile where name = '");
+  file_name = canonical_path (file_name);
+  dyn_string_append_cstr (gbuf, file_name);
+  dyn_string_append_cstr (gbuf, "';");
+  db_execute (gbuf, 1);
+  if (nrow == 0)
+    {
+      printf ("Not compiled\n");
+      ret = -1;
+    }
+  else
+    ret = 0;
   sqlite3_free_table (table);
 }
 
@@ -680,7 +709,7 @@ macro (const char *file_name)
 			    "from Macro "
 			    "left join chFile as f1 on fileID = f1.id "
 			    "left join chFile as f2 on defFileID = f2.id;");
-      db_error (0, gbuf, 1);
+      db_execute (gbuf, 1);
       for (int i = 1; i <= nrow; i++)
 	{
 	  printf ("macro occurs: %s, %s\n", table[i * ncolumn + 0],
@@ -699,7 +728,7 @@ macro (const char *file_name)
       file_name = canonical_path (file_name);
       dyn_string_append_cstr (gbuf, file_name);
       dyn_string_append_cstr (gbuf, "';");
-      db_error (0, gbuf, 0);
+      db_execute (gbuf, 0);
     }
 }
 
@@ -710,7 +739,7 @@ relocate (const char *path)
 			"update ProjectOverview set projectRootPath = '");
   dyn_string_append_cstr (gbuf, path);
   dyn_string_append_cstr (gbuf, "/';");
-  db_error (0, gbuf, 0);
+  db_execute (gbuf, 0);
 }
 
 static void
@@ -732,7 +761,7 @@ offset_of (const char *struct_name, const char *member)
   dyn_string_append_cstr (gbuf, "' and member = '");
   dyn_string_append_cstr (gbuf, member);
   dyn_string_append_cstr (gbuf, "';");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   for (int i = 1; i <= nrow; i++)
     printf ("%s\n", table[i * ncolumn + 0]);
   sqlite3_free_table (table);
@@ -747,7 +776,7 @@ infodb (void)
   pclose (ftmp);
   printf ("Current sqlite is: %s\n", fbuf);
   dyn_string_copy_cstr (gbuf, "select * from ProjectOverview;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   for (int i = 0; i < nrow + 1; i++)
     {
       for (int j = 0; j < ncolumn; j++)
@@ -758,11 +787,11 @@ infodb (void)
   printf ("\n");
 
   dyn_string_copy_cstr (gbuf, "select count(*) from Definition;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("Definition count is %s\n", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select count(*) from chFile;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("File count is %s\n", table[1]);
   sqlite3_free_table (table);
 }
@@ -774,7 +803,7 @@ checkdb (void)
 			"select a.name as main, b.name as secondary, offset "
 			"from chFile as a, chFile as b, FileDependence "
 			"where hID = b.id and b.name like '%.c' and chID = a.id;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   if (nrow != 0)
     {
       printf ("Caution: .c files are included by other files\n");
@@ -788,7 +817,7 @@ checkdb (void)
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select name from chFile, FileDependence "
 			"where hID = chID and chID = id;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   if (nrow != 0)
     {
       printf ("Caution: files try to include itself\n");
@@ -806,7 +835,7 @@ checkdb (void)
 			"where flag = ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
   dyn_string_append_cstr (gbuf, ";");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("Global variable count is %s\n", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select fileName, fileOffset, defName "
@@ -815,7 +844,7 @@ checkdb (void)
   dyn_string_append_cstr (gbuf, lltoa (DEF_VAR));
   dyn_string_append_cstr (gbuf,
 			  " group by (name) having count(name) > 1 order by count(name));");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   if (nrow != 0)
     {
       printf ("Global variable duplication overview\n");
@@ -833,7 +862,7 @@ checkdb (void)
 			"where flag = ");
   dyn_string_append_cstr (gbuf, lltoa (DEF_FUNC));
   dyn_string_append_cstr (gbuf, ";");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("Function count is %s\n", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select fileName, fileOffset, defName "
@@ -842,7 +871,7 @@ checkdb (void)
   dyn_string_append_cstr (gbuf, lltoa (DEF_FUNC));
   dyn_string_append_cstr (gbuf,
 			  " group by (name) having count(name) > 1 order by count(name));");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   if (nrow != 0)
     {
       printf ("Function duplication overview\n");
@@ -858,27 +887,27 @@ checkdb (void)
 
   dyn_string_copy_cstr (gbuf, "select count(*) from ( "
 			"select * from FunctionCall group by callerID);");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("%s functions call ", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select count(*) from FunctionCall;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("%s functions/mfps. Meanwhile ", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf,
 			"select count(*) from FunctionCall where name like '%::%';");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("%s mfps.\n", table[1]);
   sqlite3_free_table (table);
   printf ("\n");
 
   dyn_string_copy_cstr (gbuf, "select count(*) from ( "
 			"select * from FunctionAccess group by funcID);");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("%s functions access ", table[1]);
   sqlite3_free_table (table);
   dyn_string_copy_cstr (gbuf, "select count(*) from FunctionAccess;");
-  db_error (0, gbuf, 1);
+  db_execute (gbuf, 1);
   printf ("%s variables.", table[1]);
   sqlite3_free_table (table);
   printf ("\n");
@@ -910,7 +939,7 @@ ctrl (const char *parameter, const char *value)
       dyn_string_append_cstr (gbuf, "'");
     }
   dyn_string_append_cstr (gbuf, ";");
-  db_error (0, gbuf, 0);
+  db_execute (gbuf, 0);
 }
 
 /* }])> */
@@ -918,7 +947,6 @@ ctrl (const char *parameter, const char *value)
 int
 main (int argc, char **argv)
 {
-  int ret = EXIT_SUCCESS;
   gbuf = dyn_string_new (1024);
   gbuf2 = dyn_string_new (256);
   if (argc == 1
@@ -927,7 +955,7 @@ main (int argc, char **argv)
 	      || strcmp (argv[1], "help") == 0)))
     {
       ret = usage ();
-      return -1;
+      goto done;
     }
   if (strcmp (argv[1], "initdb") == 0)
     {
@@ -939,10 +967,8 @@ main (int argc, char **argv)
       enddb (argv[2]);
       goto done;
     }
-  db_error (sqlite3_open_v2
-	    ("gccsym.db", &db, SQLITE_OPEN_READWRITE, NULL), NULL, 1);
-  db_error (sqlite3_exec
-	    (db, "begin exclusive transaction;", NULL, 0, NULL), NULL, 1);
+  db_error (sqlite3_open_v2 ("gccsym.db", &db, SQLITE_OPEN_READWRITE, NULL));
+  db_error (sqlite3_exec (db, "begin exclusive transaction;", NULL, 0, NULL));
   dep_init ();
   if (strcmp (argv[1], "def") == 0)
     def (argv[2], argv[3]);
@@ -979,6 +1005,8 @@ main (int argc, char **argv)
     listXX (argv[2], 4);
   else if (strcmp (argv[1], "listmacro") == 0)
     listXX (argv[2], 5);
+  else if (strcmp (argv[1], "testfile") == 0)
+    testfile (argv[2]);
   else if (strcmp (argv[1], "macro") == 0)
     {
       if (argc == 2)
@@ -999,7 +1027,7 @@ main (int argc, char **argv)
   else if (strcmp (argv[1], "ctrl") == 0)
     ctrl (argv[2], argv[3]);
   dep_tini ();
-  db_error (sqlite3_exec (db, "end transaction;", NULL, 0, NULL), NULL, 1);
+  db_error (sqlite3_exec (db, "end transaction;", NULL, 0, NULL));
   sqlite3_close (db);
 done:
   dyn_string_delete (gbuf2);

@@ -84,5 +84,6 @@ test_it falias falias gcc
 echo PASS falias
 test_it offsetof offsetof gcc
 echo PASS offsetof
+
 test_it cxx offsetof g++
 echo PASS cxx

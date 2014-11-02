@@ -53,7 +53,7 @@ source) and skip `#ifdef/#if'.
 block.
 10) Function alias. To linux, later code often makes you confusion.
     f_ops fs = { .open = ext2_open, };
-	void oof(FUNC pf) { fs.open = pf; }
+    void oof(FUNC pf) { fs.open = pf; }
     void foo(void)
     {
         fs.open = ext2_open;
@@ -62,21 +62,35 @@ block.
     }
 The feature treats `ext2_open' as an alias of `open'. So when you search
 `open', jump to `ext2_open'. Of course, you can get `ext2_open' is called by
-`foo' reversely. Note to simplify my code, only simple syntax is supported
-which showed in above assign-expression. See test/falias/a.c for more. Syntax
-pattern (member-function-pointer) is `struct::fun_pointer = fun_decl' and call
-the pattern, complex struct::...::struct::__pattern__ is supported, but only
-the last two levels are imported into database.
+`foo' reversely. Note to simplify my code, only above syntax is supported, see
+test/falias/a.c for more. Syntax pattern (member-function-pointer) is
+`struct::fun_pointer = fun_decl' and call the pattern, complex nesting
+struct::...::struct::mfp is also supported, but only the last two levels are
+imported into database.
     ./gs falias open
 By the way, database will record original struct name if possible
     struct orig { ... };
     typedef orig td1;
     typedef orig td2;
     typedef td1 td11;
-    typedef struct { ... } tdanon;
+    typedef struct { ... } tdanon, tdanon2;
     typedef tdanon td3;
-In the cases, orig and tdanon are called original struct name, the convention
-is used by other features too.
+In the cases, orig, tdanon and tdanon2 are called original struct name, that
+is, `orig::open', `tdanon::open' and `tdanon2::open' is stored into database.
+The convention is used by other features too.
+To such like `void fops_set_open(f_ops* f, FUNC open)', later comes from my
+testcases:
+    void assigned_by_parm(F pf)
+    {
+        struct abc l;
+        l.mem = pf;
+    }
+Then
+    ./gs falias mem
+will return
+    a.c 878 abc::mem ?
+That is, it returns the offset of assigned instead of the offset of target
+function.
 11) Get macro expansion process by later steps
     a) ./gs macro a.c
     b) re-compile a.c by my plugin.
@@ -138,12 +152,12 @@ Later cases can be smart-joined:
     (x = lx).v; (i = j, x).v; (i == 0 ? x : y).v; ({ i = 1; x; }).v;
 Data is stored as x.v not x.
 The only defect of the feature is I can't know whether there're some
-expression not coveraged by my plugin so if you find your code can make my
-plugin crashed, insert `./gs ctrl faccessv f' after `./gs initdb ./' to
-disable it temporarially.
+expression syntax not coveraged by my plugin so if you find your code can make
+my plugin crashed, insert `./gs ctrl faccessv f' after `./gs initdb ./' to
+disable it temporarially before compiling with my plugin.
 I'm also honor to introduce faccessv expansion which do the case when you
-found there's some field of a varaible changed unexpectedly in the heap and you
-want to see which functions are the candidates,
+found there's some fields of a varaible changed unexpectedly in the heap and
+you want to see which functions are the candidates,
     ./gs initdb ./
     ./gs faccess-expansion struct_name field_name
     # reestablish database, only nodes fit with will be stored.
@@ -158,7 +172,31 @@ infinite-loop or crashed. And since I must patch gcc to support my plugin
 my plugin only.
 
 Prepare stage (patch on gcc-4.6.4):
-See <Steps for ... with patch> folds.
+// Steps for building gcc with patch (x86), using stage 1 of gcc source <([{
+cd $HOME/src/gmp-4.3.2
+./configure --prefix=$HOME/root/ --enable-shared=no && make -j install
+cd $HOME/src/mpfr-2.4.2
+./configure --prefix=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
+cd $HOME/src/mpc-0.8.1
+./configure --prefix=$HOME/root/ --with-mpfr=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
+cd $HOME/src/gcc-4.6.4
+ln -s $HOME/src//symdb.gcc/gcc.patches/ patches
+quilt push -a
+./configure --prefix=$HOME/root/ --with-mpc=$HOME/root/ --with-gmp=$HOME/root/ --with-mpfr=$HOME/root/ --enable-stage1-languages=c++
+make STAGE1_CFLAGS="-ggdb" all-stage1
+// }])>
+// Steps for crosstool-ng with patch (mips) <([{
+cd $HOME/src/crosstool-ng-1.19.0
+./configure --enable-local
+make
+ln -s $HOME/src//symdb.gcc/gcc.patches/symdb patches/gcc/4.6.4/900-symdb.patch
+mkdir mips && cd mips
+cp $HOME/src//symdb.gcc/crossng.config $HOME/src/crosstool-ng-1.19.0/mips/.config
+../ct-ng menuconfig
+# Do more configs as you wish, make sure binutils is 2.21+ for enabling gcc
+# plugin feature.
+../ct-ng build
+// }])>
 
 Compiling plugin by patched gcc (cd myplugin.src/):
 1) Open Makefile, change the path in it.
@@ -167,12 +205,12 @@ Compiling plugin by patched gcc (cd myplugin.src/):
 Make database on your project:
 1) cp gs helper.vim init.sql symdb.so mygcc.py /prj.src/ && cd /prj.src/
 2) ./gs initdb ./ "user data (such as svn revision)" # Initialize database.
-If you want to custom the plugin, run `./gs' and `./gs ctrl XXX YYY'.
-3) Open mygcc.py, change pathes in it and caution.
-4) CC=/prj.src/mygcc.py ./configure ... && make.
-5) It will cost more time to compile your project, and SMP can't help you --
+# If you want to custom the plugin, run `./gs' and `./gs ctrl XXX YYY'.
+3) append `-fplugin-arg-symdb-dbfile=' and `-fplugin=' to CFLAGS of your
+   project by your way, search help from mygcc.py.
+# It will cost more time to compile your project, and SMP can't help you --
 sqlite doesn't support write-access database simultaneously, do it overnight.
-6) ./gs enddb ./ # Rearrange and defrag your database.
+4) ./gs enddb ./ # Rearrange and defrag your database.
 
 Working with new database:
 cd /prj.src
@@ -197,6 +235,12 @@ Open test/run.sh, change the path in it, the testcases are passed on x86, but
 to test/faccessv/a.c which includes clauses like `__attribute__ ((__target__
 ("sse")))', so don't run it on mips.
 1) cd test && ./run.sh
+
+If you want to use data directly:
+sqlite gccsym.db
+sqlite> .output afile
+sqlite> .du
+sqlite> .q
 // }])>
 // Multiple-results from my database and my solution <([{
 Things are not always perfect, here I list some cases which makes my plugin
@@ -244,43 +288,18 @@ So you can remove the item you doesn't like by them. `./gs addsym' is also
 useful since you can use it to append the symbols which are invisible from my
 plugin, such as `./gs addsym arch/mips/kernel/vmlinux.lds jiffies 6601'.
 // }])>
-// Tested projects (gcc, glibc and linux) <([{
-Prepare gcc support packages:
-gmp-5.0.1
-    ./configure --prefix=/home/zyf/root/ --enable-shared=no && make install
-mpfr-3.0.1
-    ./configure --prefix=/home/zyf/root/ --with-gmp=/home/zyf/root/
-    --enable-shared=no && make install
-mpc-0.9
-    ./configure --prefix=/home/zyf/root/ --with-mpfr=/home/zyf/root/
-    --with-gmp=/home/zyf/root/ --enable-shared=no && make install
-gcc-4.6.4 (x86):
-    *) ./configure --prefix=/home/zyf/root/ --with-mpc=/home/zyf/root/
-    --with-gmp=/home/zyf/root/ --with-mpfr=/home/zyf/root/
-    *) # After quilt my patches.
-    *) make STAGE1_CFLAGS="-ggdb" all-stage1
-    *) # prepare database.
-    *) make STAGE2_CFLAGS="-fplugin=/home/zyf/src/symdb.gcc/symdb.so
-    -fplugin-arg-symdb-dbfile=/home/zyf/src/gcc-4.6.4/gccsym.db" all-stage2
-    *) # rearrange database.
-glibc-2.13 (mips):
-    *) Change glibc.src/Makeconfig: `override CFLAGS = '.
-linux-2.6.35 (mips):
-    *) Change linux.src/Makefile: `KBUILD_CFLAGS := '.
-// }])>
 // Know Issues <([{
 1) Be careful if you updated a file and try to re-update my database. Here is
 a case
-    -------------------------------- a.c (before)
+    -------------------------------- a.c
     #include<config.h>
     #include<...>
-    -------------------------------- a.c (after)
-    // config.h is updated, such as enabling PREEMPT option.
-all header files after config.h maybe includes some old definitions not
-belonging to new option because from database, definitions are linked to file
-and are updated only if the file is updated.
-By the way, control the feature by init.sql:ProjectOverview::canUpdateFile,
-the default is 't', I recommend recreate the database totally.
+Later config.h is updated, such as enabling PREEMPT option. All header files
+after config.h maybe includes some old definitions not belonging to new option
+because from database, definitions are linked to file and are updated only if
+the file is updated.
+By the way, `./gs ctrl canUpdateFile t/f' to control the feature. I recommend
+recreate the database totally.
 2) Currently, my plugin doesn't support nested functions but if a nested
 function calls other functions, all of them are treated as the callees of
 outest function.
@@ -302,32 +321,8 @@ definition from database, but later
     #undef M
 My database only stores the first A of a.h and discard the second forever, in
 fact not only struct, function, variable and so on have the same problem.
-// }])>
-
-// Steps for building gcc with patch (x86) <([{
-cd $HOME/src/gmp-5.0.1
-./configure --prefix=$HOME/root/ --enable-shared=no && make -j install
-cd $HOME/src/mpfr-3.0.1
-./configure --prefix=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
-cd $HOME/src/mpc-0.9
-./configure --prefix=$HOME/root/ --with-mpfr=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
-cd $HOME/src/gcc-4.6.4
-ln -s $HOME/src//symdb.gcc/gcc.patches/ patches
-quilt push -a
-./configure --prefix=$HOME/root/ --with-mpc=$HOME/root/ --with-gmp=$HOME/root/ --with-mpfr=$HOME/root/ --enable-stage1-languages=c++
-make STAGE1_CFLAGS="-ggdb" all-stage1
-// }])>
-// Steps for crosstool-ng with patch (mips) <([{
-cd $HOME/src/crosstool-ng-1.19.0
-./configure --enable-local
-make
-ln -s $HOME/src//symdb.gcc/gcc.patches/symdb patches/gcc/4.6.4/900-symdb.patch
-mkdir mips && cd mips
-cp $HOME/src//symdb.gcc/crossng.config $HOME/src/crosstool-ng-1.19.0/mips/.config
-../ct-ng menuconfig
-# Do more configs as you wish, make sure binutils is 2.21+ for enabling gcc
-# plugin feature.
-../ct-ng build
+5) `-E' or `-save-temps' will make gcc skips c compilation stage, so disable
+my plugin. And such like `gcc x.S' which calls those parameters implicitly.
 // }])>
 
 For Developer, need to sychronize with the up-to-dated code.

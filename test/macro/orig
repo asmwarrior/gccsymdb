@@ -7,31 +7,31 @@ CREATE TABLE Definition (
 	flag integer,
 	fileOffset integer
 );
-INSERT INTO "Definition" VALUES(1,1,'MUL_DEFINITION',3,12);
-INSERT INTO "Definition" VALUES(2,1,'i',1,60);
-INSERT INTO "Definition" VALUES(3,1,'j',1,60);
-INSERT INTO "Definition" VALUES(4,1,'main',2,60);
-INSERT INTO "Definition" VALUES(5,1,'base',1,90);
-INSERT INTO "Definition" VALUES(6,1,'cancel',1,100);
-INSERT INTO "Definition" VALUES(7,1,'base',3,116);
-INSERT INTO "Definition" VALUES(8,1,'null',3,138);
-INSERT INTO "Definition" VALUES(9,1,'foo',2,151);
-INSERT INTO "Definition" VALUES(10,1,'cancel',3,171);
-INSERT INTO "Definition" VALUES(11,1,'cancel_inmacro',3,208);
-INSERT INTO "Definition" VALUES(12,1,'cascaded_head',3,264);
-INSERT INTO "Definition" VALUES(13,1,'cascaded_head2',3,310);
-INSERT INTO "Definition" VALUES(14,1,'cascaded_middle',3,358);
-INSERT INTO "Definition" VALUES(15,1,'cascaded_tail',3,413);
-INSERT INTO "Definition" VALUES(16,1,'cascaded_tail2',3,471);
-INSERT INTO "Definition" VALUES(17,1,'cascaded_func_head',3,531);
-INSERT INTO "Definition" VALUES(18,1,'cascaded_func_tail',3,593);
-INSERT INTO "Definition" VALUES(19,1,'c3_head',3,793);
-INSERT INTO "Definition" VALUES(20,1,'c3_tail',3,836);
-INSERT INTO "Definition" VALUES(21,1,'paste',3,888);
-INSERT INTO "Definition" VALUES(22,1,'cond',3,976);
-INSERT INTO "Definition" VALUES(23,1,'cascaded_cond',3,994);
-INSERT INTO "Definition" VALUES(24,1,'args',3,1090);
-INSERT INTO "Definition" VALUES(25,1,'torture',3,1178);
+INSERT INTO "Definition" VALUES(1,1,'MUL_DEFINITION',3,70);
+INSERT INTO "Definition" VALUES(2,1,'i',1,121);
+INSERT INTO "Definition" VALUES(3,1,'j',1,121);
+INSERT INTO "Definition" VALUES(4,1,'main',2,121);
+INSERT INTO "Definition" VALUES(5,1,'base',1,151);
+INSERT INTO "Definition" VALUES(6,1,'cancel',1,161);
+INSERT INTO "Definition" VALUES(7,1,'base',3,177);
+INSERT INTO "Definition" VALUES(8,1,'null',3,199);
+INSERT INTO "Definition" VALUES(9,1,'foo',2,212);
+INSERT INTO "Definition" VALUES(10,1,'cancel',3,232);
+INSERT INTO "Definition" VALUES(11,1,'cancel_inmacro',3,269);
+INSERT INTO "Definition" VALUES(12,1,'cascaded_head',3,325);
+INSERT INTO "Definition" VALUES(13,1,'cascaded_head2',3,371);
+INSERT INTO "Definition" VALUES(14,1,'cascaded_middle',3,419);
+INSERT INTO "Definition" VALUES(15,1,'cascaded_tail',3,474);
+INSERT INTO "Definition" VALUES(16,1,'cascaded_tail2',3,532);
+INSERT INTO "Definition" VALUES(17,1,'cascaded_func_head',3,592);
+INSERT INTO "Definition" VALUES(18,1,'cascaded_func_tail',3,654);
+INSERT INTO "Definition" VALUES(19,1,'c3_head',3,854);
+INSERT INTO "Definition" VALUES(20,1,'c3_tail',3,897);
+INSERT INTO "Definition" VALUES(21,1,'paste',3,949);
+INSERT INTO "Definition" VALUES(22,1,'cond',3,1037);
+INSERT INTO "Definition" VALUES(23,1,'cascaded_cond',3,1055);
+INSERT INTO "Definition" VALUES(24,1,'args',3,1151);
+INSERT INTO "Definition" VALUES(25,1,'torture',3,1239);
 CREATE INDEX DefName on Definition (name);
 CREATE TRIGGER DelDefinition after delete on Definition
 begin
