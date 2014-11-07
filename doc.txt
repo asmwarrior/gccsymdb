@@ -173,13 +173,8 @@ my plugin only.
 
 Prepare stage (patch on gcc-4.6.4):
 // Steps for building gcc with patch (x86), using stage 1 of gcc source <([{
-cd $HOME/src/gmp-4.3.2
-./configure --prefix=$HOME/root/ --enable-shared=no && make -j install
-cd $HOME/src/mpfr-2.4.2
-./configure --prefix=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
-cd $HOME/src/mpc-0.8.1
-./configure --prefix=$HOME/root/ --with-mpfr=$HOME/root/ --with-gmp=$HOME/root/ --enable-shared=no && make -j install
 cd $HOME/src/gcc-4.6.4
+./contrib/download_prerequisites
 ln -s $HOME/src//symdb.gcc/gcc.patches/ patches
 quilt push -a
 ./configure --prefix=$HOME/root/ --with-mpc=$HOME/root/ --with-gmp=$HOME/root/ --with-mpfr=$HOME/root/ --enable-stage1-languages=c++
