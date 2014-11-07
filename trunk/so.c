@@ -566,9 +566,8 @@ static struct
 } def;
 
 static int
-insert_def (enum definition_flag flag, dyn_string_t str, int offset)
+insert_def (enum definition_flag flag, dyn_string_t str, int fid, int offset)
 {
-  int fid = file_get_current_fid ();
   int defid;
   db_error (sqlite3_bind_int (def.select_def, 1, fid));
   db_error (sqlite3_bind_text
@@ -596,9 +595,14 @@ insert_def (enum definition_flag flag, dyn_string_t str, int offset)
 static void fcallf_callerid (int);
 static void faccessv_callerid (int);
 static int
-def_append (enum definition_flag flag, dyn_string_t str, int offset)
+def_append (enum definition_flag flag, dyn_string_t str, char* fn, int offset)
 {
-  int defid = insert_def (flag, str, offset);
+	static struct { char* fn; int fid; } prev = { NULL, 0 };
+	if (prev.fn != fn) {
+		prev.fid = file_get_fid_from_db (fn);
+	}
+
+  int defid = insert_def (flag, str, prev.fid, offset);
   if (flag == DEF_FUNC)
     {
       fcallf_callerid (defid);
@@ -1251,11 +1255,7 @@ get_typename (tree type)
   tree orig_type = TYPE_CANONICAL (type);
   gcc_assert (TYPE_CANONICAL (orig_type) == orig_type);
   if (TYPE_NAME (orig_type) != NULL)
-#ifndef CXX_PLUGIN
-    result = IDENTIFIER_POINTER (TYPE_NAME (orig_type));
-#else
     result = IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (orig_type)));
-#endif
   /* To `typedef struct { ... } a_t;', return a_t, otherwise return original
    * struct name. */
   if (orig_type != type && strcmp (result, "") == 0)

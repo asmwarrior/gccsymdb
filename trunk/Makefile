@@ -5,10 +5,6 @@
 # CROSSNG=${HOME}/src/crosstool-ng-1.19.0/mips
 # As you seen from doc.txt, x86 plugin is set up directely from gcc pass-1.
 
-# Compiling the plugin need gmp.h, mpfr.h and so on.
-# To cross-ng (mips), MY_ROOT=${CROSSNG}/build/mips-zyf-linux-gnu/buildtools
-MY_ROOT=${HOME}/root/
-
 # Plugin source directory.
 SYMDB_ROOT=${HOME}/src/symdb.gcc/
 
@@ -25,7 +21,7 @@ GCC_BUILD_BIN=${GCC_BUILD_ROOT}/xgcc -B${GCC_BUILD_ROOT}
 default: symdb.so symdbcxx.so gs
 
 symdb.so: so.c
-	gcc -Wall -O3 -ggdb $< ${GCC_BUILD_LIB}/libiberty.a -I. -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ -I${GCC_SRC}/libcpp/ -I${GCC_SRC}/libcpp/include -I${MY_ROOT}/include -lsqlite3 -DIN_GCC -fPIC -shared -o $@
+	gcc -Wall -O3 -ggdb $< ${GCC_BUILD_LIB}/libiberty.a -I. -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ -I${GCC_SRC}/libcpp/ -I${GCC_SRC}/libcpp/include -lsqlite3 -DIN_GCC -fPIC -shared -o $@
 	# selinux specific!
 	# chcon -t texrel_shlib_t symdb.so
 
@@ -33,7 +29,7 @@ gs: app.c
 	gcc -Wall -O3 -ggdb -std=gnu99 $< -o $@ -D__FROM_CMDLINE_A="\"`cat ${GCC_SRC}/gcc/BASE-VER`\"" -D__FROM_CMDLINE_B="\"svn-`svn info | grep 'Last Changed Rev:' | awk '{print $$4}'`\"" -lsqlite3 -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ ${GCC_BUILD_LIB}/libiberty.a
 
 symdbcxx.so: so.c
-	gcc -Wall -O3 -ggdb $< ${GCC_BUILD_LIB}/libiberty.a -I. -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ -I${GCC_SRC}/libcpp/ -I${GCC_SRC}/libcpp/include -I${MY_ROOT}/include -lsqlite3 -DCXX_PLUGIN -DIN_GCC -fPIC -shared -o $@
+	gcc -Wall -O3 -ggdb $< ${GCC_BUILD_LIB}/libiberty.a -I. -I${GCC_SRC}/ -I${GCC_SRC}/gcc/ -I${GCC_SRC}/include -I${GCC_BUILD_ROOT}/ -I${GCC_SRC}/libcpp/ -I${GCC_SRC}/libcpp/include -lsqlite3 -DCXX_PLUGIN -DIN_GCC -fPIC -shared -o $@
 
 db:
 	./gs initdb ./

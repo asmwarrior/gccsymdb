@@ -185,12 +185,7 @@ Index: gcc/gcc/c-parser.c
  		      	       init.original_type, asm_name);
  		}
 +        if (!nested)
-+	      {
-+	        void* pair[2];
-+	        pair[0] = init.value;
-+	        pair[1] = (void*) file_offset;
-+            invoke_plugin_callbacks (PLUGIN_EXTERN_INITIALIZER, pair);
-+	      }
++            invoke_plugin_callbacks (PLUGIN_EXTERN_INITIALIZER, init.value);
  	    }
  	  else
  	    {
@@ -313,12 +308,7 @@ Index: gcc/gcc/c-parser.c
  	  break;
  	case CPP_OPEN_PAREN:
  	  /* Function call.  */
-+	  {
-+        void* pair[2];
-+		pair[0] = expr.value;
-+		pair[1] = (void*) c_parser_peek_token (parser)->file_offset;
-+        invoke_plugin_callbacks (PLUGIN_CALL_FUNCTION, pair);
-+	  }
++        invoke_plugin_callbacks (PLUGIN_CALL_FUNCTION, expr.value);
  	  c_parser_consume_token (parser);
  	  if (c_parser_next_token_is (parser, CPP_CLOSE_PAREN))
  	    exprlist = NULL;
