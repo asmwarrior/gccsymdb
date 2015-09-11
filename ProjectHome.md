@@ -1,0 +1,1 @@
+The project hosted here follows the recommendation from http://gcc.gnu.org/ml/gcc-patches/2009-12/msg01061.html.  It's designed to collect symbols -- c preprocess tokens/macro expansion and tree of gcc intern and dump them to sqlite3-format database file for later usage, it's just like cscope/ctags, however it's more accurate. See symdb.txt for more!
